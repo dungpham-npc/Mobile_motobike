@@ -23,6 +23,7 @@ import GlassHeader from '../../components/ui/GlassHeader.jsx';
 import AppBackground from '../../components/layout/AppBackground.jsx';
 import paymentService from '../../services/paymentService';
 import authService from '../../services/authService';
+import bankAccountService from '../../services/bankAccountService';
 import { ApiError } from '../../services/api';
 import { colors } from '../../theme/designTokens';
 
@@ -42,12 +43,24 @@ const WalletScreen = ({ navigation }) => {
     bankAccountNumber: '',
     accountHolderName: '',
   });
+  const [savedBankAccounts, setSavedBankAccounts] = useState([]);
+  const [selectedBankAccountId, setSelectedBankAccountId] = useState(null);
+  const [saveBankAccount, setSaveBankAccount] = useState(false);
 
   const quickTopUpAmounts = [50000, 100000, 200000, 500000, 1000000];
 
   useEffect(() => {
     loadWalletData();
   }, []);
+
+  // Refresh wallet data when screen comes into focus (e.g., after payment callback)
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      loadWalletData();
+    });
+
+    return unsubscribe;
+  }, [navigation]);
 
   const loadWalletData = async () => {
     try {
@@ -70,8 +83,13 @@ const WalletScreen = ({ navigation }) => {
     if (showLoading) setLoadingTransactions(true);
 
     try {
-      const response = await paymentService.getTransactionHistory(0, 10);
-      if (response && response.content) {
+      // Load all transactions (no filter) - we'll filter client-side
+      const response = await paymentService.getTransactionHistory(0, 20);
+      // TransactionController returns PageResponse with 'data' field
+      if (response && response.data) {
+        setTransactions(response.data);
+      } else if (response && response.content) {
+        // Fallback for legacy endpoint format
         setTransactions(response.content);
       }
     } catch (error) {
@@ -159,6 +177,20 @@ const WalletScreen = ({ navigation }) => {
       );
 
       if (result.success) {
+        // Save bank account if checkbox is checked and not already saved
+        if (saveBankAccount && !selectedBankAccountId) {
+          try {
+            await bankAccountService.saveBankAccount({
+              bankName,
+              bankAccountNumber,
+              accountHolderName,
+            });
+            await loadSavedBankAccounts();
+          } catch (error) {
+            console.error('Error saving bank account:', error);
+          }
+        }
+
         Alert.alert(
           'Thành công',
           result.message || 'Đã gửi yêu cầu rút tiền. Giao dịch sẽ được xử lý trong 1-3 ngày làm việc.',
@@ -172,6 +204,8 @@ const WalletScreen = ({ navigation }) => {
                 bankAccountNumber: '',
                 accountHolderName: '',
               });
+              setSelectedBankAccountId(null);
+              setSaveBankAccount(false);
               loadWalletData();
             },
           }]
@@ -203,30 +237,153 @@ const WalletScreen = ({ navigation }) => {
 
   const handleWithdrawInputChange = (field, value) => {
     setWithdrawData((prev) => ({ ...prev, [field]: value }));
+    // Clear selected bank account if user manually edits
+    if (selectedBankAccountId) {
+      setSelectedBankAccountId(null);
+    }
   };
+
+  // Load saved bank accounts when withdraw modal opens
+  const loadSavedBankAccounts = async () => {
+    try {
+      const accounts = await bankAccountService.getBankAccounts();
+      setSavedBankAccounts(accounts);
+    } catch (error) {
+      console.error('Error loading saved bank accounts:', error);
+    }
+  };
+
+  // Handle bank account selection
+  const handleBankAccountSelect = (accountId) => {
+    const account = savedBankAccounts.find((acc) => acc.id === accountId);
+    if (account) {
+      setSelectedBankAccountId(accountId);
+      setWithdrawData({
+        ...withdrawData,
+        bankName: account.bankName,
+        bankAccountNumber: account.bankAccountNumber, // Use full number for submission
+        accountHolderName: account.accountHolderName,
+      });
+    }
+  };
+
+  // Handle delete saved bank account
+  const handleDeleteBankAccount = async (accountId) => {
+    Alert.alert(
+      'Xác nhận',
+      'Bạn có chắc muốn xóa tài khoản ngân hàng này?',
+      [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Xóa',
+          style: 'destructive',
+          onPress: async () => {
+            const deleted = await bankAccountService.deleteBankAccount(accountId);
+            if (deleted) {
+              await loadSavedBankAccounts();
+              if (selectedBankAccountId === accountId) {
+                setSelectedBankAccountId(null);
+                setWithdrawData({
+                  ...withdrawData,
+                  bankName: '',
+                  bankAccountNumber: '',
+                  accountHolderName: '',
+                });
+              }
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Get payout status color
+  const getPayoutStatusColor = (status) => {
+    switch (status?.toUpperCase()) {
+      case 'PENDING':
+        return '#F59E0B'; // Amber
+      case 'PROCESSING':
+        return '#3B82F6'; // Blue
+      case 'SUCCESS':
+      case 'COMPLETED':
+        return '#22C55E'; // Green
+      case 'FAILED':
+        return '#EF4444'; // Red
+      case 'CANCELLED':
+        return '#6B7280'; // Gray
+      default:
+        return colors.textMuted;
+    }
+  };
+
+  // Get payout status text
+  const getPayoutStatusText = (status) => {
+    switch (status?.toUpperCase()) {
+      case 'PENDING':
+        return 'Đang chờ';
+      case 'PROCESSING':
+        return 'Đang xử lý';
+      case 'SUCCESS':
+      case 'COMPLETED':
+        return 'Thành công';
+      case 'FAILED':
+        return 'Thất bại';
+      case 'CANCELLED':
+        return 'Đã hủy';
+      default:
+        return status || 'Không xác định';
+    }
+  };
+
+
+  // Filter payout transactions (all statuses)
+  const payoutTransactions = transactions.filter((txn) => txn.type === 'PAYOUT');
+  
+  // Filter TOPUP transactions (only SUCCESS status)
+  const topupTransactions = transactions.filter((txn) => 
+    txn.type === 'TOPUP' && txn.status === 'SUCCESS'
+  );
 
   const getTransactionIcon = (type, direction) => {
     const icon = paymentService.getTransactionIcon(type, direction);
     let color = colors.textSecondary;
 
+    // Backend uses: IN (money coming in), OUT (money going out), INTERNAL (internal transfers)
+    const isOutgoing = direction === 'OUT' || direction === 'OUTBOUND';
+    const isIncoming = direction === 'IN' || direction === 'INBOUND' || direction === 'INTERNAL';
+
     switch (type) {
       case 'TOP_UP':
-        color = '#22C55E';
+      case 'TOPUP':
+        color = '#22C55E'; // Green for top-up (always incoming)
         break;
       case 'WITHDRAW':
-        color = '#F97316';
+      case 'PAYOUT':
+        color = '#F97316'; // Orange for withdrawal (always outgoing)
         break;
       case 'RIDE_PAYMENT':
-        color = direction === 'OUTBOUND' ? '#EF4444' : '#22C55E';
+      case 'CAPTURE_FARE':
+        // OUT means payment (red), IN means earning (green)
+        color = isOutgoing ? '#EF4444' : '#22C55E';
         break;
       case 'RIDE_EARNING':
-        color = '#3B82F6';
+        color = '#3B82F6'; // Blue for earnings
         break;
       case 'COMMISSION':
-        color = '#8B5CF6';
+        color = '#8B5CF6'; // Purple for commission
         break;
       case 'REFUND':
-        color = '#0EA5E9';
+        color = '#0EA5E9'; // Cyan for refund
+        break;
+      case 'HOLD_CREATE':
+      case 'HOLD_RELEASE':
+        color = '#F59E0B'; // Amber for holds
+        break;
+      case 'PROMO_CREDIT':
+        color = '#EC4899'; // Pink for promo credits
+        break;
+      case 'ADJUSTMENT':
+        color = '#6B7280'; // Gray for adjustments
         break;
       default:
         color = colors.textSecondary;
@@ -244,12 +401,17 @@ const WalletScreen = ({ navigation }) => {
   };
 
   const formatTransactionAmount = (amount, direction) => {
-    const sign = direction === 'INBOUND' ? '+' : '-';
+    // Backend uses: IN (money coming in), OUT (money going out), INTERNAL (internal transfers)
+    // IN and INTERNAL should show as positive (green), OUT should show as negative (red)
+    const isIncoming = direction === 'IN' || direction === 'INTERNAL' || direction === 'INBOUND';
+    const sign = isIncoming ? '+' : '-';
     return `${sign}${paymentService.formatCurrency(Math.abs(amount))}`;
   };
 
   const getTransactionAmountColor = (direction) => {
-    return direction === 'INBOUND' ? '#22C55E' : '#EF4444';
+    // IN and INTERNAL are positive (green), OUT is negative (red)
+    const isIncoming = direction === 'IN' || direction === 'INTERNAL' || direction === 'INBOUND';
+    return isIncoming ? '#22C55E' : '#EF4444';
   };
 
   if (loading) {
@@ -363,6 +525,51 @@ const WalletScreen = ({ navigation }) => {
             </Animatable.View>
           )}
 
+          {/* Payout History Section */}
+          {payoutTransactions.length > 0 && (
+            <Animatable.View animation="fadeInUp" duration={500} delay={150}>
+              <CleanCard style={styles.cardSpacing} contentStyle={styles.transactionCardContent}>
+                <View style={styles.transactionHeader}>
+                  <Text style={styles.sectionTitle}>Lịch sử rút tiền</Text>
+                  {loadingTransactions && <ActivityIndicator size="small" color={colors.accent} />}
+                </View>
+
+                {payoutTransactions.slice(0, 5).map((transaction) => {
+                  const statusColor = getPayoutStatusColor(transaction.status);
+
+                  return (
+                    <View key={transaction.txnId || transaction.id} style={styles.payoutItem}>
+                      <View style={styles.payoutLeft}>
+                        <View style={[styles.payoutStatusIndicator, { backgroundColor: statusColor + '20' }]}>
+                          <View style={[styles.payoutStatusDot, { backgroundColor: statusColor }]} />
+                        </View>
+                        <View style={styles.payoutInfo}>
+                          <Text style={styles.payoutDescription}>
+                            {paymentService.getTransactionTypeText(transaction.type)}
+                          </Text>
+                          <Text style={styles.payoutNote}>
+                            {transaction.note || 'Rút tiền về tài khoản ngân hàng'}
+                          </Text>
+                          <View style={styles.payoutMeta}>
+                            <Text style={[styles.payoutStatus, { color: statusColor }]}>
+                              {getPayoutStatusText(transaction.status)}
+                            </Text>
+                            <Text style={styles.payoutDate}>{formatDate(transaction.createdAt || transaction.created_at)}</Text>
+                          </View>
+                        </View>
+                      </View>
+                      <View style={styles.payoutRight}>
+                        <Text style={[styles.payoutAmount, { color: getTransactionAmountColor(transaction.direction) }]}>
+                          {formatTransactionAmount(transaction.amount, transaction.direction)}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </CleanCard>
+            </Animatable.View>
+          )}
+
           <Animatable.View animation="fadeInUp" duration={500} delay={200}>
             <CleanCard style={styles.cardSpacing} contentStyle={styles.transactionCardContent}>
               <View style={styles.transactionHeader}>
@@ -370,13 +577,13 @@ const WalletScreen = ({ navigation }) => {
                 {loadingTransactions && <ActivityIndicator size="small" color={colors.accent} />}
               </View>
 
-              {transactions.length === 0 ? (
+              {topupTransactions.length === 0 ? (
                 <View style={styles.emptyTransactions}>
                   <Icon name="receipt" size={44} color={colors.textMuted} />
-                  <Text style={styles.emptyTransactionsText}>Chưa có giao dịch nào</Text>
+                  <Text style={styles.emptyTransactionsText}>Chưa có giao dịch nạp tiền</Text>
                 </View>
               ) : (
-                transactions.slice(0, 5).map((transaction) => {
+                topupTransactions.slice(0, 5).map((transaction) => {
                   const icon = getTransactionIcon(transaction.type, transaction.direction);
                   return (
                     <View key={transaction.txnId || transaction.id} style={styles.transactionItem}>
@@ -442,13 +649,72 @@ const WalletScreen = ({ navigation }) => {
 
   function renderWithdrawModal() {
     return (
-      <Modal visible={showWithdrawModal} transparent animationType="slide" onRequestClose={() => setShowWithdrawModal(false)}>
+      <Modal 
+        visible={showWithdrawModal} 
+        transparent 
+        animationType="slide" 
+        onRequestClose={() => {
+          setShowWithdrawModal(false);
+          setSelectedBankAccountId(null);
+          setSaveBankAccount(false);
+        }}
+        onShow={loadSavedBankAccounts}
+      >
         <View style={styles.modalOverlay}>
           <Animatable.View animation="fadeInUp" duration={300} style={styles.modalContainer}>
             <Text style={styles.modalTitle}>Rút tiền</Text>
             <Text style={styles.modalSubtitle}>Nhập thông tin chuyển khoản</Text>
 
-            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 340 }}>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 400 }}>
+              {/* Saved Bank Accounts Selection */}
+              {savedBankAccounts.length > 0 && (
+                <View style={styles.savedAccountsContainer}>
+                  <Text style={styles.savedAccountsTitle}>Tài khoản đã lưu</Text>
+                  {savedBankAccounts.map((account) => (
+                    <TouchableOpacity
+                      key={account.id}
+                      style={[
+                        styles.savedAccountItem,
+                        selectedBankAccountId === account.id && styles.savedAccountItemSelected,
+                      ]}
+                      onPress={() => handleBankAccountSelect(account.id)}
+                    >
+                      <View style={styles.savedAccountInfo}>
+                        <Text style={styles.savedAccountName}>{account.bankName}</Text>
+                        <Text style={styles.savedAccountNumber}>{account.maskedAccountNumber}</Text>
+                        <Text style={styles.savedAccountHolder}>{account.accountHolderName}</Text>
+                      </View>
+                      <View style={styles.savedAccountActions}>
+                        {selectedBankAccountId === account.id && (
+                          <Icon name="check-circle" size={24} color="#22C55E" />
+                        )}
+                        <TouchableOpacity
+                          onPress={() => handleDeleteBankAccount(account.id)}
+                          style={styles.deleteAccountButton}
+                        >
+                          <Icon name="delete-outline" size={20} color="#EF4444" />
+                        </TouchableOpacity>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                  <TouchableOpacity
+                    style={styles.addNewAccountButton}
+                    onPress={() => {
+                      setSelectedBankAccountId(null);
+                      setWithdrawData({
+                        ...withdrawData,
+                        bankName: '',
+                        bankAccountNumber: '',
+                        accountHolderName: '',
+                      });
+                    }}
+                  >
+                    <Icon name="add-circle-outline" size={20} color={colors.accent} />
+                    <Text style={styles.addNewAccountText}>Thêm tài khoản mới</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
               <TextInput
                 style={styles.modalInput}
                 placeholder="Số tiền muốn rút"
@@ -463,14 +729,16 @@ const WalletScreen = ({ navigation }) => {
                 placeholderTextColor={colors.textMuted}
                 value={withdrawData.bankName}
                 onChangeText={(value) => handleWithdrawInputChange('bankName', value)}
+                editable={!selectedBankAccountId}
               />
               <TextInput
                 style={styles.modalInput}
                 placeholder="Số tài khoản"
                 placeholderTextColor={colors.textMuted}
                 keyboardType="number-pad"
-                value={withdrawData.bankAccountNumber}
+                value={selectedBankAccountId ? bankAccountService.maskAccountNumber(withdrawData.bankAccountNumber) : withdrawData.bankAccountNumber}
                 onChangeText={(value) => handleWithdrawInputChange('bankAccountNumber', value)}
+                editable={!selectedBankAccountId}
               />
               <TextInput
                 style={styles.modalInput}
@@ -478,11 +746,34 @@ const WalletScreen = ({ navigation }) => {
                 placeholderTextColor={colors.textMuted}
                 value={withdrawData.accountHolderName}
                 onChangeText={(value) => handleWithdrawInputChange('accountHolderName', value)}
+                editable={!selectedBankAccountId}
               />
+
+              {/* Save Bank Account Checkbox */}
+              {!selectedBankAccountId && (
+                <TouchableOpacity
+                  style={styles.checkboxContainer}
+                  onPress={() => setSaveBankAccount(!saveBankAccount)}
+                >
+                  <Icon
+                    name={saveBankAccount ? 'check-box' : 'check-box-outline-blank'}
+                    size={24}
+                    color={saveBankAccount ? colors.accent : colors.textMuted}
+                  />
+                  <Text style={styles.checkboxLabel}>Lưu tài khoản ngân hàng này</Text>
+                </TouchableOpacity>
+              )}
             </ScrollView>
 
             <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.modalCancel} onPress={() => setShowWithdrawModal(false)}>
+              <TouchableOpacity 
+                style={styles.modalCancel} 
+                onPress={() => {
+                  setShowWithdrawModal(false);
+                  setSelectedBankAccountId(null);
+                  setSaveBankAccount(false);
+                }}
+              >
                 <Text style={styles.modalCancelText}>Hủy</Text>
               </TouchableOpacity>
               <ModernButton title="Xác nhận" size="small" onPress={handleWithdraw} />
@@ -759,6 +1050,168 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Inter_400Regular',
     color: colors.textSecondary,
+  },
+  // Saved Bank Accounts Styles
+  savedAccountsContainer: {
+    marginBottom: 16,
+  },
+  savedAccountsTitle: {
+    fontSize: 14,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
+    marginBottom: 12,
+  },
+  savedAccountItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: colors.glassLight,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.25)',
+    marginBottom: 8,
+  },
+  savedAccountItemSelected: {
+    borderColor: colors.accent,
+    borderWidth: 2,
+    backgroundColor: colors.accent + '10',
+  },
+  savedAccountInfo: {
+    flex: 1,
+  },
+  savedAccountName: {
+    fontSize: 14,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
+    marginBottom: 4,
+  },
+  savedAccountNumber: {
+    fontSize: 13,
+    fontFamily: 'Inter_500Medium',
+    color: colors.textSecondary,
+    marginBottom: 2,
+  },
+  savedAccountHolder: {
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textMuted,
+  },
+  savedAccountActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  deleteAccountButton: {
+    padding: 4,
+  },
+  addNewAccountButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: colors.accent + '10',
+    borderWidth: 1,
+    borderColor: colors.accent + '30',
+    borderStyle: 'dashed',
+    gap: 8,
+    marginTop: 8,
+  },
+  addNewAccountText: {
+    fontSize: 14,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.accent,
+  },
+  checkboxContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    gap: 8,
+  },
+  checkboxLabel: {
+    fontSize: 14,
+    fontFamily: 'Inter_500Medium',
+    color: colors.textPrimary,
+  },
+  // Payout History Styles
+  payoutItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(148,163,184,0.15)',
+  },
+  payoutLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 12,
+  },
+  payoutStatusIndicator: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  payoutStatusDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  payoutInfo: {
+    flex: 1,
+  },
+  payoutDescription: {
+    fontSize: 14,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
+    marginBottom: 4,
+  },
+  payoutNote: {
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textSecondary,
+    marginBottom: 4,
+  },
+  payoutMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  payoutStatus: {
+    fontSize: 12,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  payoutDate: {
+    fontSize: 11,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textMuted,
+  },
+  payoutRight: {
+    alignItems: 'flex-end',
+    gap: 8,
+  },
+  payoutAmount: {
+    fontSize: 15,
+    fontFamily: 'Inter_700Bold',
+  },
+  cancelPayoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: '#EF4444' + '15',
+    gap: 4,
+  },
+  cancelPayoutText: {
+    fontSize: 12,
+    fontFamily: 'Inter_600SemiBold',
+    color: '#EF4444',
   },
 });
 
