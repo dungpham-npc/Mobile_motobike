@@ -6,7 +6,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { PaperProvider } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts, Inter_400Regular, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Linking, Alert } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from './src/theme/designTokens';
 import authService from './src/services/authService';
@@ -105,7 +105,43 @@ export default function App() {
 
   useEffect(() => {
     initializeApp();
+    setupDeepLinkHandling();
   }, []);
+
+  const setupDeepLinkHandling = () => {
+    // Handle deep links when app is opened from a closed state
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        handleDeepLink(url);
+      }
+    });
+
+    // Handle deep links when app is already running
+    const subscription = Linking.addEventListener('url', ({ url }) => {
+      handleDeepLink(url);
+    });
+
+    return () => {
+      subscription?.remove();
+    };
+  };
+
+  const handleDeepLink = (url) => {
+    console.log('App: Deep link received:', url);
+    
+    // Payment callbacks are handled by QRPaymentScreen
+    // This handler is for general navigation
+    if (url.startsWith('mssus://payment/')) {
+      // Payment callbacks will be handled by QRPaymentScreen if it's mounted
+      // Otherwise, navigate to wallet screen
+      if (navigationRef.current) {
+        const isAuth = authService.isAuthenticated();
+        if (isAuth) {
+          navigationRef.current.navigate('Wallet');
+        }
+      }
+    }
+  };
 
   const initializeApp = async () => {
     try {
@@ -129,9 +165,20 @@ export default function App() {
   }
 
   return (
-    <SafeAreaProvider>
+      <SafeAreaProvider>
       <PaperProvider>
-        <NavigationContainer ref={navigationRef}>
+        <NavigationContainer 
+          ref={navigationRef}
+          linking={{
+            prefixes: ['mssus://'],
+            config: {
+              screens: {
+                Wallet: 'wallet',
+                QRPayment: 'payment',
+              },
+            },
+          }}
+        >
           <Stack.Navigator
             initialRouteName={
               isAuthenticated

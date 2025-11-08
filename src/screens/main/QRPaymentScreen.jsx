@@ -11,7 +11,8 @@ import {
   Linking,
   ActivityIndicator,
   Image,
-  Dimensions
+  Dimensions,
+  AppState
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -40,7 +41,69 @@ const QRPaymentScreen = ({ navigation, route }) => {
 
   useEffect(() => {
     loadUserProfile();
+    setupDeepLinkListener();
+    
+    // Listen for app state changes to handle deep links when app comes to foreground
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    
+    return () => {
+      subscription?.remove();
+    };
   }, []);
+
+  const setupDeepLinkListener = () => {
+    // Handle deep links when app is already running
+    const subscription = Linking.addEventListener('url', handleDeepLink);
+    
+    // Check if app was opened with a deep link
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        handleDeepLink({ url });
+      }
+    });
+    
+    return () => {
+      subscription?.remove();
+    };
+  };
+
+  const handleAppStateChange = (nextAppState) => {
+    if (nextAppState === 'active') {
+      // App came to foreground, check for deep link
+      Linking.getInitialURL().then((url) => {
+        if (url && (url.includes('payment/success') || url.includes('payment/cancel'))) {
+          handleDeepLink({ url });
+        }
+      });
+    }
+  };
+
+  const handleDeepLink = ({ url }) => {
+    console.log('QRPaymentScreen: Deep link received:', url);
+    
+    if (url.includes('payment/success')) {
+      setPaymentStatus('success');
+      Alert.alert('Thành công', 'Nạp tiền thành công! Số dư ví đã được cập nhật.', [
+        {
+          text: 'OK',
+          onPress: () => {
+            // Navigate back to wallet screen and refresh balance
+            navigation.navigate('Wallet');
+          }
+        }
+      ]);
+    } else if (url.includes('payment/cancel')) {
+      setPaymentStatus('input');
+      Alert.alert('Đã hủy', 'Thanh toán đã bị hủy.', [
+        {
+          text: 'OK',
+          onPress: () => {
+            navigation.goBack();
+          }
+        }
+      ]);
+    }
+  };
 
   const loadUserProfile = async () => {
     try {
@@ -118,7 +181,7 @@ const QRPaymentScreen = ({ navigation, route }) => {
     }
   };
 
-  const simulatePaymentSuccess = () => {
+  const simulatePaymentSuccess = async () => {
     Alert.alert(
       'Mô phỏng thanh toán',
       'Bạn có muốn mô phỏng thanh toán thành công?',
@@ -126,16 +189,90 @@ const QRPaymentScreen = ({ navigation, route }) => {
         { text: 'Hủy', style: 'cancel' },
         { 
           text: 'Thành công', 
-          onPress: () => {
-            setPaymentStatus('processing');
-            setTimeout(() => {
-              setPaymentStatus('success');
-              Alert.alert(
-                'Thanh toán thành công!',
-                `Đã nạp ${paymentService.formatCurrency(isCustomAmount ? customAmount : amount)} vào ví của bạn`,
-                [{ text: 'OK', onPress: () => navigation.goBack() }]
+          onPress: async () => {
+            try {
+              setLoading(true);
+              setPaymentStatus('processing');
+
+              // Always call initiateTopUp first to get orderCode and amount
+              const finalAmount = isCustomAmount ? customAmount : amount;
+              const validAmount = validateAndSetAmount(finalAmount);
+              
+              if (!validAmount) {
+                setLoading(false);
+                return;
+              }
+
+              // Call initiateTopUp to get orderCode and amount
+              const result = await paymentService.initiateTopUp(
+                validAmount,
+                'PAYOS',
+                'mssus://payment/success',
+                'mssus://payment/cancel'
               );
-            }, 2000);
+
+              if (!result.success) {
+                throw new Error('Không thể tạo link thanh toán');
+              }
+
+              // Extract orderCode and amount from initiateTopUp response
+              const currentPaymentData = result.data;
+              const orderCode = currentPaymentData.orderCode || currentPaymentData.order_code;
+              const paymentAmount = currentPaymentData.amount || validAmount;
+              const description = currentPaymentData.description || 'Test wallet top-up';
+
+              if (!orderCode || !paymentAmount) {
+                throw new Error('Thiếu thông tin orderCode hoặc amount từ phản hồi initiateTopUp');
+              }
+
+              // Update paymentData state
+              setPaymentData(currentPaymentData);
+
+              // Simulate webhook with orderCode and amount from initiateTopUp
+              const webhookResult = await paymentService.simulateWebhook(
+                orderCode,
+                paymentAmount,
+                description
+              );
+
+              if (webhookResult.success) {
+                setPaymentStatus('success');
+                Alert.alert(
+                  'Thanh toán thành công!',
+                  `Đã nạp ${paymentService.formatCurrency(paymentAmount)} vào ví của bạn`,
+                  [
+                    { 
+                      text: 'OK', 
+                      onPress: () => {
+                        // Navigate back to wallet screen and refresh balance
+                        navigation.navigate('Wallet');
+                      }
+                    }
+                  ]
+                );
+              }
+            } catch (error) {
+              console.error('Simulate payment error:', error);
+              setPaymentStatus('failed');
+              let errorMessage = 'Không thể mô phỏng thanh toán';
+              if (error.message) {
+                errorMessage = error.message;
+              } else if (error instanceof ApiError) {
+                switch (error.status) {
+                  case 400:
+                    errorMessage = 'Thông tin thanh toán không hợp lệ';
+                    break;
+                  case 404:
+                    errorMessage = 'Không tìm thấy đơn hàng';
+                    break;
+                  default:
+                    errorMessage = error.message || errorMessage;
+                }
+              }
+              Alert.alert('Lỗi', errorMessage);
+            } finally {
+              setLoading(false);
+            }
           }
         }
       ]
@@ -206,7 +343,7 @@ const QRPaymentScreen = ({ navigation, route }) => {
               />
             </View>
             <Text style={styles.helperText}>
-              Tối thiểu: 10,000 VNĐ - Tối đa: 50,000,000 VNĐ
+              Tối thiểu: 10,000 VNĐ - Tối đa: 10,000,000 VNĐ
             </Text>
           </Animatable.View>
         )}
@@ -365,7 +502,10 @@ const QRPaymentScreen = ({ navigation, route }) => {
           <View style={styles.buttonContainer}>
             <ModernButton
               title="Hoàn thành"
-              onPress={() => navigation.goBack()}
+              onPress={() => {
+                // Navigate to wallet screen to show updated balance
+                navigation.navigate('Wallet');
+              }}
               icon="check"
               size="large"
             />

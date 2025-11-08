@@ -3,7 +3,8 @@ export const API_CONFIG = {
   // Development - Use your computer's IP address instead of localhost
   // To find your IP: Windows: ipconfig | Mac/Linux: ifconfig
   DEV: {
-    BASE_URL: 'http://192.168.101.20:8080/api/v1', // Android emulator
+
+    BASE_URL: 'http://192.168.2.15:8080/api/v1', // Android emulator
     // Alternative IPs to try:
     // BASE_URL: 'http://192.168.1.XXX:8081/api/v1', // Replace XXX with your IP
     // BASE_URL: 'http://172.20.10.2:8081/api/v1', // iOS simulator
@@ -153,16 +154,22 @@ export const ENDPOINTS = {
   // Wallet & Transactions (Updated API)
   WALLET: {
     BALANCE: '/wallet/balance',
-    TRANSACTIONS: '/wallet/transactions',
+    TRANSACTIONS: '/wallet/transactions', // Legacy endpoint (kept for backward compatibility)
     TOPUP_INIT: '/wallet/topup/init',
     PAYOUT_INIT: '/wallet/payout/init',
+    PAYOUT_CANCEL: '/wallet/payout/{payoutRef}/cancel', // Cancel payout (if backend supports)
     EARNINGS: '/wallet/earnings',
   },
 
-  // PayOS Payment Integration (Keep webhook for backend)
-  PAYOS: {
-    WEBHOOK: '/payos/webhook',
-  },
+    // Transaction Controller
+    TRANSACTIONS: {
+      USER_HISTORY: '/transaction/history/user-transactions', // Get user transaction history
+    },
+
+    // PayOS Controller
+    PAYOS: {
+      WEBHOOK: '/payos/webhook', // Simulate PayOS webhook
+    },
   
   // Ride Sharing APIs
   RIDES: {
