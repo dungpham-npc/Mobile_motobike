@@ -289,6 +289,7 @@ const RideTrackingScreen = ({ route, navigation }) => {
           <View style={styles.infoRow}>
             <Icon name="person" size={20} color="#666" />
             <Text style={styles.infoText}>
+              {console.log(rideData)}
               Khách hàng: {rideData?.riderName || 'N/A'}
             </Text>
           </View>

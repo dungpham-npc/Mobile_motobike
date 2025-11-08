@@ -288,27 +288,65 @@ async acceptBroadcastRequest(requestId, vehicleId, currentLocation = null, start
   async completeRide(rideId) {
     try {
       // First, get all ride requests to check their status
-      const requests = await this.getRideRequests(rideId);
-      const requestList = Array.isArray(requests) ? requests : (requests?.data || requests?.content || []);
+      console.log(`📋 Getting ride requests for ride ${rideId}...`);
+      const requestsResponse = await this.getRideRequests(rideId);
+      console.log('📋 Ride requests response:', JSON.stringify(requestsResponse, null, 2));
+      
+      // Extract request list from response (handle pagination)
+      const requestList = Array.isArray(requestsResponse) 
+        ? requestsResponse 
+        : (requestsResponse?.data || requestsResponse?.content || requestsResponse?.items || []);
+      
+      console.log(`📋 Found ${requestList.length} ride request(s)`);
       
       // Complete any ONGOING requests first
       const ongoingRequests = requestList.filter(req => req.status === 'ONGOING');
+      console.log(`📋 Found ${ongoingRequests.length} ONGOING request(s) to complete`);
+      
       for (const req of ongoingRequests) {
+        // Try multiple possible field names for rideRequestId
+        const rideRequestId = req.sharedRideRequestId || 
+                            req.shared_ride_request_id || 
+                            req.rideRequestId || 
+                            req.ride_request_id ||
+                            req.id;
+        
+        if (!rideRequestId) {
+          console.warn(`⚠️ Skipping request without ID:`, req);
+          continue;
+        }
+        
+        console.log(`🔄 Completing ride request ${rideRequestId} (status: ${req.status})...`);
         try {
-          console.log(`Completing ride request ${req.sharedRideRequestId || req.rideRequestId} before completing ride...`);
-          await this.completeRideRequestOfRide(rideId, req.sharedRideRequestId || req.rideRequestId);
+          await this.completeRideRequestOfRide(rideId, rideRequestId);
+          console.log(`✅ Completed ride request ${rideRequestId}`);
         } catch (err) {
-          console.warn(`Failed to complete request ${req.sharedRideRequestId || req.rideRequestId}:`, err);
+          console.warn(`⚠️ Failed to complete request ${rideRequestId}:`, err);
+          throw err;
         }
       }
       
       // Now complete the ride
-      const endpoint = ENDPOINTS.SHARED_RIDES.COMPLETE.replace('{rideId}', rideId);
+      console.log(`🔄 Completing ride ${rideId}...`);
+      const endpoint = ENDPOINTS.RIDES.COMPLETE.replace('{rideId}', rideId);
       // Backend expects body: { "rideId": 123 }
-      const response = await this.apiService.post(endpoint, { rideId });
-      return response;
+      try {
+        const response = await this.apiService.post(endpoint, { rideId });
+        console.log(`✅ Successfully completed ride ${rideId}`, response);
+        return response;
+      } catch (completeError) {
+        console.error('❌ Complete ride API error:', completeError);
+        console.error('❌ Error details:', {
+          message: completeError?.message,
+          status: completeError?.status,
+          response: completeError?.response,
+          data: completeError?.data
+        });
+        throw completeError;
+      }
     } catch (error) {
-      console.error('Complete ride error:', error);
+      console.error('❌ Complete ride error:', error);
+      console.error('❌ Full error object:', JSON.stringify(error, null, 2));
       throw error;
     }
   }

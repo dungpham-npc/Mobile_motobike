@@ -32,13 +32,14 @@ class LocationTrackingService {
     this.isSimulating = false;
     this.simulationTimer = null;
     this.simulationLocalOnly = true; // when true, still buffers but sendBatch will be skipped
-    this.simulationStepMs = 2000; // 2s per step
-    this.simulationSpeedMps = 8.33; // ~30km/h
+    this.simulationStepMs = 80; // faster updates
+    this.simulationSpeedMps = 80; // ~288km/h (super fast simulation)
     this.simulationProgress = 0;
     this.simulationStart = null; // { lat, lng }
     this.simulationEnd = null;   // { lat, lng }
     this.simulationPolyline = null; // decoded polyline points
     this.onSimulationLocation = null; // optional listener for UI
+    this.lastSimulatedPoint = null; // remember latest simulated point for flush
   }
 
   handleAppStateChange(nextAppState) {
@@ -119,48 +120,104 @@ class LocationTrackingService {
       this.simulationProgress = 0;
       this.isSimulating = true;
 
-      // Decode polyline if provided
-      let routePoints = null;
-      if (polyline && typeof polyline === 'string') {
+      // Decode polyline if provided and store it in instance variable
+      this.simulationPolyline = null;
+      if (polyline && typeof polyline === 'string' && polyline.length > 0) {
         try {
-          routePoints = this._decodePolyline(polyline);
-          console.log(`✅ Using polyline with ${routePoints.length} points for simulation`);
+          // Handle escaped backslashes in polyline string (e.g., "\\Z" -> "\Z")
+          const cleanedPolyline = polyline.replace(/\\\\/g, '\\');
+          const decodedPoints = this._decodePolyline(cleanedPolyline);
+          if (decodedPoints && decodedPoints.length > 1) {
+            this.simulationPolyline = decodedPoints;
+            console.log(`✅ Decoded polyline with ${decodedPoints.length} points for simulation`);
+            console.log(`📍 First point: lat=${decodedPoints[0].lat.toFixed(6)}, lng=${decodedPoints[0].lng.toFixed(6)}`);
+            console.log(`📍 Last point: lat=${decodedPoints[decodedPoints.length - 1].lat.toFixed(6)}, lng=${decodedPoints[decodedPoints.length - 1].lng.toFixed(6)}`);
+            console.log(`📍 Start point: lat=${start.lat.toFixed(6)}, lng=${start.lng.toFixed(6)}`);
+            console.log(`📍 End point: lat=${end.lat.toFixed(6)}, lng=${end.lng.toFixed(6)}`);
+            
+            // Verify polyline matches start/end points (within reasonable tolerance ~100m)
+            const firstPoint = decodedPoints[0];
+            const lastPoint = decodedPoints[decodedPoints.length - 1];
+            const distToStart = this._haversineMeters({ lat: start.lat, lng: start.lng }, firstPoint);
+            const distToEnd = this._haversineMeters({ lat: end.lat, lng: end.lng }, lastPoint);
+            
+            if (distToStart > 100 || distToEnd > 100) {
+              console.warn(`⚠️ Polyline endpoints don't match start/end (start diff: ${distToStart.toFixed(0)}m, end diff: ${distToEnd.toFixed(0)}m)`);
+              console.warn(`⚠️ Using polyline as-is, but may not align perfectly with start/end`);
+            }
+          } else {
+            console.warn('⚠️ Decoded polyline has <= 1 points, using straight line');
+          }
         } catch (e) {
-          console.warn('Failed to decode polyline, using straight line:', e);
+          console.error('❌ Failed to decode polyline:', e);
+          console.error('❌ Polyline string:', polyline.substring(0, 100));
+          console.warn('⚠️ Falling back to straight line interpolation');
         }
+      } else {
+        console.log('ℹ️ No polyline provided, using straight line interpolation');
       }
 
       // Calculate total distance and time
       let totalDistance = 0;
       let totalSeconds = 0;
       
-      if (routePoints && routePoints.length > 1) {
+      if (this.simulationPolyline && this.simulationPolyline.length > 1) {
         // Calculate distance along polyline
-        for (let i = 1; i < routePoints.length; i++) {
-          totalDistance += this._haversineMeters(routePoints[i - 1], routePoints[i]);
+        for (let i = 1; i < this.simulationPolyline.length; i++) {
+          totalDistance += this._haversineMeters(this.simulationPolyline[i - 1], this.simulationPolyline[i]);
         }
         totalSeconds = Math.max(1, totalDistance / this.simulationSpeedMps);
+        console.log(`📍 Total distance along polyline: ${(totalDistance / 1000).toFixed(2)} km, estimated time: ${(totalSeconds / 60).toFixed(1)} minutes`);
       } else {
         // Fallback to straight line
         totalDistance = this._haversineMeters(this.simulationStart, this.simulationEnd);
         totalSeconds = Math.max(1, totalDistance / this.simulationSpeedMps);
+        console.log(`📍 Straight line distance: ${(totalDistance / 1000).toFixed(2)} km, estimated time: ${(totalSeconds / 60).toFixed(1)} minutes`);
       }
 
+      // Track current polyline index for direct navigation
+      this.simulationPolylineIndex = 0;
+      this.simulationStartTime = Date.now(); // Track start time for time-based progress
+      
       this.simulationTimer = setInterval(() => {
         if (!this.isSimulating) return;
-        this.simulationProgress += (this.simulationStepMs / 1000) / totalSeconds;
-        if (this.simulationProgress >= 1) this.simulationProgress = 1;
-
+        
         let point;
         
-        if (routePoints && routePoints.length > 1) {
-          // Interpolate along polyline
-          const index = Math.floor(this.simulationProgress * (routePoints.length - 1));
-          const nextIndex = Math.min(index + 1, routePoints.length - 1);
-          const segmentProgress = (this.simulationProgress * (routePoints.length - 1)) - index;
-          point = this._lerpLatLng(routePoints[index], routePoints[nextIndex], segmentProgress);
+        if (this.simulationPolyline && this.simulationPolyline.length > 1) {
+          // Use time-based progress for smooth movement
+          const timeElapsed = (Date.now() - this.simulationStartTime) / 1000;
+          this.simulationProgress = Math.min(1, timeElapsed / totalSeconds);
+          
+          // Map progress to polyline index
+          const totalPoints = this.simulationPolyline.length;
+          const targetIndex = this.simulationProgress * (totalPoints - 1);
+          const currentIndex = Math.floor(targetIndex);
+          const nextIndex = Math.min(currentIndex + 1, totalPoints - 1);
+          const segmentProgress = targetIndex - currentIndex;
+          
+          // Interpolate between current and next point for smooth movement
+          point = this._lerpLatLng(
+            this.simulationPolyline[currentIndex],
+            this.simulationPolyline[nextIndex],
+            segmentProgress
+          );
+          
+          // If we've reached the end, use the last point exactly
+          if (this.simulationProgress >= 1) {
+            point = this.simulationPolyline[totalPoints - 1];
+            this.simulationProgress = 1;
+          }
+          
+          // Debug log every 5% progress
+          const logInterval = 20; // Every 5%
+          if (Math.floor(this.simulationProgress * logInterval) !== Math.floor((this.simulationProgress - (this.simulationStepMs / 1000) / totalSeconds) * logInterval)) {
+            console.log(`📍 Simulation progress: ${(this.simulationProgress * 100).toFixed(1)}% - Point ${currentIndex + 1}/${totalPoints} - lat=${point.lat.toFixed(6)}, lng=${point.lng.toFixed(6)}`);
+          }
         } else {
-          // Straight line interpolation
+          // Straight line interpolation when no polyline
+          const timeElapsed = (Date.now() - this.simulationStartTime) / 1000;
+          this.simulationProgress = Math.min(1, timeElapsed / totalSeconds);
           point = this._lerpLatLng(this.simulationStart, this.simulationEnd, this.simulationProgress);
         }
 
@@ -170,10 +227,18 @@ class LocationTrackingService {
         }
 
         // Feed into existing pipeline as a fake OS location
+        // Use current time for timestamp to ensure each point has a unique timestamp
+        // This matches demo behavior where each point has a sequential timestamp
         const fake = [{
           coords: { latitude: point.lat, longitude: point.lng, accuracy: 10 },
-          timestamp: Date.now()
+          timestamp: Date.now() // Will be converted to ISO string in processLocationUpdate
         }];
+        // Keep latest simulated point for immediate flush when needed
+        this.lastSimulatedPoint = {
+          lat: point.lat,
+          lng: point.lng,
+          timestamp: new Date().toISOString(),
+        };
         this.processLocationUpdate(fake);
 
         if (this.simulationProgress >= 1) {
@@ -183,6 +248,7 @@ class LocationTrackingService {
     } catch (e) {
       console.error('Failed to start simulation:', e);
       this.stopSimulation();
+      throw e;
     }
   }
 
@@ -471,18 +537,29 @@ class LocationTrackingService {
 
   async processLocationUpdate(locations) {
     if (!this.isTracking || !this.currentRideId) return;
-    
-    // Skip processing during simulation to avoid triggering real tracking
-    if (this.isSimulating) return;
 
     try {
+      // Process both real GPS and simulation locations
       const validLocations = (locations || [])
-        .filter((loc) => loc?.coords?.accuracy <= 50)
-        .map((loc) => ({
-          lat: loc.coords.latitude,
-          lng: loc.coords.longitude,
-          timestamp: new Date(loc.timestamp).toISOString()
-        }));
+        .filter((loc) => {
+          // For simulation, allow any accuracy (we set accuracy: 10)
+          // For real GPS, filter by accuracy <= 50
+          if (this.isSimulating) return true;
+          return loc?.coords?.accuracy <= 50;
+        })
+        .map((loc) => {
+          // Create timestamp in ISO format (matching demo format)
+          // Use the location's timestamp if available, otherwise use current time
+          const timestamp = loc.timestamp 
+            ? new Date(loc.timestamp).toISOString()
+            : new Date().toISOString();
+          
+          return {
+            lat: loc.coords.latitude,
+            lng: loc.coords.longitude,
+            timestamp: timestamp
+          };
+        });
 
       if (validLocations.length === 0) return;
 
@@ -505,14 +582,13 @@ class LocationTrackingService {
     if (!this.currentRideId || this.locationBuffer.length === 0) return;
 
     try {
-      // When simulating locally, skip sending to backend to avoid noisy errors
+      // If simulating with localOnly, don't send to server (buffer kept for UI only)
       if (this.isSimulating && this.simulationLocalOnly) {
-        this.locationBuffer = [];
-        this.lastSendTime = Date.now();
+        // Do not clear buffer; keep accumulating for when sending is enabled
         return;
       }
 
-      // Check ride status before sending location data
+      // Only send to server when ride is ONGOING (backend requires it to accept tracking)
       const rideStatus = await this.getRideStatus();
       if (rideStatus !== 'ONGOING') {
         console.log(`Ride ${this.currentRideId} status is ${rideStatus}, skipping location send (will retry later)`);
@@ -520,22 +596,23 @@ class LocationTrackingService {
         return;
       }
 
-      // Convert location buffer to LocationPoint format (with ZonedDateTime timestamp)
+      // Convert location buffer to LocationPoint format (matching demo format)
+      // Format: [{ lat: number, lng: number, timestamp: ISO string }, ...]
       const points = this.locationBuffer.map(loc => ({
         lat: loc.lat,
         lng: loc.lng,
         timestamp: loc.timestamp // ISO string - backend will parse to ZonedDateTime
       }));
 
-      // Send via WebSocket to /app/ride.track.{rideId}
+      // Send via WebSocket STOMP to /app/ride.track.{rideId} (matching demo)
       const wsDestination = `/app/ride.track.${this.currentRideId}`;
       
       if (websocketService.isConnected && websocketService.client) {
+        // Use publish() method (equivalent to demo's stomp.send())
         websocketService.client.publish({
           destination: wsDestination,
           body: JSON.stringify(points),
         });
-        console.log(`📍 Sent ${points.length} location points via WebSocket to ${wsDestination}`);
         this.locationBuffer = [];
         this.lastSendTime = Date.now();
       } else {
@@ -543,7 +620,6 @@ class LocationTrackingService {
         console.warn('WebSocket not connected, trying REST API fallback...');
         const endpoint = ENDPOINTS.RIDES.TRACK.replace('{rideId}', this.currentRideId);
         const response = await apiService.post(endpoint, points);
-        console.log(`📍 Sent ${points.length} location points via REST API for ride ${this.currentRideId}`);
         this.locationBuffer = [];
         this.lastSendTime = Date.now();
         return response;
@@ -552,6 +628,29 @@ class LocationTrackingService {
       console.error('Failed to send location batch:', error);
       // Giữ nguyên buffer để retry lần sau
       throw error;
+    }
+  }
+
+  /**
+   * Enable/disable sending simulation points to server.
+   */
+  setSimulationLocalOnly(localOnly) {
+    this.simulationLocalOnly = !!localOnly;
+  }
+
+  /**
+   * Immediately push latest simulated point (if any) and send to server.
+   * Use after ride becomes ONGOING to provide an up-to-date position before validations.
+   */
+  async sendLatestPointNow() {
+    try {
+      if (!this.currentRideId) return;
+      if (this.lastSimulatedPoint) {
+        this.locationBuffer.push({ ...this.lastSimulatedPoint });
+      }
+      await this.sendLocationBatch();
+    } catch (e) {
+      console.warn('sendLatestPointNow failed:', e?.message || e);
     }
   }
 

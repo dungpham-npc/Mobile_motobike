@@ -330,15 +330,28 @@ const GoongMap = ({
       }));
     }
 
-    // Update polyline
+    // Update polyline - only log when actually changed to reduce noise
     if (polyline && polyline.length > 0) {
-      const jsCode = `
-        if (typeof addPolyline === 'function') {
-          addPolyline(${JSON.stringify(polyline)});
-        }
-        true;
-      `;
-      webViewRef.current.injectJavaScript(jsCode);
+      // Only log if polyline length changed significantly (to reduce console spam)
+      const prevLength = webViewRef.current._lastPolylineLength || 0;
+      if (Math.abs(polyline.length - prevLength) > 5 || prevLength === 0) {
+        console.log(`📍 Updating polyline on map with ${polyline.length} points`);
+        webViewRef.current._lastPolylineLength = polyline.length;
+      }
+      webViewRef.current.postMessage(JSON.stringify({
+        type: 'addPolyline',
+        coordinates: polyline
+      }));
+    } else if (polyline === null || (Array.isArray(polyline) && polyline.length === 0)) {
+      // Clear polyline if explicitly set to empty/null
+      if (webViewRef.current._lastPolylineLength > 0) {
+        console.log('📍 Clearing polyline from map');
+        webViewRef.current._lastPolylineLength = 0;
+      }
+      webViewRef.current.postMessage(JSON.stringify({
+        type: 'addPolyline',
+        coordinates: []
+      }));
     }
   }, [mapReady, markers, polyline]);
 

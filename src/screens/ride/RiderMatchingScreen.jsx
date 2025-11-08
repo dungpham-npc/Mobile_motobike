@@ -280,9 +280,12 @@ const RiderMatchingScreen = ({ navigation, route }) => {
 
             {rideRequest.fare && (
               <View style={styles.fareRow}>
+                {
+                  console.log(rideRequest.fare)
+                }
                 <Icon name="attach-money" size={20} color="#FF9800" />
                 <Text style={styles.fareText}>
-                  {rideRequest.fare.total?.amount?.toLocaleString() || '0'} VNĐ
+                  {rideRequest.fare.total.toLocaleString() || '0'} VNĐ
                 </Text>
               </View>
             )}

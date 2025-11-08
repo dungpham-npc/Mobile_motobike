@@ -417,21 +417,6 @@ const [timePart, setTimePart] = React.useState(() => {
             />
           </View>
 
-          {/* Schedule */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Thời gian khởi hành</Text>
-            <TouchableOpacity
-              style={styles.dateTimeButton}
-              onPress={() => setShowDatePicker(true)}
-            >
-              <Icon name="schedule" size={20} color="#2196F3" />
-              <Text style={styles.dateTimeText}>
-                {scheduledTime.toLocaleString("vi-VN")}
-              </Text>
-              <Icon name="keyboard-arrow-right" size={20} color="#666" />
-            </TouchableOpacity>
-          </View>
-
           {/* Create Button */}
           <TouchableOpacity
             style={[styles.createButton, loading && styles.disabledButton]}
