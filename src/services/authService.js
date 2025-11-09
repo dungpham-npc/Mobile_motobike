@@ -117,12 +117,14 @@ class AuthService {
       }
 
       console.log('🔄 Refreshing access token...');
+      // Backend expects refreshToken (camelCase) in TokenRefreshRequest
       const response = await apiService.post('/auth/refresh', {
-        refresh_token: refreshToken
+        refreshToken: refreshToken
       });
 
-      const newAccessToken = response.access_token || response.token;
-      const newRefreshToken = response.refresh_token || refreshToken;
+      // Backend returns accessToken (camelCase), check both formats for compatibility
+      const newAccessToken = response.accessToken || response.access_token || response.token;
+      const newRefreshToken = response.refreshToken || response.refresh_token || refreshToken;
 
       if (!newAccessToken) {
         throw new Error('No access token received from refresh');

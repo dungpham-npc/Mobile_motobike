@@ -4,7 +4,7 @@ export const API_CONFIG = {
   // To find your IP: Windows: ipconfig | Mac/Linux: ifconfig
   DEV: {
 
-    BASE_URL: 'http://192.168.2.15:8080/api/v1', // Android emulator
+    BASE_URL: 'http://192.168.101.52:8080/api/v1', // Android emulator
     // Alternative IPs to try:
     // BASE_URL: 'http://192.168.1.XXX:8081/api/v1', // Replace XXX with your IP
     // BASE_URL: 'http://172.20.10.2:8081/api/v1', // iOS simulator
@@ -251,5 +251,21 @@ export const ENDPOINTS = {
     FALLBACK_ENDPOINTS: ['/ws/websocket', '/websocket', '/ws'], // Try multiple endpoints
     DRIVER_QUEUE: '/user/queue/ride-offers',
     RIDER_QUEUE: '/user/queue/ride-matching',
+  },
+
+  // Report endpoints
+  REPORTS: {
+    // User endpoints
+    CREATE: '/user-reports', // POST - Submit general user report
+    SUBMIT_RIDE_REPORT: '/rides/{rideId}/report', // POST - Submit ride-specific report
+    MY_REPORTS: '/user-reports/my-reports', // GET - Get user's own reports
+    DRIVER_RESPONSE: '/user-reports/{reportId}/driver-response', // POST - Submit driver response
+    
+    // Admin endpoints
+    LIST: '/user-reports', // GET - Get all reports with filters (admin)
+    DETAILS: '/user-reports/{reportId}', // GET - Get report details (admin)
+    UPDATE_STATUS: '/user-reports/{reportId}', // PATCH - Update report status (admin)
+    RESOLVE: '/user-reports/{reportId}/resolve', // POST - Resolve report (admin)
+    ANALYTICS: '/user-reports/analytics', // GET - Get report analytics (admin)
   },
 };

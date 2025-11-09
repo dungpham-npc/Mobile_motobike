@@ -92,7 +92,8 @@ class ApiService {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-        body: JSON.stringify({ refresh_token: refreshToken }),
+        // Backend expects refreshToken (camelCase) in TokenRefreshRequest
+        body: JSON.stringify({ refreshToken: refreshToken }),
       });
 
       if (!response.ok) {
@@ -100,8 +101,9 @@ class ApiService {
       }
 
       const data = await response.json();
-      const newAccessToken = data.access_token || data.token;
-      const newRefreshToken = data.refresh_token;
+      // Backend returns accessToken (camelCase), check both formats for compatibility
+      const newAccessToken = data.accessToken || data.access_token || data.token;
+      const newRefreshToken = data.refreshToken || data.refresh_token;
 
       if (newAccessToken) {
         this.setToken(newAccessToken);
