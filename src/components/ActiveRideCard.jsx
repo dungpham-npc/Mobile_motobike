@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, AppState } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import * as Animatable from 'react-native-animatable';
 import activeRideService from '../services/activeRideService';
+import rideService from '../services/rideService';
+import authService from '../services/authService';
 
 const ActiveRideCard = ({ navigation }) => {
   const [activeRide, setActiveRide] = useState(null);
@@ -10,21 +12,192 @@ const ActiveRideCard = ({ navigation }) => {
 
   useEffect(() => {
     loadActiveRide();
-  }, []);
+    
+    // Refresh when screen comes into focus
+    const unsubscribe = navigation.addListener('focus', () => {
+      loadActiveRide();
+    });
+    
+    // Refresh when app comes to foreground
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        loadActiveRide();
+      }
+    });
+    
+    return () => {
+      unsubscribe();
+      subscription?.remove();
+    };
+  }, [navigation]);
 
   const loadActiveRide = async () => {
     try {
-      const ride = await activeRideService.getActiveRide();
+      setLoading(true);
+      
+      // First try to get from AsyncStorage (for backward compatibility)
+      let ride = await activeRideService.getActiveRide();
+      
+      // Validate requestId if ride exists in storage
+      if (ride && (!ride.requestId || ride.requestId === 'undefined' || ride.requestId === 'null' || ride.requestId === '{requestId}')) {
+        console.warn('⚠️ [ActiveRideCard] Invalid requestId in stored ride, clearing...');
+        await activeRideService.clearActiveRide();
+        ride = null;
+      }
+      
+      // Always fetch from backend API to get the newest ONGOING request (only if we have riderId)
+      try {
+        const currentUser = authService.getCurrentUser();
+        // Use userId from various possible locations (user_id is the standard field)
+        const riderId = currentUser?.user?.user_id || currentUser?.user?.userId || currentUser?.userId || currentUser?.user?.id || currentUser?.id;
+        
+        console.log('🔍 [ActiveRideCard] Current user:', currentUser);
+        console.log('🔍 [ActiveRideCard] User ID (riderId):', riderId);
+        
+        if (riderId) {
+          // First, try to fetch ONGOING requests (highest priority)
+          console.log('📥 [ActiveRideCard] Fetching ONGOING requests from backend for rider:', riderId);
+          let response = await rideService.getRiderRequests(riderId, 'ONGOING', 0, 1);
+          console.log('📥 [ActiveRideCard] ONGOING response:', JSON.stringify(response, null, 2));
+          
+          // Handle different response structures
+          let requests = [];
+          if (Array.isArray(response)) {
+            requests = response;
+          } else if (response?.data && Array.isArray(response.data)) {
+            requests = response.data;
+          } else if (response?.content && Array.isArray(response.content)) {
+            requests = response.content;
+          } else if (response?.pagination?.data && Array.isArray(response.pagination.data)) {
+            requests = response.pagination.data;
+          }
+          
+          console.log('📥 [ActiveRideCard] ONGOING requests extracted:', requests.length);
+          
+          // If no ONGOING request, try CONFIRMED requests
+          if (requests.length === 0) {
+            console.log('📥 [ActiveRideCard] No ONGOING request, fetching CONFIRMED requests...');
+            response = await rideService.getRiderRequests(riderId, 'CONFIRMED', 0, 1);
+            console.log('📥 [ActiveRideCard] CONFIRMED response:', JSON.stringify(response, null, 2));
+            
+            // Handle different response structures
+            if (Array.isArray(response)) {
+              requests = response;
+            } else if (response?.data && Array.isArray(response.data)) {
+              requests = response.data;
+            } else if (response?.content && Array.isArray(response.content)) {
+              requests = response.content;
+            } else if (response?.pagination?.data && Array.isArray(response.pagination.data)) {
+              requests = response.pagination.data;
+            }
+            
+            console.log('📥 [ActiveRideCard] CONFIRMED requests extracted:', requests.length);
+          }
+          
+          // Get the newest request (first one, sorted by createdAt desc)
+          const activeRequest = requests.length > 0 ? requests[0] : null;
+          
+          if (activeRequest) {
+            console.log('✅ [ActiveRideCard] Found active request:', JSON.stringify(activeRequest, null, 2));
+            
+            // Extract requestId and validate it
+            const requestId = activeRequest.shared_ride_request_id || activeRequest.sharedRideRequestId || activeRequest.requestId || activeRequest.id;
+            
+            console.log('🔍 [ActiveRideCard] Extracted requestId:', requestId);
+            
+            // Validate requestId before saving
+            if (!requestId || requestId === 'undefined' || requestId === 'null' || requestId === '{requestId}') {
+              console.warn('⚠️ [ActiveRideCard] Invalid requestId from backend, skipping save');
+              // Clear any old invalid data
+              await activeRideService.clearActiveRide();
+              ride = null;
+            } else {
+              // Transform backend response to activeRide format
+              ride = {
+                rideId: activeRequest.shared_ride_id || activeRequest.sharedRideId || activeRequest.rideId,
+                requestId: requestId,
+                status: activeRequest.status || activeRequest.requestStatus || 'ONGOING',
+                userType: 'rider',
+                driverInfo: {
+                  driverName: activeRequest.driver_name || activeRequest.driverName || 'Tài xế',
+                  driverRating: activeRequest.driver_rating || activeRequest.driverRating,
+                  vehicleModel: activeRequest.vehicle_model || activeRequest.vehicleModel,
+                  vehiclePlate: activeRequest.vehicle_plate || activeRequest.vehiclePlate,
+                  totalFare: activeRequest.total_fare?.amount || activeRequest.totalFare?.amount || activeRequest.totalFare || 0,
+                },
+                pickupLocation: {
+                  name: activeRequest.pickup_location?.name || activeRequest.pickupLocationName || 'Điểm đón',
+                  lat: activeRequest.pickup_location?.lat || activeRequest.pickupLat,
+                  lng: activeRequest.pickup_location?.lng || activeRequest.pickupLng,
+                },
+                dropoffLocation: {
+                  name: activeRequest.dropoff_location?.name || activeRequest.dropoffLocationName || 'Điểm đến',
+                  lat: activeRequest.dropoff_location?.lat || activeRequest.dropoffLat,
+                  lng: activeRequest.dropoff_location?.lng || activeRequest.dropoffLng,
+                },
+                totalFare: activeRequest.total_fare?.amount || activeRequest.totalFare?.amount || activeRequest.totalFare || 0,
+                timestamp: Date.now(),
+              };
+              
+              console.log('💾 [ActiveRideCard] Saving active ride to storage:', ride);
+              
+              // Save to AsyncStorage for future quick access
+              await activeRideService.saveActiveRide(ride);
+            }
+          } else {
+            // No active request found, clear old data
+            console.log('📭 [ActiveRideCard] No active request found, clearing old data');
+            await activeRideService.clearActiveRide();
+            ride = null;
+          }
+        } else {
+          console.warn('⚠️ [ActiveRideCard] No riderId found, cannot fetch active requests');
+        }
+      } catch (apiError) {
+        console.error('❌ [ActiveRideCard] Failed to fetch from API:', apiError);
+        console.error('❌ [ActiveRideCard] Error details:', JSON.stringify(apiError, null, 2));
+        // If API fails and we have cached data, use it; otherwise clear
+        if (!ride) {
+          await activeRideService.clearActiveRide();
+        }
+      }
+      
+      console.log('🎯 [ActiveRideCard] Setting activeRide state:', ride);
       setActiveRide(ride);
     } catch (error) {
-      console.error('Failed to load active ride:', error);
+      console.error('❌ [ActiveRideCard] Failed to load active ride:', error);
+      setActiveRide(null);
     } finally {
       setLoading(false);
     }
   };
+  
+  // Debug: Log when activeRide changes
+  useEffect(() => {
+    console.log('🔄 [ActiveRideCard] activeRide state changed:', activeRide);
+  }, [activeRide]);
 
   const handleResumeRide = () => {
     if (!activeRide) return;
+
+    // Validate requestId before navigating
+    if (!activeRide.requestId || activeRide.requestId === 'undefined' || activeRide.requestId === 'null' || activeRide.requestId === '{requestId}') {
+      console.warn('⚠️ [ActiveRideCard] Invalid requestId, clearing active ride');
+      Alert.alert(
+        'Lỗi',
+        'Thông tin chuyến đi không hợp lệ. Vui lòng thử lại.',
+        [
+          {
+            text: 'OK',
+            onPress: async () => {
+              await activeRideService.clearActiveRide();
+              setActiveRide(null);
+            }
+          }
+        ]
+      );
+      return;
+    }
 
     const screenName = activeRide.userType === 'driver' ? 'DriverRideTracking' : 'RideTracking';
     const params = {
@@ -37,6 +210,42 @@ const ActiveRideCard = ({ navigation }) => {
     };
 
     navigation.navigate(screenName, params);
+  };
+
+  const handleViewDetails = () => {
+    if (!activeRide) return;
+    
+    if (activeRide.userType === 'driver') {
+      // Navigate to driver ride details
+      navigation.navigate('DriverRideDetails', { rideId: activeRide.rideId });
+    } else {
+      // Validate requestId before navigating
+      if (!activeRide.requestId || activeRide.requestId === 'undefined' || activeRide.requestId === 'null' || activeRide.requestId === '{requestId}') {
+        console.warn('⚠️ [ActiveRideCard] Invalid requestId, clearing active ride');
+        Alert.alert(
+          'Lỗi',
+          'Thông tin chuyến đi không hợp lệ. Vui lòng thử lại.',
+          [
+            {
+              text: 'OK',
+              onPress: async () => {
+                await activeRideService.clearActiveRide();
+                setActiveRide(null);
+              }
+            }
+          ]
+        );
+        return;
+      }
+      
+      // Navigate to ride tracking screen (which shows details)
+      navigation.navigate('RideTracking', {
+        rideId: activeRide.rideId,
+        requestId: activeRide.requestId,
+        driverInfo: activeRide.driverInfo,
+        status: activeRide.status,
+      });
+    }
   };
 
   const handleCancelRide = () => {
@@ -147,7 +356,14 @@ const ActiveRideCard = ({ navigation }) => {
           onPress={handleResumeRide}
         >
           <Icon name="play-arrow" size={20} color="#fff" />
-          <Text style={styles.resumeText}>Tiếp tục</Text>
+          <Text style={styles.resumeText}>Theo dõi</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.detailsButton}
+          onPress={handleViewDetails}
+        >
+          <Icon name="info-outline" size={18} color="#2196F3" />
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -237,7 +453,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 8,
     flex: 1,
-    marginRight: 12,
+    marginRight: 8,
     justifyContent: 'center',
   },
   resumeText: {
@@ -245,6 +461,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginLeft: 6,
+  },
+  detailsButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#2196F3',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
   },
   cancelButton: {
     width: 40,

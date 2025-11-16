@@ -31,6 +31,7 @@ class LocationTrackingService {
     // Simulation state
     this.isSimulating = false;
     this.simulationTimer = null;
+    this.polylineSimulationTimer = null; // Timer for polyline-based simulation
     this.simulationLocalOnly = true; // when true, still buffers but sendBatch will be skipped
     this.simulationStepMs = 2000; // 2s per step
     this.simulationSpeedMps = 8.33; // ~30km/h
@@ -39,6 +40,7 @@ class LocationTrackingService {
     this.simulationEnd = null;   // { lat, lng }
     this.simulationPolyline = null; // decoded polyline points
     this.onSimulationLocation = null; // optional listener for UI
+    this.onSimulationComplete = null; // optional listener for simulation completion
   }
 
   handleAppStateChange(nextAppState) {
@@ -96,6 +98,10 @@ class LocationTrackingService {
   // --- Simulation helpers ---
   setSimulationListener(listener) {
     this.onSimulationLocation = typeof listener === 'function' ? listener : null;
+  }
+
+  setSimulationCompleteListener(listener) {
+    this.onSimulationComplete = typeof listener === 'function' ? listener : null;
   }
 
   getSimulationState() {
@@ -177,6 +183,10 @@ class LocationTrackingService {
         this.processLocationUpdate(fake);
 
         if (this.simulationProgress >= 1) {
+          // Notify completion listener before stopping
+          if (this.onSimulationComplete) {
+            this.onSimulationComplete();
+          }
           this.stopSimulation();
         }
       }, this.simulationStepMs);
@@ -191,8 +201,101 @@ class LocationTrackingService {
       clearInterval(this.simulationTimer);
       this.simulationTimer = null;
     }
+    if (this.polylineSimulationTimer) {
+      clearInterval(this.polylineSimulationTimer);
+      this.polylineSimulationTimer = null;
+    }
     this.isSimulating = false;
     this.simulationProgress = 0;
+  }
+
+  // Start simulation with pre-decoded polyline points, sending GPS data at specified interval
+  startSimulationWithPolyline({ points, rideId, intervalMs = 1000, localOnly = false }) {
+    try {
+      if (!points || points.length === 0) {
+        throw new Error('Points array is required');
+      }
+      if (!rideId) {
+        throw new Error('rideId is required');
+      }
+
+      console.log(`🚀 [LocationTracking] Starting polyline simulation with ${points.length} points, interval: ${intervalMs}ms`);
+      
+      this.currentRideId = rideId;
+      this.isSimulating = true;
+      this.simulationLocalOnly = !!localOnly;
+      this.simulationProgress = 0;
+      
+      let currentIndex = 0;
+
+      this.polylineSimulationTimer = setInterval(() => {
+        if (!this.isSimulating || currentIndex >= points.length) {
+          this.stopSimulation();
+          return;
+        }
+
+        const point = points[currentIndex];
+        const location = {
+          latitude: point.latitude || point.lat,
+          longitude: point.longitude || point.lng,
+        };
+
+        // Notify UI
+        if (this.onSimulationLocation) {
+          this.onSimulationLocation(location);
+        }
+
+        // Send GPS data to backend if not localOnly
+        if (!this.simulationLocalOnly && this.currentRideId) {
+          // Send immediately to tracking endpoint (bypass buffer for fast simulation)
+          const point = {
+            lat: location.latitude,
+            lng: location.longitude,
+            timestamp: new Date().toISOString()
+          };
+
+          // Send via WebSocket immediately
+          const wsDestination = `/app/ride.track.${this.currentRideId}`;
+          if (websocketService.isConnected && websocketService.client) {
+            try {
+              websocketService.client.publish({
+                destination: wsDestination,
+                body: JSON.stringify([point]), // Send single point immediately
+              });
+              console.log(`✅ [LocationTracking] Sent simulation point ${currentIndex + 1}/${points.length} via WebSocket`);
+            } catch (wsError) {
+              console.error('❌ [LocationTracking] WebSocket publish error:', wsError);
+            }
+          } else {
+            // Fallback to REST API (fire and forget)
+            const endpoint = ENDPOINTS.RIDES.TRACK.replace('{rideId}', this.currentRideId);
+            apiService.post(endpoint, [point])
+              .then(() => {
+                console.log(`✅ [LocationTracking] Sent simulation point ${currentIndex + 1}/${points.length} via REST API`);
+              })
+              .catch((apiError) => {
+                console.error('❌ [LocationTracking] REST API error:', apiError);
+              });
+          }
+        }
+
+        currentIndex++;
+        this.simulationProgress = currentIndex / points.length;
+
+        if (currentIndex >= points.length) {
+          console.log('✅ [LocationTracking] Polyline simulation completed');
+          // Notify completion listener before stopping
+          if (this.onSimulationComplete) {
+            this.onSimulationComplete();
+          }
+          this.stopSimulation();
+        }
+      }, intervalMs);
+
+    } catch (e) {
+      console.error('Failed to start polyline simulation:', e);
+      this.stopSimulation();
+    }
   }
 
   _haversineMeters(a, b) {
@@ -512,11 +615,11 @@ class LocationTrackingService {
         return;
       }
 
-      // Check ride status before sending location data
+      // Check ride status - send GPS data for CONFIRMED and ONGOING rides
       const rideStatus = await this.getRideStatus();
-      if (rideStatus !== 'ONGOING') {
+      if (rideStatus !== 'ONGOING' && rideStatus !== 'CONFIRMED') {
         console.log(`Ride ${this.currentRideId} status is ${rideStatus}, skipping location send (will retry later)`);
-        // Don't clear buffer, keep it for later when ride becomes ONGOING
+        // Don't clear buffer, keep it for later when ride becomes CONFIRMED/ONGOING
         return;
       }
 
@@ -527,23 +630,30 @@ class LocationTrackingService {
         timestamp: loc.timestamp // ISO string - backend will parse to ZonedDateTime
       }));
 
-      // Send via WebSocket to /app/ride.track.{rideId}
+      // Send via WebSocket to /app/ride.track.{rideId} (backend will broadcast to /topic/ride.tracking.{rideId})
       const wsDestination = `/app/ride.track.${this.currentRideId}`;
       
       if (websocketService.isConnected && websocketService.client) {
-        websocketService.client.publish({
-          destination: wsDestination,
-          body: JSON.stringify(points),
-        });
-        console.log(`📍 Sent ${points.length} location points via WebSocket to ${wsDestination}`);
-        this.locationBuffer = [];
-        this.lastSendTime = Date.now();
+        try {
+          websocketService.client.publish({
+            destination: wsDestination,
+            body: JSON.stringify(points),
+          });
+          console.log(`✅ [LocationTracking] Sent ${points.length} location points via WebSocket to ${wsDestination}`);
+          console.log(`✅ [LocationTracking] Points:`, JSON.stringify(points, null, 2));
+          this.locationBuffer = [];
+          this.lastSendTime = Date.now();
+        } catch (wsError) {
+          console.error('❌ [LocationTracking] WebSocket publish error:', wsError);
+          // Fallback to REST API
+          throw new Error('WebSocket publish failed');
+        }
       } else {
         // Fallback: try REST API if WebSocket not available
-        console.warn('WebSocket not connected, trying REST API fallback...');
+        console.warn('⚠️ [LocationTracking] WebSocket not connected, trying REST API fallback...');
         const endpoint = ENDPOINTS.RIDES.TRACK.replace('{rideId}', this.currentRideId);
         const response = await apiService.post(endpoint, points);
-        console.log(`📍 Sent ${points.length} location points via REST API for ride ${this.currentRideId}`);
+        console.log(`✅ [LocationTracking] Sent ${points.length} location points via REST API for ride ${this.currentRideId}`);
         this.locationBuffer = [];
         this.lastSendTime = Date.now();
         return response;

@@ -4,7 +4,8 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  FlatList,
+  Pressable,
+  ScrollView,
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
@@ -29,15 +30,16 @@ const AddressInput = ({
   const [loading, setLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const debounceRef = useRef(null);
+  const selectingRef = useRef(false); // Track if we're selecting a suggestion
 
   // Separate state to track if user is actively typing
   const [isTyping, setIsTyping] = useState(false);
 
   useEffect(() => {
     // Only search if user is actively typing, not when value is set programmatically
-    if (isTyping && value && value.length > 0) {
+    if (isTyping && value && value.length > 0 && !selectingRef.current) {
       loadSuggestions(value);
-    } else if (!isTyping) {
+    } else if (!isTyping && !selectingRef.current) {
       // Don't show suggestions when value is set programmatically
       setSuggestions([]);
       setShowSuggestions(false);
@@ -191,12 +193,24 @@ const AddressInput = ({
 
   const handleSuggestionPress = async (suggestion) => {
     try {
-      setIsTyping(false); // Stop triggering search when setting value programmatically
+      console.log('Suggestion pressed:', suggestion);
+      selectingRef.current = true; // Mark that we're selecting
+      setShowSuggestions(false); // Hide suggestions immediately to prevent onBlur from interfering
+      
+      // Get display text first
+      const displayText = suggestion.structured_formatting?.main_text || suggestion.description;
+      console.log('Setting display text:', displayText);
+      
+      // Set the text immediately BEFORE setting isTyping to false
+      onChangeText(displayText);
+      
+      // Small delay to ensure onChangeText completes before we stop typing detection
+      setTimeout(() => {
+        setIsTyping(false); // Stop triggering search when setting value programmatically
+      }, 100);
       
       // If it's a POI location, use POI data directly
       if (suggestion.isPOI && suggestion.locationId) {
-        const displayText = suggestion.structured_formatting?.main_text || suggestion.description;
-        onChangeText(displayText);
         onLocationSelect({
           latitude: suggestion.coordinates.latitude,
           longitude: suggestion.coordinates.longitude,
@@ -204,23 +218,21 @@ const AddressInput = ({
           locationId: suggestion.locationId,
           isPOI: true,
         });
-        setShowSuggestions(false);
         setSuggestions([]);
+        selectingRef.current = false;
         return;
       }
       
       // If it's current location, use coordinates directly
       if (suggestion.isCurrentLocation && suggestion.coordinates) {
-        const displayText = suggestion.structured_formatting?.main_text || suggestion.description;
-        onChangeText(displayText);
         onLocationSelect({
           latitude: suggestion.coordinates.latitude,
           longitude: suggestion.coordinates.longitude,
           address: displayText,
           isCurrentLocation: true,
         });
-        setShowSuggestions(false);
         setSuggestions([]);
+        selectingRef.current = false;
         return;
       }
       
@@ -230,23 +242,20 @@ const AddressInput = ({
       
       if (placeDetails && placeDetails.result) {
         const location = placeDetails.result.geometry.location;
-        // Prioritize main_text for display, use formatted_address for coordinates
-        const displayText = suggestion.structured_formatting?.main_text || suggestion.description;
         const fullAddress = placeDetails.result.formatted_address || displayText;
         
-        onChangeText(displayText);
+        // Call onLocationSelect with displayText so parent doesn't overwrite the input
         onLocationSelect({
           latitude: location.lat,
           longitude: location.lng,
-          address: fullAddress, // Use full address for backend
+          address: displayText, // Use displayText so it matches what's in the input
+          fullAddress: fullAddress, // Include fullAddress as separate field for backend if needed
         });
       } else {
         // Fallback to geocoding if place details fail
-        const displayText = suggestion.structured_formatting?.main_text || suggestion.description;
         const geocodeResults = await goongService.geocode(displayText);
         if (geocodeResults && geocodeResults.results && geocodeResults.results.length > 0) {
           const location = geocodeResults.results[0].geometry.location;
-          onChangeText(displayText);
           onLocationSelect({
             latitude: location.lat,
             longitude: location.lng,
@@ -255,14 +264,20 @@ const AddressInput = ({
         }
       }
       
-      setShowSuggestions(false);
+      // Ensure text stays set after async operations
+      setTimeout(() => {
+        onChangeText(displayText);
+      }, 50);
+      
       setSuggestions([]);
+      selectingRef.current = false;
     } catch (error) {
       console.error('Get place details error:', error);
       // Fallback: just set the text with proper display name
       const displayText = suggestion.structured_formatting?.main_text || suggestion.description;
       onChangeText(displayText);
       setShowSuggestions(false);
+      selectingRef.current = false;
     }
   };
 
@@ -273,7 +288,14 @@ const AddressInput = ({
         item.isSuggested && styles.suggestedItem,
         item.isValid === false && styles.invalidItem
       ]}
-      onPress={() => handleSuggestionPress(item)}
+      activeOpacity={0.7}
+      onPress={() => {
+        console.log('TouchableOpacity pressed for:', item.description || item.structured_formatting?.main_text);
+        handleSuggestionPress(item);
+      }}
+      onPressIn={() => {
+        console.log('TouchableOpacity onPressIn');
+      }}
     >
       <Icon 
         name={
@@ -327,7 +349,9 @@ const AddressInput = ({
           style={styles.textInput}
           value={value}
           onChangeText={(text) => {
-            setIsTyping(true); // User is actively typing
+            if (!selectingRef.current) {
+              setIsTyping(true); // User is actively typing
+            }
             onChangeText(text);
           }}
           placeholder={placeholder}
@@ -340,8 +364,10 @@ const AddressInput = ({
           onBlur={() => {
             // Hide suggestions when input loses focus (with delay to allow selection)
             setTimeout(() => {
-              setShowSuggestions(false);
-            }, 200);
+              if (!selectingRef.current) {
+                setShowSuggestions(false);
+              }
+            }, 300);
           }}
         />
         {loading && (
@@ -350,15 +376,85 @@ const AddressInput = ({
       </View>
       
       {showSuggestions && suggestions.length > 0 && (
-        <View style={styles.suggestionsContainer}>
-          <FlatList
-            data={suggestions}
-            renderItem={renderSuggestion}
-            keyExtractor={(item) => item.place_id || item.description}
-            style={styles.suggestionsList}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          />
+        <View 
+          style={styles.suggestionsContainer}
+          onStartShouldSetResponder={() => {
+            console.log('Container should set responder');
+            return true;
+          }}
+          onMoveShouldSetResponder={() => false}
+          onResponderGrant={() => {
+            console.log('Container responder granted');
+          }}
+        >
+          {suggestions.map((item, index) => {
+            const displayText = item.structured_formatting?.main_text || item.description;
+            console.log('Rendering suggestion:', displayText, 'index:', index);
+            return (
+              <Pressable
+                key={item.place_id || item.description || index}
+                style={({ pressed }) => [
+                  styles.suggestionItem,
+                  item.isSuggested && styles.suggestedItem,
+                  item.isValid === false && styles.invalidItem,
+                  pressed && styles.suggestionItemPressed
+                ]}
+                onPress={() => {
+                  console.log('Pressable pressed:', displayText);
+                  handleSuggestionPress(item);
+                }}
+                onPressIn={() => {
+                  console.log('Pressable onPressIn for:', displayText);
+                  selectingRef.current = true;
+                }}
+                onPressOut={() => {
+                  console.log('Pressable onPressOut');
+                }}
+              >
+                <Icon 
+                  name={
+                    item.isCurrentLocation ? "my-location" : 
+                    item.isPOI ? "place" : 
+                    item.isSuggested ? "star" : 
+                    item.isValid === false ? "warning" : "location-on"
+                  } 
+                  size={20} 
+                  color={
+                    item.isCurrentLocation ? "#4CAF50" : 
+                    item.isPOI ? "#2196F3" : 
+                    item.isSuggested ? "#FF9800" : "#666"
+                  } 
+                  style={styles.suggestionIcon} 
+                />
+                <View style={styles.suggestionContent}>
+                  <Text style={[
+                    styles.suggestionMain,
+                    item.isSuggested && styles.suggestedText
+                  ]} numberOfLines={1}>
+                    {displayText}
+                  </Text>
+                  <Text style={styles.suggestionSecondary} numberOfLines={1}>
+                    {item.structured_formatting?.secondary_text || ''}
+                  </Text>
+                </View>
+                {item.isPOI && (
+                  <View style={styles.poiBadge}>
+                    <Text style={styles.poiBadgeText}>POI</Text>
+                  </View>
+                )}
+                {item.isCurrentLocation && (
+                  <View style={styles.currentLocationBadge}>
+                    <Text style={styles.currentLocationBadgeText}>GPS</Text>
+                  </View>
+                )}
+                {item.isSuggested && !item.isPOI && !item.isCurrentLocation && (
+                  <View style={styles.suggestedBadge}>
+                    <Text style={styles.suggestedBadgeText}>Gợi ý</Text>
+                  </View>
+                )}
+              </Pressable>
+            );
+          })}
         </View>
       )}
     </View>
@@ -402,10 +498,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 12,
     maxHeight: 200,
-    zIndex: 9999, // Higher z-index to prevent overlap
+    zIndex: 9999,
+    marginTop: 5,
+    overflow: 'hidden',
   },
-  suggestionsList: {
-    borderRadius: 12,
+  suggestionItemPressed: {
+    backgroundColor: '#f0f0f0',
   },
   suggestionItem: {
     flexDirection: 'row',

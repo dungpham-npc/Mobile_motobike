@@ -12,9 +12,9 @@ import {
   Platform,
   KeyboardAvoidingView,
   ScrollView,
-  StatusBar,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Animatable from 'react-native-animatable';
 
 import locationService from '../../services/LocationService';
@@ -22,14 +22,13 @@ import rideService from '../../services/rideService';
 import authService from '../../services/authService';
 import goongService from '../../services/goongService';
 import poiService from '../../services/poiService';
+import routeService from '../../services/routeService';
 import { locationStorageService } from '../../services/locationStorageService';
 import ModernButton from '../../components/ModernButton.jsx';
 import AddressInput from '../../components/AddressInput';
+import CampusAnchorPicker from '../../components/CampusAnchorPicker';
 import GoongMap from '../../components/GoongMap.jsx';
 import addressValidation from '../../utils/addressValidation';
-import { SoftBackHeader } from '../../components/ui/GlassHeader.jsx';
-import CleanCard from '../../components/ui/CleanCard.jsx';
-import { colors } from '../../theme/designTokens';
 
 const { width, height } = Dimensions.get('window');
 
@@ -50,11 +49,104 @@ const RideBookingScreen = ({ navigation, route }) => {
   const [loadingLocation, setLoadingLocation] = useState(true);
   const [routePolyline, setRoutePolyline] = useState(null);
 
+  // Route selection states
+  const [bookingMode, setBookingMode] = useState('predefined'); // 'predefined' | 'custom'
+  const [selectedRoute, setSelectedRoute] = useState(null);
+  const [templateRoutes, setTemplateRoutes] = useState([]);
+  const [loadingRoutes, setLoadingRoutes] = useState(false);
+
+  // Campus anchor locations (required by business rule)
+  const [campusAnchors, setCampusAnchors] = useState([]);
+  const [fptUniversityLocation, setFptUniversityLocation] = useState(null);
+  const [pickupIsCampusAnchor, setPickupIsCampusAnchor] = useState(false);
+  const [dropoffIsCampusAnchor, setDropoffIsCampusAnchor] = useState(false);
+
+  // Helper function to check if a location is a campus anchor
+  const isCampusAnchor = (location, addressText = null) => {
+    if (!location && !addressText) return false;
+    
+    // Get location name/address for comparison - check both location object and address text
+    const locationName = (location?.name || location?.address || addressText || '').toLowerCase().trim();
+    const locationId = location?.locationId || location?.id;
+    
+    // First check: by name/address text patterns (most reliable)
+    if (locationName) {
+      const isFPT = locationName.includes('fpt university') || 
+                    locationName.includes('fptu') ||
+                    locationName.includes('fpt university - hcmc campus');
+      const isSCH = locationName.includes('nhà văn hóa') ||
+                    locationName.includes('nhà văn hóa sinh viên') ||
+                    locationName.includes('student culture') ||
+                    locationName.includes('student culture house');
+      
+      if (isFPT || isSCH) {
+        console.log('Detected campus anchor by name:', locationName);
+        return true;
+      }
+    }
+    
+    // Second check: against campus anchors list
+    if (campusAnchors.length > 0 && location) {
+      const isAnchor = campusAnchors.some(anchor => {
+        // Check by locationId
+        if (locationId && anchor.locationId) {
+          return locationId === anchor.locationId;
+        }
+        if (locationId && anchor.id) {
+          return locationId === anchor.id;
+        }
+        // Check by coordinates (within 100m)
+        if (location.latitude && location.longitude && anchor.latitude && anchor.longitude) {
+          const distance = Math.sqrt(
+            Math.pow(location.latitude - anchor.latitude, 2) + 
+            Math.pow(location.longitude - anchor.longitude, 2)
+          );
+          return distance < 0.001; // ~100m tolerance
+        }
+        // Check by name match
+        const anchorName = (anchor.name || anchor.address || '').toLowerCase().trim();
+        return locationName && locationName === anchorName;
+      });
+      
+      if (isAnchor) {
+        console.log('Detected campus anchor from anchors list');
+        return true;
+      }
+    }
+    
+    // Third check: by coordinates (fallback to hardcoded coordinates)
+    if (location?.latitude && location?.longitude) {
+      // FPT University coordinates
+      if (Math.abs(location.latitude - 10.841480) < 0.001 && 
+          Math.abs(location.longitude - 106.809844) < 0.001) {
+        console.log('Detected FPT University by coordinates');
+        return true;
+      }
+      // Student Culture House coordinates
+      if (Math.abs(location.latitude - 10.8753395) < 0.001 && 
+          Math.abs(location.longitude - 106.8000331) < 0.001) {
+        console.log('Detected Student Culture House by coordinates');
+        return true;
+      }
+    }
+    
+    return false;
+  };
+
   // Map ref
   const mapRef = useRef(null);
   
   // Fixed initial region to prevent WebView reload
   const initialRegionRef = useRef(null);
+  const formatDistanceKm = React.useCallback((value) => {
+    if (value === null || value === undefined || isNaN(value)) {
+      return '-';
+    }
+    return Number(value).toLocaleString('vi-VN', {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+    });
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -84,6 +176,7 @@ const RideBookingScreen = ({ navigation, route }) => {
           if (pAddress) {
             setPickupAddress(pAddress);
           } else {
+            // Get address from coordinates
             try {
               const address = await locationService.getAddressFromCoordinates(pickup.latitude, pickup.longitude);
               setPickupAddress(address || 'Vị trí hiện tại');
@@ -98,6 +191,7 @@ const RideBookingScreen = ({ navigation, route }) => {
           if (dAddress) {
             setDropoffAddress(dAddress);
           } else {
+            // Get address from coordinates
             try {
               const address = await locationService.getAddressFromCoordinates(dropoff.latitude, dropoff.longitude);
               setDropoffAddress(address || 'Điểm đến đã chọn');
@@ -122,6 +216,132 @@ const RideBookingScreen = ({ navigation, route }) => {
     }
   }, [currentLocation]);
 
+  // Fetch template routes on mount
+  useEffect(() => {
+    const fetchTemplateRoutes = async () => {
+      try {
+        setLoadingRoutes(true);
+        const routes = await routeService.getTemplateRoutes();
+        setTemplateRoutes(routes);
+      } catch (error) {
+        console.error('Error fetching template routes:', error);
+        // Don't show error alert - just log it, user can still use custom mode
+      } finally {
+        setLoadingRoutes(false);
+      }
+    };
+
+    fetchTemplateRoutes();
+  }, []);
+
+  // Initialize campus anchors with fallback values immediately
+  useEffect(() => {
+    // Set fallback campus anchors immediately so they're always available
+    const fallbackFPT = {
+      id: null,
+      locationId: null,
+      name: 'FPT University - HCMC Campus',
+      address: 'FPT University - HCMC Campus',
+      latitude: 10.841480,
+      longitude: 106.809844,
+      isPOI: false
+    };
+    const fallbackSCH = {
+      id: null,
+      locationId: null,
+      name: 'Nhà Văn Hóa Sinh Viên',
+      address: 'Nhà Văn Hóa Sinh Viên',
+      latitude: 10.8753395,
+      longitude: 106.8000331,
+      isPOI: false
+    };
+    
+    // Set fallback values immediately
+    if (!fptUniversityLocation) {
+      setFptUniversityLocation(fallbackFPT);
+    }
+    if (campusAnchors.length === 0) {
+      setCampusAnchors([fallbackFPT, fallbackSCH]);
+    }
+  }, []);
+
+  /*
+   * Custom-location mode disabled. Legacy campus anchor fetch kept for future reference.
+   */
+  // useEffect(() => {
+  //   if (bookingMode !== 'custom') {
+  //     return;
+  //   }
+  //   if (campusAnchors.length > 0 && campusAnchors[0]?.isPOI) {
+  //     return;
+  //   }
+  //   const fetchCampusAnchors = async () => {
+  //     try {
+  //       const allLocations = await poiService.getAllLocations();
+  //       const fptUniversity = allLocations.find(loc => 
+  //         (loc.name && (
+  //           loc.name.includes('FPT University') || 
+  //           loc.name.includes('FPTU')
+  //         )) ||
+  //         (Math.abs(loc.latitude - 10.841480) < 0.001 && 
+  //          Math.abs(loc.longitude - 106.809844) < 0.001)
+  //       );
+  //       const studentCultureHouse = allLocations.find(loc =>
+  //         (loc.name && (
+  //           loc.name.includes('Nhà Văn Hóa') ||
+  //           loc.name.includes('Student Culture') ||
+  //           loc.name.includes('Sinh Viên')
+  //         )) ||
+  //         (Math.abs(loc.latitude - 10.8753395) < 0.001 && 
+  //          Math.abs(loc.longitude - 106.8000331) < 0.001)
+  //       );
+  //       const anchors = [];
+  //       let fptLoc = null;
+  //       if (fptUniversity) {
+  //         fptLoc = {
+  //           ...fptUniversity,
+  //           name: fptUniversity.name || 'FPT University - HCMC Campus',
+  //           address: fptUniversity.name || 'FPT University - HCMC Campus'
+  //         };
+  //         anchors.push(fptLoc);
+  //       }
+  //       if (studentCultureHouse) {
+  //         anchors.push({
+  //           ...studentCultureHouse,
+  //           name: studentCultureHouse.name || 'Nhà Văn Hóa Sinh Viên',
+  //           address: studentCultureHouse.name || 'Nhà Văn Hóa Sinh Viên'
+  //         });
+  //       }
+  //       if (fptLoc) {
+  //         setFptUniversityLocation(fptLoc);
+  //       }
+  //       if (anchors.length > 0) {
+  //         setCampusAnchors(anchors);
+  //       }
+  //     } catch (error) {
+  //       console.error('Error fetching campus anchors from POI service:', error);
+  //     }
+  //   };
+  //   fetchCampusAnchors();
+  // }, [bookingMode]);
+
+  // Update campus anchor flags when locations change
+  useEffect(() => {
+    const isAnchor = isCampusAnchor(pickupLocation, pickupAddress);
+    console.log('useEffect - pickupLocation changed:', pickupLocation);
+    console.log('useEffect - pickupAddress:', pickupAddress);
+    console.log('useEffect - pickupIsCampusAnchor:', isAnchor);
+    setPickupIsCampusAnchor(isAnchor);
+  }, [pickupLocation, campusAnchors, pickupAddress]);
+
+  useEffect(() => {
+    const isAnchor = isCampusAnchor(dropoffLocation, dropoffAddress);
+    console.log('useEffect - dropoffLocation changed:', dropoffLocation);
+    console.log('useEffect - dropoffAddress:', dropoffAddress);
+    console.log('useEffect - dropoffIsCampusAnchor:', isAnchor);
+    setDropoffIsCampusAnchor(isAnchor);
+  }, [dropoffLocation, campusAnchors, dropoffAddress]);
+
   // Memoized markers to prevent unnecessary re-renders
   const mapMarkers = React.useMemo(() => {
     const markers = [];
@@ -130,7 +350,7 @@ const RideBookingScreen = ({ navigation, route }) => {
         coordinate: pickupLocation,
         title: "Điểm đón",
         description: pickupAddress,
-        pinColor: "#22C55E"
+        pinColor: "#4CAF50"
       });
     }
     if (dropoffLocation) {
@@ -138,7 +358,7 @@ const RideBookingScreen = ({ navigation, route }) => {
         coordinate: dropoffLocation,
         title: "Điểm đến", 
         description: dropoffAddress,
-        pinColor: "#EF4444"
+        pinColor: "#F44336"
       });
     }
     return markers;
@@ -148,27 +368,34 @@ const RideBookingScreen = ({ navigation, route }) => {
     try {
       setLoadingLocation(true);
       
+      // Try to get cached location first
       const locationData = await locationStorageService.getCurrentLocationWithAddress();
       
       if (locationData.location) {
         setCurrentLocation(locationData.location);
+        
+        // Set pickup to current location by default
         setPickupLocation(locationData.location);
         
+        // Use cached address if available
         if (locationData.address) {
           setPickupAddress(locationData.address.shortAddress || 'Vị trí hiện tại');
         } else {
           setPickupAddress('Vị trí hiện tại');
         }
       } else {
+        // Fallback to regular location service
         const location = await locationService.getCurrentLocation();
         setCurrentLocation(location);
         setPickupLocation(location);
         setPickupAddress('Vị trí hiện tại');
       }
 
+      // Start location tracking only once
       if (!locationService.watchId) {
         locationService.startLocationTracking((newLocation) => {
           setCurrentLocation(newLocation);
+          // Update cache with new location
           locationStorageService.saveCurrentLocation(newLocation);
         });
       }
@@ -181,19 +408,84 @@ const RideBookingScreen = ({ navigation, route }) => {
     }
   };
 
+  const handleRouteSelect = (route) => {
+    if (!route) return;
+
+    setSelectedRoute(route);
+    
+    // Populate locations from route
+    if (route.fromLocation) {
+      setPickupLocation(route.fromLocation);
+      setPickupAddress(route.fromLocationName || route.fromLocation.name || 'Điểm đón');
+    }
+    
+    if (route.toLocation) {
+      setDropoffLocation(route.toLocation);
+      setDropoffAddress(route.toLocationName || route.toLocation.name || 'Điểm đến');
+    }
+
+    // Decode and display route polyline on map
+    if (route.polyline) {
+      try {
+        const decodedPolyline = goongService.decodePolyline(route.polyline);
+        const formattedPolyline = decodedPolyline.map(point => [point.longitude, point.latitude]);
+        setRoutePolyline(formattedPolyline);
+
+        // Fit map to show entire route
+        if (mapRef.current && decodedPolyline.length > 0) {
+          setTimeout(() => {
+            mapRef.current.fitToCoordinates(decodedPolyline, { edgePadding: 50 });
+          }, 500);
+        }
+      } catch (error) {
+        console.error('Error decoding route polyline:', error);
+      }
+    }
+
+    // Clear quote when route changes
+    setShowQuote(false);
+    setQuote(null);
+  };
+
+  /* const handleModeSwitch = (mode) => {
+    setBookingMode(mode);
+    
+    // Clear selections when switching modes
+    if (mode === 'custom') {
+      setSelectedRoute(null);
+      setRoutePolyline(null);
+      // Keep locations but clear quote
+      setShowQuote(false);
+      setQuote(null);
+    } else {
+      // Clear custom locations when switching to predefined
+      setPickupLocation(null);
+      setDropoffLocation(null);
+      setPickupAddress('');
+      setDropoffAddress('');
+      setShowQuote(false);
+      setQuote(null);
+      setRoutePolyline(null);
+      setPickupIsCampusAnchor(false);
+      setDropoffIsCampusAnchor(false);
+    }
+  };
+
   const handleMapPress = async (event) => {
     if (!isSelectingPickup && !isSelectingDropoff) {
-      return;
+      return; // Not in selection mode
     }
 
     try {
       const { latitude, longitude } = event.nativeEvent.coordinate;
       console.log('Map pressed:', { latitude, longitude });
 
+      // Get address for the coordinates
       const address = await locationService.getAddressFromCoordinates(latitude, longitude);
       const addressText = address?.formattedAddress || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
 
-      const nearbyPOI = await poiService.findLocationByCoordinates(latitude, longitude, 200);
+      // Try to find nearby POI
+      const nearbyPOI = await poiService.findLocationByCoordinates(latitude, longitude, 200); // 200m radius
 
       const locationData = nearbyPOI ? {
         id: nearbyPOI.locationId,
@@ -212,32 +504,148 @@ const RideBookingScreen = ({ navigation, route }) => {
         setPickupLocation(locationData);
         setPickupAddress(nearbyPOI ? nearbyPOI.name : addressText);
         setIsSelectingPickup(false);
+        console.log('Pickup location set:', locationData);
+        
+        // Update campus anchor flag - check both location object and address text
+        const mapPickupAddress = nearbyPOI ? nearbyPOI.name : addressText;
+        const isAnchor = isCampusAnchor(locationData, mapPickupAddress);
+        setPickupIsCampusAnchor(isAnchor);
+        console.log('Map pickup selected:', locationData);
+        console.log('Map pickup address:', mapPickupAddress);
+        console.log('Is campus anchor?', isAnchor);
+        
+        // If pickup is NOT a campus anchor, auto-set dropoff to FPT University
+        if (!isAnchor && fptUniversityLocation && !dropoffLocation) {
+          setDropoffLocation(fptUniversityLocation);
+          setDropoffAddress(fptUniversityLocation.name || fptUniversityLocation.address);
+          setDropoffIsCampusAnchor(true); // FPT University is always an anchor
+        }
       } else if (isSelectingDropoff) {
+        // Only allow dropoff selection if pickup is a campus anchor
+        if (!pickupIsCampusAnchor) {
+          Alert.alert('Thông báo', 'Vui lòng chọn điểm đến từ danh sách điểm mốc');
+          setIsSelectingDropoff(false);
+          return;
+        }
+        
         setDropoffLocation(locationData);
         setDropoffAddress(nearbyPOI ? nearbyPOI.name : addressText);
         setIsSelectingDropoff(false);
+        console.log('Dropoff location set:', locationData);
+        
+        // Update campus anchor flag - check both location object and address text
+        const mapDropoffAddress = nearbyPOI ? nearbyPOI.name : addressText;
+        const isAnchor = isCampusAnchor(locationData, mapDropoffAddress);
+        setDropoffIsCampusAnchor(isAnchor);
+        console.log('Map dropoff selected:', locationData);
+        console.log('Map dropoff address:', mapDropoffAddress);
+        console.log('Is campus anchor?', isAnchor);
+        
+        // If dropoff is NOT a campus anchor, auto-set pickup to FPT University
+        if (!isAnchor && fptUniversityLocation && !pickupLocation) {
+          setPickupLocation(fptUniversityLocation);
+          setPickupAddress(fptUniversityLocation.name || fptUniversityLocation.address);
+          setPickupIsCampusAnchor(true); // FPT University is always an anchor
+        }
       }
     } catch (error) {
       console.error('Error handling map press:', error);
       Alert.alert('Lỗi', 'Không thể xác định địa chỉ cho vị trí này');
     }
-  };
+  }; */
 
   const handleGetQuote = async () => {
+    // If in predefined mode, check if route is selected
+    if (bookingMode === 'predefined') {
+      if (!selectedRoute) {
+        Alert.alert('Thông báo', 'Vui lòng chọn tuyến đường');
+        return;
+      }
+
+      try {
+        setLoading(true);
+        
+        // Get quote using routeId
+        const desiredPickupTime = null; // TODO: Add time picker
+        const notes = null; // TODO: Add notes input
+        
+        const quoteData = await rideService.getQuote(
+          null, // pickup not needed when routeId is provided
+          null, // dropoff not needed when routeId is provided
+          desiredPickupTime,
+          notes,
+          selectedRoute.routeId
+        );
+        
+        // Process the quote data
+        const processedQuote = {
+          ...quoteData,
+          pickup: selectedRoute.fromLocation,
+          dropoff: selectedRoute.toLocation,
+          pickupAddress: selectedRoute.fromLocationName || pickupAddress,
+          dropoffAddress: selectedRoute.toLocationName || dropoffAddress,
+          distance: (typeof quoteData.distanceM === 'number')
+            ? quoteData.distanceM / 1000
+            : null,
+          estimatedDuration: (typeof quoteData.durationS === 'number')
+            ? Math.round(quoteData.durationS / 60)
+            : null,
+          totalFare: quoteData.fare?.total ?? null,
+          tierDescription: quoteData.fare?.tierDescription || quoteData.fare?.tierLabel || null,
+          tierSubtotal: quoteData.fare?.subtotal ?? quoteData.fare?.total ?? null,
+          tierDiscount: quoteData.fare?.discount ?? 0,
+          validUntil: quoteData.expiresAt
+        };
+        
+        setQuote(processedQuote);
+        setShowQuote(true);
+        
+        // Update polyline if quote has one (should match route polyline)
+        if (quoteData.polyline) {
+          const decodedPolyline = goongService.decodePolyline(quoteData.polyline);
+          const formattedPolyline = decodedPolyline.map(point => [point.longitude, point.latitude]);
+          
+          if (JSON.stringify(routePolyline) !== JSON.stringify(formattedPolyline)) {
+            setRoutePolyline(formattedPolyline);
+          }
+          
+          // Fit map to show entire route
+          if (mapRef.current && decodedPolyline.length > 0) {
+            setTimeout(() => {
+              mapRef.current.fitToCoordinates(decodedPolyline, { edgePadding: 50 });
+            }, 500);
+          }
+        }
+        
+      } catch (error) {
+        console.error('Get quote error:', error);
+        Alert.alert('Lỗi', 'Không thể tính giá cước. Vui lòng thử lại.');
+      } finally {
+        setLoading(false);
+      }
+      
+      return; // Exit early for predefined mode
+    }
+
+    // Custom mode - existing logic
+    // Check if we have addresses at minimum
     if (!pickupAddress.trim() || !dropoffAddress.trim()) {
       Alert.alert('Thông báo', 'Vui lòng nhập điểm đón và điểm đến');
       return;
     }
 
+    // Validate addresses
     const validation = addressValidation.validateAddresses(pickupAddress, dropoffAddress);
     if (!validation.isValid) {
       Alert.alert('Địa chỉ không hợp lệ', validation.message);
       return;
     }
 
+    // Process pickup location - prefer POI, fallback to coordinates
     let pickup = pickupLocation;
     if (!pickup && pickupAddress.trim()) {
       try {
+        // First try to find POI by address
         const pickupPOI = await poiService.searchLocations(pickupAddress, 1);
         if (pickupPOI && pickupPOI.length > 0) {
           pickup = {
@@ -248,13 +656,17 @@ const RideBookingScreen = ({ navigation, route }) => {
             name: pickupPOI[0].name,
             isPOI: true
           };
+          console.log('Found pickup POI:', pickup);
         } else {
+          // Fallback to geocoding
           const pickupCoords = await goongService.geocode(pickupAddress);
           if (pickupCoords && pickupCoords.geometry && pickupCoords.geometry.location) {
+            // Try to find nearby POI for these coordinates
             pickup = await poiService.coordinatesToPOI(
               pickupCoords.geometry.location.latitude,
               pickupCoords.geometry.location.longitude
             );
+            console.log('Pickup location processed:', pickup);
           }
         }
         setPickupLocation(pickup);
@@ -263,9 +675,11 @@ const RideBookingScreen = ({ navigation, route }) => {
       }
     }
 
+    // Process dropoff location - prefer POI, fallback to coordinates
     let dropoff = dropoffLocation;
     if (!dropoff && dropoffAddress.trim()) {
       try {
+        // First try to find POI by address
         const dropoffPOI = await poiService.searchLocations(dropoffAddress, 1);
         if (dropoffPOI && dropoffPOI.length > 0) {
           dropoff = {
@@ -276,13 +690,17 @@ const RideBookingScreen = ({ navigation, route }) => {
             name: dropoffPOI[0].name,
             isPOI: true
           };
+          console.log('Found dropoff POI:', dropoff);
         } else {
+          // Fallback to geocoding
           const dropoffCoords = await goongService.geocode(dropoffAddress);
           if (dropoffCoords && dropoffCoords.geometry && dropoffCoords.geometry.location) {
+            // Try to find nearby POI for these coordinates
             dropoff = await poiService.coordinatesToPOI(
               dropoffCoords.geometry.location.latitude,
               dropoffCoords.geometry.location.longitude
             );
+            console.log('Dropoff location processed:', dropoff);
           }
         }
         setDropoffLocation(dropoff);
@@ -299,45 +717,55 @@ const RideBookingScreen = ({ navigation, route }) => {
     try {
       setLoading(true);
       
-      const desiredPickupTime = null;
-      const notes = null;
+      // Get desired pickup time (optional - can be set by user)
+      const desiredPickupTime = null; // TODO: Add time picker
+      const notes = null; // TODO: Add notes input
       
       const quoteData = await rideService.getQuote(pickup, dropoff, desiredPickupTime, notes);
       
+      // Process the quote data to match our UI needs
       const processedQuote = {
-        ...quoteData,
+        ...quoteData, // có: distanceM, durationS, expiresAt, fare.{total,subtotal,base2Km,after2KmPerKm,...}, polyline
         pickup,
         dropoff,
         pickupAddress,
         dropoffAddress,
+      
         distance: (typeof quoteData.distanceM === 'number')
           ? quoteData.distanceM / 1000
           : null,
+      
         estimatedDuration: (typeof quoteData.durationS === 'number')
           ? Math.round(quoteData.durationS / 60)
           : null,
+      
         totalFare: quoteData.fare?.total ?? null,
-        baseFare: quoteData.fare?.base2Km ?? null,
-        distanceFare: quoteData.fare?.after2KmPerKm ?? null,
-        timeFare: null,
+        tierDescription: quoteData.fare?.tierDescription || quoteData.fare?.tierLabel || null,
+        tierSubtotal: quoteData.fare?.subtotal ?? quoteData.fare?.total ?? null,
+        tierDiscount: quoteData.fare?.discount ?? 0,
         validUntil: quoteData.expiresAt
       };
       
       setQuote(processedQuote);
       setShowQuote(true);
       
+      // Store polyline data to pass to map component
       if (quoteData.polyline) {
         const decodedPolyline = goongService.decodePolyline(quoteData.polyline);
+        
+        // Convert to format expected by GoongMap: [[lng, lat], [lng, lat], ...] for MapBox GL
         const formattedPolyline = decodedPolyline.map(point => [point.longitude, point.latitude]);
         
+        // Only set if different to prevent unnecessary re-renders
         if (JSON.stringify(routePolyline) !== JSON.stringify(formattedPolyline)) {
           setRoutePolyline(formattedPolyline);
         }
         
+        // Fit map to show entire route
         if (mapRef.current && decodedPolyline.length > 0) {
           setTimeout(() => {
             mapRef.current.fitToCoordinates(decodedPolyline, { edgePadding: 50 });
-          }, 500);
+          }, 500); // Small delay to ensure map is ready
         }
       }
       
@@ -356,6 +784,8 @@ const RideBookingScreen = ({ navigation, route }) => {
       setLoading(true);
       const result = await rideService.bookRide(quote.quoteId);
       
+      
+      // Navigate to rider matching screen
       navigation.navigate('RiderMatching', {
         rideRequest: {
           ...result,
@@ -403,9 +833,8 @@ const RideBookingScreen = ({ navigation, route }) => {
   if (loadingLocation) {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" />
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.accent} />
+          <ActivityIndicator size="large" color="#4CAF50" />
           <Text style={styles.loadingText}>Đang lấy vị trí hiện tại...</Text>
         </View>
       </SafeAreaView>
@@ -419,290 +848,353 @@ const RideBookingScreen = ({ navigation, route }) => {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
     >
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" />
-        
-        {/* Map - Full Screen */}
-        {goongService.isMapsConfigured() ? (
-          <GoongMap
-            onRef={(ref) => (mapRef.current = ref)}
-            style={styles.map}
-            initialRegion={
-              initialRegionRef.current || {
-                latitude: 10.8231,
-                longitude: 106.6297,
-                latitudeDelta: 0.01,
-                longitudeDelta: 0.01,
-              }
+        {/* Header with Back Button */}
+        <View style={styles.header}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Icon name="arrow-back" size={24} color="#333" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Đặt xe</Text>
+          <View style={styles.headerSpacer} />
+        </View>
+
+        {/* Map */}
+      {goongService.isMapsConfigured() ? (
+        <GoongMap
+          onRef={(ref) => (mapRef.current = ref)}
+          style={styles.map}
+          initialRegion={
+            initialRegionRef.current || {
+              latitude: 10.8231,
+              longitude: 106.6297,
+              latitudeDelta: 0.01,
+              longitudeDelta: 0.01,
             }
-            onMapPress={handleMapPress}
-            showsUserLocation={true}
-            polyline={routePolyline}
-            markers={mapMarkers}
-          />
-        ) : (
-          <View style={[styles.map, styles.mapPlaceholder]}>
-            <View style={styles.mapPlaceholderContent}>
-              <Icon name="map" size={60} color={colors.textMuted} />
-              <Text style={styles.mapPlaceholderTitle}>Bản đồ không khả dụng</Text>
-              <Text style={styles.mapPlaceholderText}>
-                Vui lòng cấu hình Goong API key{'\n'}
-                hoặc sử dụng chức năng nhập địa chỉ bên dưới
-              </Text>
-            </View>
+          }
+          showsUserLocation={true}
+          polyline={routePolyline}
+          markers={mapMarkers}
+        />
+      ) : (
+        <View style={[styles.map, styles.mapPlaceholder]}>
+          <View style={styles.mapPlaceholderContent}>
+            <Icon name="map" size={60} color="#ccc" />
+            <Text style={styles.mapPlaceholderTitle}>Bản đồ không khả dụng</Text>
+            <Text style={styles.mapPlaceholderText}>
+              Vui lòng cấu hình Goong API key{'\n'}
+              hoặc sử dụng chức năng nhập địa chỉ bên dưới
+            </Text>
           </View>
-        )}
-
-        {/* Header - Absolute Positioned */}
-        <View style={styles.headerContainer}>
-          <SoftBackHeader
-            title="Đặt xe"
-            subtitle="Chọn điểm đón và điểm đến"
-            onBackPress={() => navigation.goBack()}
-            floating={true}
-            topOffset={Platform.OS === 'ios' ? 50 : 40}
-          />
         </View>
+      )}
 
-        {/* Location Selection Overlay */}
-        {(isSelectingPickup || isSelectingDropoff) && (
-          <View style={styles.selectionOverlay}>
-            <View style={styles.crosshair}>
-              <Icon name="my-location" size={32} color={colors.accent} />
-            </View>
-            <Animatable.View 
-              animation="slideInUp" 
-              style={styles.selectionPrompt}
-            >
-              <CleanCard contentStyle={styles.selectionPromptContent}>
-                <Text style={styles.selectionText}>
-                  {isSelectingPickup ? 'Chọn điểm đón' : 'Chọn điểm đến'}
-                </Text>
-                <TouchableOpacity
-                  style={styles.cancelSelectionButton}
-                  onPress={() => {
-                    setIsSelectingPickup(false);
-                    setIsSelectingDropoff(false);
-                  }}
-                >
-                  <Text style={styles.cancelSelectionText}>Hủy</Text>
-                </TouchableOpacity>
-              </CleanCard>
-            </Animatable.View>
+      {/* Location Selection Overlay */}
+      {/* Custom location selection overlay disabled */}
+      {/*
+      {(isSelectingPickup || isSelectingDropoff) && (
+        <View style={styles.selectionOverlay}>
+          <View style={styles.crosshair}>
+            <Icon name="my-location" size={30} color="#4CAF50" />
           </View>
-        )}
-
-        {/* Control Buttons */}
-        <View style={styles.controlButtons}>
-          <CleanCard style={styles.controlButtonCard} contentStyle={styles.controlButtonContent}>
+          <Animatable.View 
+            animation="slideInUp" 
+            style={styles.selectionPrompt}
+          >
+            <Text style={styles.selectionText}>
+              {isSelectingPickup ? 'Chọn điểm đón' : 'Chọn điểm đến'}
+            </Text>
             <TouchableOpacity
-              style={styles.controlButton}
-              onPress={() => centerMapToLocation(currentLocation)}
+              style={styles.cancelSelectionButton}
+              onPress={() => {
+                setIsSelectingPickup(false);
+                setIsSelectingDropoff(false);
+              }}
             >
-              <Icon name="my-location" size={22} color={colors.accent} />
+              <Text style={styles.cancelSelectionText}>Hủy</Text>
             </TouchableOpacity>
-            
-            {pickupLocation && dropoffLocation && (
-              <TouchableOpacity
-                style={styles.controlButton}
-                onPress={fitMapToMarkers}
-              >
-                <Icon name="zoom-out-map" size={22} color={colors.accent} />
-              </TouchableOpacity>
-            )}
-          </CleanCard>
+          </Animatable.View>
         </View>
+      )}
+      */}
 
-        {/* Bottom Panel - Card Based */}
-        <Animatable.View 
-          animation="slideInUp" 
-          style={styles.bottomPanel}
+      {/* Control Buttons */}
+      {/*
+      <View style={styles.controlButtons}>
+        <TouchableOpacity
+          style={styles.controlButton}
+          onPress={() => centerMapToLocation(currentLocation)}
         >
-          {!showQuote ? (
-            <View style={styles.inputsContainer}>
-              {/* Pickup Location Card */}
-              <Animatable.View animation="fadeInUp" duration={400}>
-                <CleanCard style={styles.locationCard} contentStyle={styles.locationCardContent}>
-                  <View style={styles.locationHeader}>
-                    <View style={[styles.locationIcon, { backgroundColor: '#22C55E20' }]}>
-                      <Icon name="radio-button-checked" size={20} color="#22C55E" />
-                    </View>
-                    <Text style={styles.locationLabel}>Điểm đón</Text>
-                  </View>
-                  
-                  <AddressInput
-                    value={pickupAddress}
-                    onChangeText={setPickupAddress}
-                    onLocationSelect={(location) => {
-                      setPickupLocation(location);
-                      setPickupAddress(location.address);
-                    }}
-                    placeholder="Nhập địa chỉ hoặc chọn trên bản đồ"
-                    iconName="radio-button-checked"
-                    iconColor="#22C55E"
-                    style={styles.addressInput}
-                    isPickupInput={true}
-                    currentLocation={currentLocation}
-                  />
-                  
-                  <TouchableOpacity 
-                    style={styles.mapSelectionButton}
-                    onPress={() => setIsSelectingPickup(true)}
-                  >
-                    <Icon name="my-location" size={16} color="#22C55E" />
-                    <Text style={styles.mapSelectionText}>Chọn trên bản đồ</Text>
-                  </TouchableOpacity>
-                </CleanCard>
-              </Animatable.View>
+          <Icon name="my-location" size={24} color="#4CAF50" />
+        </TouchableOpacity>
+        
+        {pickupLocation && dropoffLocation && (
+          <TouchableOpacity
+            style={styles.controlButton}
+            onPress={fitMapToMarkers}
+          >
+            <Icon name="zoom-out-map" size={24} color="#4CAF50" />
+          </TouchableOpacity>
+        )}
+      </View>
+      */}
 
-              {/* Dropoff Location Card */}
-              <Animatable.View animation="fadeInUp" duration={400} delay={60}>
-                <CleanCard style={styles.locationCard} contentStyle={styles.locationCardContent}>
-                  <View style={styles.locationHeader}>
-                    <View style={[styles.locationIcon, { backgroundColor: '#EF444420' }]}>
-                      <Icon name="location-on" size={20} color="#EF4444" />
-                    </View>
-                    <Text style={styles.locationLabel}>Điểm đến</Text>
-                  </View>
-                  
-                  <AddressInput
-                    value={dropoffAddress}
-                    onChangeText={setDropoffAddress}
-                    onLocationSelect={(location) => {
-                      setDropoffLocation(location);
-                      setDropoffAddress(location.address);
-                    }}
-                    placeholder="Nhập địa chỉ hoặc chọn trên bản đồ"
-                    iconName="location-on"
-                    iconColor="#EF4444"
-                    style={styles.addressInput}
-                  />
-                  
-                  <TouchableOpacity 
-                    style={[styles.mapSelectionButton, { borderColor: '#EF4444' }]}
-                    onPress={() => setIsSelectingDropoff(true)}
-                  >
-                    <Icon name="my-location" size={16} color="#EF4444" />
-                    <Text style={[styles.mapSelectionText, { color: '#EF4444' }]}>Chọn trên bản đồ</Text>
-                  </TouchableOpacity>
-                </CleanCard>
-              </Animatable.View>
+      {/* Bottom Panel */}
+      <Animatable.View 
+        animation="slideInUp" 
+        style={styles.bottomPanel}
+      >
+        {!showQuote ? (
+          <>
+            {/* Mode Switcher disabled */}
+            {/*
+            <View style={styles.modeSwitcher}>
+              <TouchableOpacity
+                style={[
+                  styles.modeButton,
+                  bookingMode === 'predefined' && styles.modeButtonActive
+                ]}
+                onPress={() => handleModeSwitch('predefined')}
+              >
+                <Icon 
+                  name="route" 
+                  size={18} 
+                  color={bookingMode === 'predefined' ? '#fff' : '#666'} 
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={[
+                  styles.modeButtonText,
+                  bookingMode === 'predefined' && styles.modeButtonTextActive
+                ]}>
+                  Tuyến đường có sẵn
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[
+                  styles.modeButton,
+                  bookingMode === 'custom' && styles.modeButtonActive
+                ]}
+                onPress={() => handleModeSwitch('custom')}
+              >
+                <Icon 
+                  name="edit-location" 
+                  size={18} 
+                  color={bookingMode === 'custom' ? '#fff' : '#666'} 
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={[
+                  styles.modeButtonText,
+                  bookingMode === 'custom' && styles.modeButtonTextActive
+                ]}>
+                  Tùy chọn
+                </Text>
+              </TouchableOpacity>
+            </View>
+            */}
 
-              {/* Get Quote Button */}
-              <Animatable.View animation="fadeInUp" duration={400} delay={120}>
+            {/* Route Selector */}
+            <View style={styles.routeSelector}>
+                {loadingRoutes ? (
+                  <View style={styles.loadingRoutesContainer}>
+                    <ActivityIndicator size="small" color="#4CAF50" style={{ marginRight: 10 }} />
+                    <Text style={styles.loadingRoutesText}>Đang tải tuyến đường...</Text>
+                  </View>
+                ) : templateRoutes.length === 0 ? (
+                  <View style={styles.emptyRoutesContainer}>
+                    <Icon name="route" size={40} color="#ccc" />
+                    <Text style={styles.emptyRoutesText}>Không có tuyến đường nào</Text>
+                  </View>
+                ) : (
+                  <ScrollView 
+                    style={styles.routesList}
+                    showsVerticalScrollIndicator={false}
+                    nestedScrollEnabled={true}
+                  >
+                    {templateRoutes.map((route) => (
+                      <TouchableOpacity
+                        key={route.routeId}
+                        style={[
+                          styles.routeCard,
+                          selectedRoute?.routeId === route.routeId && styles.routeCardSelected
+                        ]}
+                        onPress={() => handleRouteSelect(route)}
+                      >
+                        <View style={styles.routeCardContent}>
+                          <View style={styles.routeCardHeader}>
+                            <Icon 
+                              name="route" 
+                              size={20} 
+                              color={selectedRoute?.routeId === route.routeId ? '#4CAF50' : '#666'} 
+                              style={{ marginRight: 8 }}
+                            />
+                            <Text style={[
+                              styles.routeCardName,
+                              selectedRoute?.routeId === route.routeId && styles.routeCardNameSelected
+                            ]}>
+                              {route.name}
+                            </Text>
+                          </View>
+                          
+                          <View style={styles.routeCardLocations}>
+                            <View style={styles.routeLocationItem}>
+                              <Icon name="radio-button-checked" size={14} color="#4CAF50" style={{ marginRight: 8 }} />
+                              <Text style={styles.routeLocationText} numberOfLines={1}>
+                                {route.fromLocationName || 'Điểm đón'}
+                              </Text>
+                            </View>
+                            <View style={styles.routeLocationItem}>
+                              <Icon name="location-on" size={14} color="#F44336" style={{ marginRight: 8 }} />
+                              <Text style={styles.routeLocationText} numberOfLines={1}>
+                                {route.toLocationName || 'Điểm đến'}
+                              </Text>
+                            </View>
+                          </View>
+                          
+                          {route.defaultPrice != null && (
+                            <View style={styles.routeCardPrice}>
+                              <Text style={styles.routePriceText}>
+                                ~{route.defaultPrice.toLocaleString('vi-VN')} đ
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+                        
+                        {selectedRoute?.routeId === route.routeId && (
+                          <View style={styles.routeCardCheck}>
+                            <Icon name="check-circle" size={24} color="#4CAF50" />
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                )}
+                
+                {/* Get Quote Button for Predefined Mode */}
                 <ModernButton
                   title={loading ? "Đang tính giá..." : "Xem giá cước"}
                   onPress={handleGetQuote}
-                  disabled={loading || !pickupAddress.trim() || !dropoffAddress.trim()}
+                  disabled={loading || !selectedRoute}
                   icon={loading ? null : "calculate"}
                   size="large"
                 />
-              </Animatable.View>
-            </View>
-          ) : (
+              </View>
+            {/* Custom location inputs temporarily disabled. Original JSX retained above for reference. */}
+          </>
+        ) : (
+          <>
+            {/* Quote Display */}
             <View style={styles.quoteContainer}>
-              {/* Quote Display Card */}
-              <Animatable.View animation="fadeInUp" duration={400}>
-                <CleanCard style={styles.quoteCard} contentStyle={styles.quoteCardContent}>
-                  <View style={styles.quoteHeader}>
-                    <Text style={styles.quoteTitle}>Chi tiết giá cước</Text>
-                  </View>
+              <View style={styles.quoteHeader}>
+                <View style={styles.quoteHeaderRow}>
+                  <Text style={styles.quoteTitle}>Chi tiết giá cước</Text>
+                  <TouchableOpacity
+                    style={styles.infoBadge}
+                    onPress={() =>
+                      Alert.alert(
+                        'Cách tính giá cước',
+                        '• 0 – 5 km: 10.000 đ\n• >5 – 10 km: 15.000 đ\n• >10 km: 20.000 đ\n\nHệ thống chọn bậc cước phù hợp với tổng quãng đường.'
+                      )
+                    }
+                  >
+                    <Text style={styles.infoBadgeText}>i</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
 
-                  <View style={styles.quoteDetails}>
-                    {/* Route Info */}
-                    <View style={styles.routeInfo}>
-                      <View style={styles.routeItem}>
-                        <Icon name="radio-button-checked" size={16} color="#22C55E" />
-                        <Text style={styles.routeText} numberOfLines={1}>
-                          {quote?.pickupAddress}
-                        </Text>
-                      </View>
-                      <View style={styles.routeItem}>
-                        <Icon name="location-on" size={16} color="#EF4444" />
-                        <Text style={styles.routeText} numberOfLines={1}>
-                          {quote?.dropoffAddress}
-                        </Text>
-                      </View>
-                    </View>
-                    
-                    <View style={styles.quoteDivider} />
-                    
-                    {/* Trip Details */}
-                    <View style={styles.tripDetails}>
-                      <View style={styles.tripDetailItem}>
-                        <Icon name="straighten" size={20} color={colors.accent} />
-                        <View style={styles.tripDetailContent}>
-                          <Text style={styles.tripDetailLabel}>Khoảng cách</Text>
-                          <Text style={styles.tripDetailValue}>{quote?.distance?.toFixed(1)} km</Text>
-                        </View>
-                      </View>
-                      <View style={styles.tripDetailItem}>
-                        <Icon name="schedule" size={20} color="#F97316" />
-                        <View style={styles.tripDetailContent}>
-                          <Text style={styles.tripDetailLabel}>Thời gian</Text>
-                          <Text style={styles.tripDetailValue}>{quote?.estimatedDuration} phút</Text>
-                        </View>
-                      </View>
-                    </View>
-                    
-                    <View style={styles.quoteDivider} />
-                    
-                    {/* Fare Breakdown */}
-                    <View style={styles.fareBreakdown}>
-                      <Text style={styles.fareTitle}>Chi tiết giá cước</Text>
-                      
-                      <View style={styles.quoteRow}>
-                        <Text style={styles.quoteLabel}>Cước cơ bản:</Text>
-                        <Text style={styles.quoteValue}>{quote?.baseFare?.toLocaleString()} đ</Text>
-                      </View>
-                      
-                      <View style={styles.quoteRow}>
-                        <Text style={styles.quoteLabel}>Phí theo km:</Text>
-                        <Text style={styles.quoteValue}>{quote?.distanceFare?.toLocaleString()} đ</Text>
-                      </View>
-                      
-                      {quote?.fare?.surcharge?.amount > 0 && (
-                        <View style={styles.quoteRow}>
-                          <Text style={styles.quoteLabel}>Phụ phí:</Text>
-                          <Text style={styles.quoteValue}>{quote.fare.surcharge.amount?.toLocaleString()} đ</Text>
-                        </View>
-                      )}
-                      
-                      {quote?.fare?.discount?.amount > 0 && (
-                        <View style={styles.quoteRow}>
-                          <Text style={[styles.quoteLabel, { color: '#22C55E' }]}>Giảm giá:</Text>
-                          <Text style={[styles.quoteValue, { color: '#22C55E' }]}>-{quote.fare.discount.amount?.toLocaleString()} đ</Text>
-                        </View>
-                      )}
-                    </View>
-                    
-                    <View style={styles.quoteDivider} />
-                    
-                    <View style={styles.quoteRow}>
-                      <Text style={styles.quoteTotalLabel}>Tổng cộng:</Text>
-                      <Text style={styles.quoteTotalValue}>{quote?.totalFare?.toLocaleString()} đ</Text>
-                    </View>
-                    
-                    <Text style={styles.expiryText}>
-                      Báo giá có hiệu lực đến {quote?.validUntil ? new Date(quote.validUntil).toLocaleTimeString('vi-VN') : ''}
+              <View style={styles.quoteDetails}>
+                {/* Route Info */}
+                <View style={styles.routeInfo}>
+                  <View style={styles.routeItem}>
+                    <Icon name="radio-button-checked" size={16} color="#4CAF50" />
+                    <Text style={styles.routeText} numberOfLines={1}>
+                      {quote?.pickupAddress}
                     </Text>
                   </View>
-                </CleanCard>
-              </Animatable.View>
-
-              {/* Book Ride Button */}
-              <Animatable.View animation="fadeInUp" duration={400} delay={60}>
-                <ModernButton
-                  title={loading ? "Đang đặt xe..." : "Đặt xe ngay"}
-                  onPress={handleBookRide}
-                  disabled={loading}
-                  icon={loading ? null : "directions-car"}
-                  size="large"
-                />
-              </Animatable.View>
+                  <View style={styles.routeItem}>
+                    <Icon name="location-on" size={16} color="#F44336" />
+                    <Text style={styles.routeText} numberOfLines={1}>
+                      {quote?.dropoffAddress}
+                    </Text>
+                  </View>
+                </View>
+                
+                <View style={styles.quoteDivider} />
+                
+                {/* Trip Details */}
+                <View style={styles.tripDetails}>
+                  <View style={styles.tripDetailItem}>
+                    <Icon name="straighten" size={20} color="#2196F3" />
+                    <View style={styles.tripDetailContent}>
+                      <Text style={styles.tripDetailLabel}>Khoảng cách</Text>
+                      <Text style={styles.tripDetailValue}>{quote?.distance?.toFixed(1)} km</Text>
+                    </View>
+                  </View>
+                  <View style={styles.tripDetailItem}>
+                    <Icon name="schedule" size={20} color="#FF9800" />
+                    <View style={styles.tripDetailContent}>
+                      <Text style={styles.tripDetailLabel}>Thời gian</Text>
+                      <Text style={styles.tripDetailValue}>{quote?.estimatedDuration} phút</Text>
+                    </View>
+                  </View>
+                </View>
+                
+                <View style={styles.quoteDivider} />
+                
+                {/* Fare Breakdown */}
+                <View style={styles.fareBreakdown}>
+                  <Text style={styles.fareTitle}>Chi tiết giá cước</Text>
+                  
+                  {/* <View style={styles.quoteRow}>
+                    <Text style={styles.quoteLabel}>Bậc áp dụng:</Text>
+                    <Text style={styles.quoteValue}>
+                      {quote?.tierDescription ||
+                        `${(quote?.fare?.distanceMeters ?? quote?.distanceM ?? 0) / 1000} km`}
+                    </Text>
+                  </View> */}
+                  
+                  <View style={styles.quoteRow}>
+                    <Text style={styles.quoteLabel}>Cước cố định:</Text>
+                    <Text style={styles.quoteValue}>
+                      {quote?.tierSubtotal?.toLocaleString('vi-VN')} đ
+                    </Text>
+                  </View>
+                  
+                  <View style={styles.quoteRow}>
+                    <Text style={styles.quoteLabel}>Giảm giá:</Text>
+                    <Text style={styles.quoteValue}>
+                      {quote?.tierDiscount?.toLocaleString('vi-VN')} đ
+                    </Text>
+                  </View>
+                </View>
+                
+                <View style={styles.quoteDivider} />
+                
+                <View style={styles.quoteRow}>
+                  <Text style={styles.quoteTotalLabel}>Tổng cộng:</Text>
+                  <Text style={styles.quoteTotalValue}>{quote?.totalFare?.toLocaleString()} đ</Text>
+                </View>
+                
+                {/* Expiry Info */}
+                <Text style={styles.expiryText}>
+                  Báo giá có hiệu lực đến {quote?.validUntil ? new Date(quote.validUntil).toLocaleTimeString('vi-VN') : ''}
+                </Text>
+              </View>
             </View>
-          )}
-        </Animatable.View>
-      </SafeAreaView>
+
+            {/* Book Ride Button */}
+            <ModernButton
+              title={loading ? "Đang đặt xe..." : "Đặt xe ngay"}
+              onPress={handleBookRide}
+              disabled={loading}
+              icon={loading ? null : "directions-car"}
+              size="large"
+            />
+          </>
+        )}
+      </Animatable.View>
+    </SafeAreaView>
     </KeyboardAvoidingView>
   );
 };
@@ -710,13 +1202,49 @@ const RideBookingScreen = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: '#fff',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  backButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: '#f8f9fa',
+  },
+  headerTitle: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+    marginHorizontal: 16,
+  },
+  headerSpacer: {
+    width: 40, // Same width as back button to center title
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#666',
   },
   map: {
-    ...StyleSheet.absoluteFillObject,
+    flex: 1,
   },
   mapPlaceholder: {
-    backgroundColor: colors.backgroundMuted,
+    backgroundColor: '#f5f5f5',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -726,261 +1254,404 @@ const styles = StyleSheet.create({
   },
   mapPlaceholderTitle: {
     fontSize: 18,
-    fontFamily: 'Inter_600SemiBold',
-    color: colors.textPrimary,
+    fontWeight: '600',
+    color: '#666',
     marginTop: 15,
     marginBottom: 10,
   },
   mapPlaceholderText: {
     fontSize: 14,
-    fontFamily: 'Inter_400Regular',
-    color: colors.textSecondary,
+    color: '#999',
     textAlign: 'center',
     lineHeight: 20,
-  },
-  headerContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    fontFamily: 'Inter_400Regular',
-    color: colors.textSecondary,
   },
   selectionOverlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    zIndex: 20,
+    backgroundColor: 'rgba(0,0,0,0.1)',
   },
   crosshair: {
     position: 'absolute',
     top: '50%',
     left: '50%',
-    marginTop: -16,
-    marginLeft: -16,
+    marginTop: -15,
+    marginLeft: -15,
   },
   selectionPrompt: {
     position: 'absolute',
-    bottom: 280,
-    left: 20,
-    right: 20,
-  },
-  selectionPromptContent: {
+    bottom: 200,
+    backgroundColor: '#fff',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderRadius: 25,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
   },
   selectionText: {
     fontSize: 16,
-    fontFamily: 'Inter_600SemiBold',
-    color: colors.textPrimary,
-    flex: 1,
+    fontWeight: '600',
+    color: '#333',
+    marginRight: 15,
   },
   cancelSelectionButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 16,
-    backgroundColor: colors.glassLight,
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 15,
   },
   cancelSelectionText: {
     fontSize: 14,
-    fontFamily: 'Inter_600SemiBold',
-    color: colors.textSecondary,
+    color: '#666',
+    fontWeight: '500',
   },
   controlButtons: {
     position: 'absolute',
     right: 20,
-    top: Platform.OS === 'ios' ? 140 : 120,
-    zIndex: 10,
-  },
-  controlButtonCard: {
-    marginBottom: 12,
-  },
-  controlButtonContent: {
-    padding: 0,
-    gap: 8,
+    top: Platform.OS === 'ios' ? 100 : 80,
+    gap: 10,
   },
   controlButton: {
-    width: 48,
-    height: 48,
+    width: 50,
+    height: 50,
+    backgroundColor: '#fff',
+    borderRadius: 25,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 24,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
   },
   bottomPanel: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'transparent',
-    paddingHorizontal: 20,
-    paddingBottom: Platform.OS === 'ios' ? 40 : 20,
-    paddingTop: 20,
-  },
-  inputsContainer: {
-    gap: 16,
-  },
-  locationCard: {
-    marginBottom: 0,
-  },
-  locationCardContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     padding: 20,
-    gap: 16,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 20,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
   },
-  locationHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  locationIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  locationLabel: {
-    fontSize: 16,
-    fontFamily: 'Inter_600SemiBold',
-    color: colors.textPrimary,
+  locationInputs: {
+    marginBottom: 20,
   },
   addressInput: {
-    marginBottom: 0,
+    marginBottom: 5,
   },
-  mapSelectionButton: {
+  locationInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    backgroundColor: colors.glassLight,
+    paddingVertical: 15,
+    paddingHorizontal: 15,
+    backgroundColor: '#f8f9fa',
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#22C55E',
-    alignSelf: 'flex-start',
-    gap: 6,
+    marginBottom: 5,
   },
-  mapSelectionText: {
-    fontSize: 13,
-    fontFamily: 'Inter_500Medium',
-    color: '#22C55E',
+  locationTextInput: {
+    flex: 1,
+    marginLeft: 12,
+    fontSize: 16,
+    color: '#333',
+    paddingVertical: 0,
+  },
+  locationText: {
+    flex: 1,
+    marginLeft: 12,
+    fontSize: 16,
+    color: '#333',
+  },
+  locationDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: 25,
+    marginVertical: 5,
+  },
+  dividerLine: {
+    width: 1,
+    height: 8,
+    backgroundColor: '#ddd',
+    marginHorizontal: 2,
   },
   quoteContainer: {
-    gap: 16,
-  },
-  quoteCard: {
-    marginBottom: 0,
-  },
-  quoteCardContent: {
-    padding: 20,
+    marginBottom: 20,
   },
   quoteHeader: {
-    marginBottom: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
   },
   quoteTitle: {
     fontSize: 18,
-    fontFamily: 'Inter_700Bold',
-    color: colors.textPrimary,
+    fontWeight: '600',
+    color: '#333',
   },
   quoteDetails: {
-    gap: 16,
-  },
-  routeInfo: {
-    gap: 12,
-  },
-  routeItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  routeText: {
-    flex: 1,
-    fontSize: 14,
-    fontFamily: 'Inter_500Medium',
-    color: colors.textSecondary,
-  },
-  quoteDivider: {
-    height: 1,
-    backgroundColor: 'rgba(148,163,184,0.2)',
-  },
-  tripDetails: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    gap: 16,
-  },
-  tripDetailItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    gap: 10,
-  },
-  tripDetailContent: {
-    gap: 4,
-  },
-  tripDetailLabel: {
-    fontSize: 12,
-    fontFamily: 'Inter_400Regular',
-    color: colors.textMuted,
-  },
-  tripDetailValue: {
-    fontSize: 15,
-    fontFamily: 'Inter_600SemiBold',
-    color: colors.textPrimary,
-  },
-  fareBreakdown: {
-    gap: 10,
-  },
-  fareTitle: {
-    fontSize: 16,
-    fontFamily: 'Inter_600SemiBold',
-    color: colors.textPrimary,
-    marginBottom: 4,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    padding: 15,
   },
   quoteRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 8,
   },
   quoteLabel: {
     fontSize: 14,
-    fontFamily: 'Inter_400Regular',
-    color: colors.textSecondary,
+    color: '#666',
   },
   quoteValue: {
     fontSize: 14,
-    fontFamily: 'Inter_500Medium',
-    color: colors.textPrimary,
+    fontWeight: '500',
+    color: '#333',
+  },
+  quoteDivider: {
+    height: 1,
+    backgroundColor: '#ddd',
+    marginVertical: 10,
   },
   quoteTotalLabel: {
     fontSize: 16,
-    fontFamily: 'Inter_600SemiBold',
-    color: colors.textPrimary,
+    fontWeight: '600',
+    color: '#333',
   },
   quoteTotalValue: {
-    fontSize: 20,
-    fontFamily: 'Inter_700Bold',
-    color: '#22C55E',
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#4CAF50',
+  },
+  // New styles for enhanced quote display
+  routeInfo: {
+    marginBottom: 15,
+  },
+  routeItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  routeText: {
+    flex: 1,
+    marginLeft: 10,
+    fontSize: 14,
+    color: '#666',
+  },
+  tripDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 15,
+  },
+  tripDetailItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  tripDetailContent: {
+    marginLeft: 8,
+    alignItems: 'center',
+  },
+  tripDetailLabel: {
+    fontSize: 12,
+    color: '#999',
+    marginBottom: 2,
+  },
+  tripDetailValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+  },
+  fareBreakdown: {
+    marginBottom: 15,
+  },
+  fareTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 10,
   },
   expiryText: {
     fontSize: 12,
-    fontFamily: 'Inter_400Regular',
-    color: colors.textMuted,
+    color: '#999',
     textAlign: 'center',
-    marginTop: 8,
+    marginTop: 10,
     fontStyle: 'italic',
+  },
+  mapSelectionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    marginBottom: 10,
+    alignSelf: 'flex-start',
+  },
+  mapSelectionText: {
+    fontSize: 12,
+    color: '#666',
+    marginLeft: 6,
+    fontWeight: '500',
+  },
+  // Mode Switcher Styles
+  modeSwitcher: {
+    flexDirection: 'row',
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 20,
+  },
+  modeButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  modeButtonActive: {
+    backgroundColor: '#4CAF50',
+  },
+  modeButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#666',
+  },
+  modeButtonTextActive: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  // Route Selector Styles
+  routeSelector: {
+    flex: 1,
+  },
+  loadingRoutesContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  loadingRoutesText: {
+    fontSize: 14,
+    color: '#666',
+  },
+  emptyRoutesContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  emptyRoutesText: {
+    fontSize: 14,
+    color: '#999',
+    marginTop: 10,
+  },
+  routesList: {
+    maxHeight: 300,
+    marginBottom: 20,
+  },
+  routeCard: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  routeCardSelected: {
+    borderColor: '#4CAF50',
+    backgroundColor: '#f0f8f0',
+  },
+  routeCardContent: {
+    flex: 1,
+  },
+  routeCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  routeCardName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    flex: 1,
+  },
+  routeCardNameSelected: {
+    color: '#4CAF50',
+  },
+  routeCardLocations: {
+    marginBottom: 8,
+  },
+  routeLocationItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  routeLocationText: {
+    fontSize: 14,
+    color: '#666',
+    flex: 1,
+  },
+  routeCardPrice: {
+    marginTop: 4,
+  },
+  routePriceText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#4CAF50',
+  },
+  routeCardCheck: {
+    marginLeft: 12,
+  },
+  infoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#fff3cd',
+    borderRadius: 8,
+    marginTop: 8,
+    marginBottom: 10,
+  },
+  infoText: {
+    flex: 1,
+    marginLeft: 8,
+    fontSize: 12,
+    color: '#856404',
+  },
+  quoteHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  infoBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: '#9E9E9E',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  infoBadgeText: {
+    fontSize: 13,
+    color: '#616161',
+    fontWeight: '600',
   },
 });
 

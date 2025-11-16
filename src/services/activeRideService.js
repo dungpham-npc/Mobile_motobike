@@ -40,9 +40,25 @@ class ActiveRideService {
       if (activeRideData) {
         const activeRide = JSON.parse(activeRideData);
         
+        // Validate requestId and rideId
+        const requestId = activeRide.requestId;
+        const rideId = activeRide.rideId;
+        
+        if (!requestId || requestId === 'undefined' || requestId === 'null' || requestId === '{requestId}') {
+          console.warn('⚠️ Invalid requestId in stored ride, clearing...');
+          await this.clearActiveRide();
+          return null;
+        }
+        
+        if (!rideId || rideId === 'undefined' || rideId === 'null' || rideId === '{rideId}') {
+          console.warn('⚠️ Invalid rideId in stored ride, clearing...');
+          await this.clearActiveRide();
+          return null;
+        }
+        
         // Kiểm tra xem ride có còn valid không (không quá 24h)
         const now = Date.now();
-        const rideAge = now - activeRide.timestamp;
+        const rideAge = now - (activeRide.timestamp || 0);
         const maxAge = 24 * 60 * 60 * 1000; // 24 hours
         
         if (rideAge > maxAge) {
@@ -57,6 +73,12 @@ class ActiveRideService {
       return null;
     } catch (error) {
       console.error('❌ Failed to get active ride:', error);
+      // Clear corrupted data
+      try {
+        await this.clearActiveRide();
+      } catch (clearError) {
+        console.error('Failed to clear corrupted active ride:', clearError);
+      }
       return null;
     }
   }

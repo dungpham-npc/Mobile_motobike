@@ -14,6 +14,7 @@ import * as Animatable from 'react-native-animatable';
 
 import websocketService from '../../services/websocketService';
 import authService from '../../services/authService';
+import rideService from '../../services/rideService';
 
 const RiderMatchingScreen = ({ navigation, route }) => {
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
@@ -171,11 +172,35 @@ const RiderMatchingScreen = ({ navigation, route }) => {
         {
           text: 'Hủy chuyến',
           style: 'destructive',
-          onPress: () => {
-            // TODO: Call cancel API
-            setMatchingStatus('cancelled');
-            addNotification('🚫 Đã hủy chuyến đi', 'error');
-            setTimeout(() => navigation.goBack(), 1500);
+          onPress: async () => {
+            try {
+              const requestIdToCancel =
+                rideRequest?.sharedRideRequestId ||
+                rideRequest?.shared_ride_request_id ||
+                rideRequest?.requestId ||
+                rideRequest?.id ||
+                route.params?.rideRequestId ||
+                route.params?.requestId;
+
+              if (!requestIdToCancel) {
+                Alert.alert('Lỗi', 'Không tìm thấy mã yêu cầu chuyến để hủy.');
+                return;
+              }
+
+              await rideService.cancelRequest(requestIdToCancel);
+              setMatchingStatus('cancelled');
+              addNotification('🚫 Đã hủy chuyến đi', 'error');
+              websocketService.disconnect();
+              setTimeout(() => navigation.goBack(), 1200);
+            } catch (error) {
+              console.error('Cancel ride request failed:', error);
+              Alert.alert(
+                'Lỗi',
+                error?.response?.data?.message ||
+                  error?.message ||
+                  'Không thể hủy chuyến đi. Vui lòng thử lại.'
+              );
+            }
           }
         }
       ]

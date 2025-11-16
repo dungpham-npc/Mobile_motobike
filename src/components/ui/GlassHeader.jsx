@@ -7,7 +7,7 @@ import { colors, gradients, radii, typography } from '../../theme/designTokens';
 
 const DEFAULT_GRADIENT = gradients.hero;
 
-const GlassHeader = ({ title, subtitle, onBellPress, gradientColors }) => (
+const GlassHeader = ({ title, subtitle, onBellPress, gradientColors, badgeCount = 0 }) => (
   <View style={styles.outer}>
     <View style={styles.container}>
       <LinearGradient
@@ -22,12 +22,18 @@ const GlassHeader = ({ title, subtitle, onBellPress, gradientColors }) => (
           {!!subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
           <Text style={styles.title}>{title}</Text>
         </View>
-        <TouchableOpacity onPress={onBellPress} style={styles.bell}>
-          <Icon name="notifications" size={22} color={colors.glassLighter} />
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>2</Text>
-          </View>
-        </TouchableOpacity>
+        {onBellPress && (
+          <TouchableOpacity onPress={onBellPress} style={styles.bell}>
+            <Icon name="notifications" size={22} color={colors.glassLighter} />
+            {badgeCount > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>
+                  {badgeCount > 99 ? '99+' : badgeCount}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   </View>

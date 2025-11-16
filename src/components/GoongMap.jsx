@@ -109,10 +109,20 @@ const GoongMap = ({
             markers = [];
 
             markerData.forEach(function(markerInfo, index) {
+                // Handle coordinate format: can be {latitude, longitude} or separate lat/lng
+                const lat = markerInfo.latitude || markerInfo.coordinate?.latitude || markerInfo.lat || 0;
+                const lng = markerInfo.longitude || markerInfo.coordinate?.longitude || markerInfo.lng || 0;
+                
+                if (!lat || !lng) {
+                    console.warn('Invalid marker coordinates:', markerInfo);
+                    return;
+                }
+                
                 const marker = new goongjs.Marker({ 
-                    color: markerInfo.pinColor || '#FF0000' 
+                    color: markerInfo.pinColor || '#FF0000',
+                    anchor: 'bottom'
                 })
-                .setLngLat([markerInfo.longitude, markerInfo.latitude])
+                .setLngLat([lng, lat])
                 .addTo(map);
 
                 if (markerInfo.title || markerInfo.description) {
@@ -318,15 +328,21 @@ const GoongMap = ({
 
     // Update markers
     if (markers && markers.length > 0) {
-      webViewRef.current.postMessage(JSON.stringify({
-        type: 'addMarkers',
-        markers: markers.map(marker => ({
-          latitude: marker.coordinate.latitude,
-          longitude: marker.coordinate.longitude,
+      const formattedMarkers = markers.map(marker => {
+        // Handle different coordinate formats
+        const coord = marker.coordinate || marker;
+        return {
+          latitude: coord.latitude || coord.lat,
+          longitude: coord.longitude || coord.lng,
           title: marker.title,
           description: marker.description,
           pinColor: marker.pinColor
-        }))
+        };
+      }).filter(m => m.latitude && m.longitude); // Filter out invalid markers
+      
+      webViewRef.current.postMessage(JSON.stringify({
+        type: 'addMarkers',
+        markers: formattedMarkers
       }));
     }
 
