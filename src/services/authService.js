@@ -263,6 +263,11 @@ class AuthService {
     }
   }
 
+  // Backward-compatible alias for screens expecting changePassword
+  async changePassword(oldPassword, newPassword) {
+    return this.updatePassword(oldPassword, newPassword);
+  }
+
   // // Update avatar
   // async updateAvatar(avatarFile) {
   //   try {
@@ -388,6 +393,21 @@ class AuthService {
       return response;
     } catch (error) {
       console.error('Forgot password error:', error);
+      throw error;
+    }
+  }
+
+  // Reset password with OTP
+  async resetPassword(email, otp, newPassword) {
+    try {
+      const response = await apiService.post('/auth/reset-password', {
+        email,
+        otp,
+        newPassword,
+      });
+      return response;
+    } catch (error) {
+      console.error('Reset password error:', error);
       throw error;
     }
   }

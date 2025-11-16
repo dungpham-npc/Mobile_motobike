@@ -8,13 +8,16 @@ import {
   ScrollView,
   Alert,
   Image,
-  ActivityIndicator
+  ActivityIndicator,
+  StatusBar,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import Feather from 'react-native-vector-icons/Feather';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Animatable from 'react-native-animatable';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import ModernButton from '../../components/ModernButton.jsx';
 import verificationService from '../../services/verificationService';
@@ -23,6 +26,7 @@ import CleanCard from '../../components/ui/CleanCard.jsx';
 import { colors, gradients } from '../../theme/designTokens';
 
 const StudentVerificationScreen = ({ navigation }) => {
+  const insets = useSafeAreaInsets();
   const [frontImage, setFrontImage] = useState(null);
   const [backImage, setBackImage] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -317,24 +321,12 @@ const StudentVerificationScreen = ({ navigation }) => {
 
   return (
     <AppBackground>
+      <StatusBar barStyle="dark-content" />
       <SafeAreaView style={styles.safe}>
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContent}
-        >
-        {/* Header */}
-        <LinearGradient
-          colors={gradients.hero}
-          style={styles.header}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-        >
-          <View style={styles.headerContent}>
+        {/* Floating back button */}
             <TouchableOpacity 
-              style={styles.backButton}
+          style={[styles.floatingBackButton, { top: insets.top + 12 }]} 
               onPress={() => {
-                // If user came from login, go to Main screen
-                // Otherwise, go back normally
                 if (navigation.canGoBack()) {
                   navigation.goBack();
                 } else {
@@ -342,14 +334,19 @@ const StudentVerificationScreen = ({ navigation }) => {
                 }
               }}
             >
-              <Icon name="arrow-back" size={24} color="#fff" />
+          <Feather name="arrow-left" size={20} color={colors.textPrimary} />
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>Xác minh sinh viên</Text>
-            <View style={styles.placeholder} />
-          </View>
-        </LinearGradient>
 
-        <View style={styles.content}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+        >
+          {/* Header text as part of content */}
+          <View style={styles.headerTextSection}>
+            <Text style={styles.headerSubtitle}>Gửi giấy tờ xác minh</Text>
+            <Text style={styles.headerTitle}>Xác minh sinh viên</Text>
+          </View>
+
           {/* Instructions */}
           <Animatable.View animation="fadeInUp" style={styles.cardWrapper}>
             <CleanCard contentStyle={styles.instructionsCard}>
@@ -511,7 +508,6 @@ const StudentVerificationScreen = ({ navigation }) => {
               Chúng tôi sẽ thông báo kết quả qua email.
             </Text>
           </CleanCard>
-        </View>
       </ScrollView>
       </SafeAreaView>
     </AppBackground>
@@ -523,41 +519,48 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingTop: 12,
+    paddingTop: 24,
+    paddingHorizontal: 24,
     paddingBottom: 140,
+    gap: 24,
   },
-  header: {
-    marginHorizontal: 20,
-    marginTop: 16,
-    marginBottom: 24,
-    borderRadius: 28,
-    paddingVertical: 22,
-    paddingHorizontal: 20,
-  },
-  headerContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  floatingBackButton: {
+    position: 'absolute',
+    left: 16,
+    zIndex: 10,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.25)',
+    justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: 'rgba(15,23,42,0.12)',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  backButton: {
-    padding: 8,
-    backgroundColor: colors.glassLight,
-    borderRadius: 16,
+  headerTextSection: {
+    alignItems: 'center',
+    marginBottom: 8,
+    paddingTop: 12,
+    paddingBottom: 12,
+  },
+  headerSubtitle: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+    color: colors.textMuted,
+    marginBottom: 4,
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: '700',
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 18,
     color: colors.textPrimary,
   },
-  placeholder: {
-    width: 36,
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
   cardWrapper: {
-    marginBottom: 20,
+    marginBottom: 0, // Using gap in parent instead
   },
   instructionsCard: {
     alignItems: 'center',

@@ -14,19 +14,18 @@ import Feather from 'react-native-vector-icons/Feather';
 import AppBackground from '../../components/layout/AppBackground.jsx';
 import CleanCard from '../../components/ui/CleanCard.jsx';
 import { SoftBackHeader } from '../../components/ui/GlassHeader.jsx';
-import ModernButton from '../../components/ModernButton.jsx';
-import authService from '../../services/authService';
 import verificationService from '../../services/verificationService';
-import { ApiError } from '../../services/api';
+import profileService from '../../services/profileService';
+import authService from '../../services/authService';
 import { colors } from '../../theme/designTokens';
 import useSoftHeaderSpacing from '../../hooks/useSoftHeaderSpacing.js';
 
 const ProfileSwitchScreen = ({ navigation }) => {
-  const { headerOffset, contentPaddingTop } = useSoftHeaderSpacing({ contentExtra: 28 });
+  const { headerOffset, contentPaddingTop } = useSoftHeaderSpacing({ contentExtra: 56 });
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [switchLoading, setSwitchLoading] = useState(false);
   const [currentStudentVerification, setCurrentStudentVerification] = useState(null);
+  const [switchLoading, setSwitchLoading] = useState(false);
 
   useEffect(() => {
     loadUserProfile();
@@ -71,53 +70,6 @@ const ProfileSwitchScreen = ({ navigation }) => {
 
   const studentStatus = getStudentVerificationStatus(currentStudentVerification);
   const driverStatus = getDriverVerificationStatus(user, studentStatus);
-
-  const handleSwitchProfile = async (targetRole) => {
-    if (!user) return;
-
-    if (targetRole === 'driver' && !user.driver_profile) {
-      Alert.alert(
-        'Chưa thể chuyển đổi',
-        'Bạn cần xác minh tài khoản tài xế trước. Vui lòng gửi giấy tờ để admin duyệt.',
-        [
-          { text: 'Hủy', style: 'cancel' },
-          { text: 'Gửi giấy tờ', onPress: () => navigation.navigate('DriverVerification') },
-        ]
-      );
-      return;
-    }
-
-    setSwitchLoading(true);
-
-    try {
-      await authService.switchProfile(targetRole);
-      Alert.alert(
-        'Thành công',
-        `Đã chuyển sang chế độ ${targetRole === 'driver' ? 'Tài xế' : 'Hành khách'}`,
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              if (targetRole === 'driver') {
-                navigation.replace('DriverMain');
-              } else {
-                navigation.replace('Main');
-              }
-            },
-          },
-        ]
-      );
-    } catch (error) {
-      console.error('Switch profile error:', error);
-      let errorMessage = 'Không thể chuyển đổi chế độ';
-      if (error instanceof ApiError) {
-        errorMessage = error.message || errorMessage;
-      }
-      Alert.alert('Lỗi', errorMessage);
-    } finally {
-      setSwitchLoading(false);
-    }
-  };
 
   const handleStudentVerificationPress = () => {
     const status = currentStudentVerification?.status?.toLowerCase();
@@ -167,6 +119,38 @@ const ProfileSwitchScreen = ({ navigation }) => {
     );
   }
 
+  const isDriver = user?.user?.user_type === 'driver';
+
+  const handleSwitch = async (targetRole) => {
+    if (!user) return;
+
+    if (targetRole === 'driver' && !user?.driver_profile) {
+      Alert.alert('Chưa thể chuyển đổi', 'Bạn chưa xác minh tài xế. Vui lòng gửi giấy tờ.');
+      return;
+    }
+
+    if ((targetRole === 'driver' && isDriver) || (targetRole === 'rider' && !isDriver)) {
+      return; // already in this mode
+    }
+
+    try {
+      setSwitchLoading(true);
+      await profileService.switchProfile(targetRole);
+      const refreshed = await authService.getCurrentUserProfile();
+      setUser(refreshed);
+      // Move user to correct root
+      if (targetRole === 'driver') {
+        navigation.replace('DriverMain');
+      } else {
+        navigation.replace('Main');
+      }
+    } catch (error) {
+      Alert.alert('Lỗi', 'Không thể chuyển đổi chế độ');
+    } finally {
+      setSwitchLoading(false);
+    }
+  };
+
   return (
     <AppBackground>
       <SafeAreaView style={styles.safe}>
@@ -182,35 +166,17 @@ const ProfileSwitchScreen = ({ navigation }) => {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[styles.scrollContent, { paddingTop: contentPaddingTop }]}
         >
-          <CleanCard contentStyle={styles.heroCard}>
-            <View style={styles.heroIconWrap}>
-              <Feather name="git-branch" size={22} color={colors.accent} />
-            </View>
-            <View style={{ gap: 6 }}>
-              <Text style={styles.heroTitle}>Chuyển đổi chế độ</Text>
-              <Text style={styles.heroSubtitle}>
-                Chọn chế độ hoạt động phù hợp với nhu cầu sử dụng Campus Ride của bạn.
-              </Text>
-            </View>
-          </CleanCard>
-
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Chế độ hiện tại</Text>
             <CleanCard contentStyle={styles.cardPadding}>
               <View style={styles.currentRow}>
-                <View style={[styles.roundIcon, { backgroundColor: authService.isDriver() ? '#E7F2FF' : '#E6F6EF' }]}>
-                  <Feather
-                    name={authService.isDriver() ? 'truck' : 'user'}
-                    size={22}
-                    color={authService.isDriver() ? colors.accent : colors.primary}
-                  />
+                <View style={[styles.roundIcon, { backgroundColor: isDriver ? '#E7F2FF' : '#E6F6EF' }]}>
+                  <Feather name={isDriver ? 'truck' : 'user'} size={22} color={isDriver ? colors.accent : colors.primary} />
                 </View>
                 <View style={{ flex: 1, gap: 6 }}>
-                  <Text style={styles.modeHeading}>{authService.isDriver() ? 'Tài xế' : 'Hành khách'}</Text>
+                  <Text style={styles.modeHeading}>{isDriver ? 'Tài xế' : 'Hành khách'}</Text>
                   <Text style={styles.modeDescription}>
-                    {authService.isDriver()
-                      ? 'Nhận chuyến đi từ sinh viên khác và kiếm thêm thu nhập.'
-                      : 'Đặt chuyến đi và tìm tài xế chia sẻ trong khuôn viên.'}
+                    {isDriver ? 'Nhận chuyến đi và chia sẻ hành trình.' : 'Đặt chuyến đi, tìm tài xế xung quanh.'}
                   </Text>
                 </View>
               </View>
@@ -219,100 +185,50 @@ const ProfileSwitchScreen = ({ navigation }) => {
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Chế độ có thể chuyển</Text>
-            <ModeOption
-              title="Hành khách"
-              description="Đặt chuyến đi, tìm tài xế xung quanh"
-              icon="user"
-              tint={colors.primary}
-              active={!authService.isDriver()}
-              status={!authService.isDriver() ? 'Đang sử dụng' : undefined}
-              onPress={() => handleSwitchProfile('rider')}
-            />
-            <ModeOption
-              title="Tài xế"
-              description="Chia sẻ chuyến đi, kiếm thêm thu nhập"
-              icon="truck"
-              tint={colors.accent}
-              active={authService.isDriver()}
-              status={!user?.driver_profile ? 'Cần xác minh' : authService.isDriver() ? 'Đang sử dụng' : undefined}
-              disabled={!user?.driver_profile}
-              onPress={() => handleSwitchProfile('driver')}
-            />
+            <TouchableOpacity
+              style={[styles.modeRow, !isDriver && styles.modeRowDisabled]}
+              disabled={!isDriver}
+              onPress={() => handleSwitch('rider')}
+              activeOpacity={0.85}
+            >
+              <View style={[styles.modeIcon, { backgroundColor: 'rgba(16,185,129,0.12)' }]}>
+                <Feather name="user" size={20} color={colors.primary} />
+              </View>
+              <View style={styles.modeInfo}>
+                <Text style={[styles.modeTitle, !isDriver && { color: '#6B7280' }]}>Hành khách</Text>
+                <Text style={styles.modeSubtitle}>Đặt chuyến đi, tìm tài xế xung quanh</Text>
+              </View>
+              {!isDriver && <View style={styles.badge}><Text style={styles.badgeText}>Đang sử dụng</Text></View>}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.modeRow, (isDriver ? true : !user?.driver_profile) && styles.modeRowDisabled]}
+              disabled={isDriver || !user?.driver_profile || switchLoading}
+              onPress={() => handleSwitch('driver')}
+              activeOpacity={0.85}
+            >
+              <View style={[styles.modeIcon, { backgroundColor: 'rgba(59,130,246,0.12)' }]}>
+                <Feather name="truck" size={20} color={colors.accent} />
+              </View>
+              <View style={styles.modeInfo}>
+                <Text style={[styles.modeTitle, isDriver && { color: '#6B7280' }]}>Tài xế</Text>
+                <Text style={styles.modeSubtitle}>Chia sẻ chuyến đi, kiếm thêm thu nhập</Text>
+              </View>
+              {isDriver && <View style={styles.badge}><Text style={styles.badgeText}>Đang sử dụng</Text></View>}
+              {!isDriver && !user?.driver_profile && (
+                <View style={styles.badgeWarning}><Text style={styles.badgeWarningText}>Cần xác minh</Text></View>
+              )}
+            </TouchableOpacity>
           </View>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Xác minh tài khoản</Text>
-            <CleanCard contentStyle={styles.cardPadding}>
-              <VerificationRow
-                title="Xác minh sinh viên"
-                description="Gửi thẻ sinh viên để xác nhận bạn thuộc trường."
-                icon="book-open"
-                status={studentStatus.text}
-                statusColor={studentStatus.color}
-                buttonTitle={studentStatus.status === 'verified' ? undefined : 'Gửi giấy tờ'}
-                buttonDisabled={studentStatus.status === 'pending'}
-                onButtonPress={handleStudentVerificationPress}
-              />
-              <VerificationRow
-                title="Xác minh tài xế"
-                description="Gửi giấy tờ xe và bằng lái để trở thành tài xế chia sẻ."
-                icon="clipboard"
-                status={driverStatus.status === 'verified' ? driverStatus.text : undefined}
-                statusColor={driverStatus.color}
-                buttonTitle={driverStatus.status === 'verified' ? undefined : 'Gửi giấy tờ'}
-                buttonDisabled={driverStatus.disabled || driverStatus.status === 'pending'}
-                onButtonPress={() => navigation.navigate('DriverVerification')}
-              />
-            </CleanCard>
-            <View style={styles.infoBanner}>
-              <Feather name="info" size={16} color={colors.textSecondary} />
-              <Text style={styles.infoBannerText}>
-                Sau khi hoàn tất xác minh tài xế, bạn có thể chuyển đổi giữa hai chế độ bất kỳ lúc nào.
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.section}>
-            <CleanCard contentStyle={styles.actionsCard}>
-              <ModernButton
-                variant="secondary"
-                title="Trở về hồ sơ"
-                onPress={() => navigation.goBack()}
-              />
-              <ModernButton
-                title={switchLoading ? 'Đang chuyển...' : authService.isDriver() ? 'Sử dụng chế độ hành khách' : 'Sử dụng chế độ tài xế'}
-                onPress={() => handleSwitchProfile(authService.isDriver() ? 'rider' : 'driver')}
-                disabled={switchLoading || (!authService.isDriver() && !user?.driver_profile)}
-              />
-            </CleanCard>
-          </View>
+          {/* Verification section removed from this screen */}
         </ScrollView>
       </SafeAreaView>
     </AppBackground>
   );
 };
 
-const ModeOption = ({ title, description, icon, tint, status, active, disabled, onPress }) => (
-  <TouchableOpacity
-    onPress={onPress}
-    activeOpacity={0.85}
-    disabled={disabled}
-    style={[styles.modeOption, active && { borderColor: tint, borderWidth: 1.5 }, disabled && styles.modeOptionDisabled]}
-  >
-    <View style={[styles.modeIcon, { backgroundColor: active ? tint : 'rgba(17,24,39,0.06)' }]}>
-      <Feather name={icon} size={20} color={active ? '#FFFFFF' : tint} />
-    </View>
-    <View style={styles.modeInfo}>
-      <Text style={[styles.modeTitle, active && { color: '#111827' }]}>{title}</Text>
-      <Text style={styles.modeSubtitle}>{description}</Text>
-    </View>
-    {status && (
-      <View style={[styles.modeStatusBadge, { backgroundColor: `${tint}1A` }]}>
-        <Text style={[styles.modeStatusText, { color: tint }]}>{status}</Text>
-      </View>
-    )}
-  </TouchableOpacity>
-);
+// ModeOption removed as the screen now only shows account verification
 
 const VerificationRow = ({
   title,
@@ -402,9 +318,92 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'flex-start',
     paddingHorizontal: 24,
     paddingBottom: 40,
     gap: 24,
+  },
+  currentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 18,
+  },
+  roundIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modeHeading: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  modeDescription: {
+    fontSize: 14,
+    color: '#6B7280',
+    lineHeight: 20,
+  },
+  modeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    gap: 14,
+    shadowColor: 'rgba(0,0,0,0.05)',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    marginBottom: 10,
+  },
+  modeRowDisabled: {
+    opacity: 0.6,
+  },
+  modeIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modeInfo: {
+    flex: 1,
+    gap: 4,
+  },
+  modeTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  modeSubtitle: {
+    fontSize: 13,
+    color: '#8A8A93',
+  },
+  badge: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: 'rgba(16,185,129,0.12)',
+  },
+  badgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  badgeWarning: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: 'rgba(239,68,68,0.12)',
+  },
+  badgeWarningText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#EF4444',
   },
   heroCard: {
     paddingVertical: 24,
@@ -444,74 +443,7 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
     gap: 18,
   },
-  currentRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 18,
-  },
-  roundIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modeHeading: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  modeDescription: {
-    fontSize: 14,
-    color: '#6B7280',
-    lineHeight: 20,
-  },
-  modeOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 18,
-    paddingHorizontal: 18,
-    borderRadius: 18,
-    gap: 16,
-    shadowColor: 'rgba(0,0,0,0.05)',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-  },
-  modeOptionDisabled: {
-    opacity: 0.55,
-  },
-  modeIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modeInfo: {
-    flex: 1,
-    gap: 4,
-  },
-  modeTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#6B7280',
-  },
-  modeSubtitle: {
-    fontSize: 13,
-    color: '#8A8A93',
-  },
-  modeStatusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 14,
-  },
-  modeStatusText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.accent,
-  },
+  // removed styles related to mode switching and action buttons
   verificationRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -560,30 +492,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#FFFFFF',
   },
-  infoBanner: {
-    marginTop: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    shadowColor: 'rgba(0,0,0,0.04)',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-  },
-  infoBannerText: {
-    flex: 1,
-    fontSize: 13,
-    color: '#6B7280',
-    lineHeight: 20,
-  },
-  actionsCard: {
-    padding: 18,
-    gap: 12,
-  },
+  // removed info banner and actions card styles
 });
 
 export default ProfileSwitchScreen;

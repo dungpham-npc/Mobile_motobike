@@ -88,13 +88,7 @@ const ProfileScreen = ({ navigation }) => {
     { icon: 'swap-horiz', title: 'Chuyển đổi chế độ', onPress: () => navigation.navigate('ProfileSwitch') },
     { icon: 'edit', title: 'Chỉnh sửa thông tin', onPress: () => navigation.navigate('EditProfile') },
     { icon: 'security', title: 'Đổi mật khẩu', onPress: () => navigation.navigate('ChangePassword') },
-    {
-      icon: 'verified',
-      title: 'Xác minh tài khoản',
-      onPress: () => {
-        navigation.navigate('ProfileSwitch');
-      },
-    },
+    { icon: 'verified', title: 'Xác minh tài khoản', onPress: () => navigation.navigate('AccountVerification') },
     { icon: 'help', title: 'Trợ giúp & Hỗ trợ', onPress: () => Alert.alert('Thông báo', 'Chức năng đang phát triển') },
     { icon: 'policy', title: 'Điều khoản sử dụng', onPress: () => Alert.alert('Thông báo', 'Chức năng đang phát triển') },
     { icon: 'info', title: 'Về chúng tôi', onPress: () => Alert.alert('Thông báo', 'Chức năng đang phát triển') },
@@ -131,6 +125,9 @@ const ProfileScreen = ({ navigation }) => {
     );
   }
 
+  // Check if user is verified (both email and phone must be verified)
+  const isVerified = user.user?.email_verified && user.user?.phone_verified;
+
   return (
     <AppBackground>
       <SafeAreaView style={styles.safe}>
@@ -160,17 +157,17 @@ const ProfileScreen = ({ navigation }) => {
                   <Text style={styles.studentId}>MSSV: {user.user?.student_id || 'Chưa cập nhật'}</Text>
                   <View style={styles.verificationStatus}>
                     <Icon
-                      name={authService.isRiderVerified() ? 'verified' : 'pending'}
+                      name={isVerified ? 'verified' : 'pending'}
                       size={16}
-                      color={authService.isRiderVerified() ? '#22C55E' : '#F97316'}
+                      color={isVerified ? '#22C55E' : '#F97316'}
                     />
                     <Text
                       style={[
                         styles.verificationText,
-                        { color: authService.isRiderVerified() ? '#22C55E' : '#F97316' },
+                        { color: isVerified ? '#22C55E' : '#F97316' },
                       ]}
                     >
-                      {authService.isRiderVerified() ? 'Đã xác minh' : 'Chưa xác minh'}
+                      {isVerified ? 'Đã xác minh' : 'Chưa xác minh'}
                     </Text>
                   </View>
                 </View>

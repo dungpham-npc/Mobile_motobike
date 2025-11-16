@@ -22,10 +22,23 @@ import ModernButton from '../../components/ModernButton.jsx';
 import useSoftHeaderSpacing from '../../hooks/useSoftHeaderSpacing.js';
 
 const RegisterScreen = (props) => {
-  const navigation = props?.navigation;
+  const { navigation, onRequestClose, onSuccess } = props || {};
+  const isEmbedded = typeof onRequestClose === 'function';
   const { headerOffset, contentPaddingTop } = useSoftHeaderSpacing({ contentExtra: 24 });
-  const safeGoBack = () => navigation?.goBack?.();
-  const navigateToLogin = () => navigation?.navigate?.('Login');
+  const safeGoBack = () => {
+    if (isEmbedded) {
+      onRequestClose?.();
+      return;
+    }
+    navigation?.goBack?.();
+  };
+  const navigateToLogin = () => {
+    if (isEmbedded) {
+      onRequestClose?.();
+      return;
+    }
+    navigation?.navigate?.('Login');
+  };
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -104,7 +117,12 @@ const RegisterScreen = (props) => {
             text: 'Đăng nhập ngay', 
             onPress: () => {
               // Navigate to Login and pass email to pre-fill
-              navigation.navigate('Login', { prefillEmail: formData.email });
+              if (isEmbedded) {
+                onSuccess?.(formData.email);
+                onRequestClose?.();
+                return;
+              }
+              navigation?.navigate?.('Login', { prefillEmail: formData.email });
             }
           }
         ]

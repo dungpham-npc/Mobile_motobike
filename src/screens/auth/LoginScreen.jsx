@@ -9,6 +9,7 @@ import GlassButton from '../../components/ui/GlassButton.jsx';
 import AppBackground from '../../components/layout/AppBackground.jsx';
 import CleanCard from '../../components/ui/CleanCard.jsx';
 import { colors } from '../../theme/designTokens';
+import RegisterScreen from './RegisterScreen.jsx';
 
 const LoginScreen = ({ navigation, route }) => {
   // Pre-fill email if coming from registration
@@ -18,6 +19,14 @@ const LoginScreen = ({ navigation, route }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [targetProfile, setTargetProfile] = useState('rider'); // Default to rider
+  const [showRegister, setShowRegister] = useState(false);
+  const closeRegisterInline = () => setShowRegister(false);
+  const handleRegisterSuccess = (newEmail) => {
+    if (newEmail) {
+      setEmail(newEmail);
+    }
+    setShowRegister(false);
+  };
   
   // Update email when route params change
   useEffect(() => {
@@ -33,6 +42,16 @@ const LoginScreen = ({ navigation, route }) => {
       );
     }
   }, [prefillEmail, route?.params?.verifiedEmail]);
+
+  if (showRegister) {
+    return (
+      <RegisterScreen
+        navigation={navigation}
+        onRequestClose={closeRegisterInline}
+        onSuccess={handleRegisterSuccess}
+      />
+    );
+  }
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -57,11 +76,11 @@ const LoginScreen = ({ navigation, route }) => {
           error.message?.includes("email-verification-pending") ||
           error.data?.error?.id === "user.validation.profile-not-exists") {
         // Automatically navigate to OTP verification screen for email verification
-        navigation.navigate('OTPVerification', {
-          email: email,
+                navigation.navigate('OTPVerification', {
+                  email: email,
           purpose: 'VERIFY_EMAIL',
           fromLogin: true, // Flag to indicate coming from login
-        });
+                });
         return;
       }
       
@@ -194,9 +213,15 @@ const LoginScreen = ({ navigation, route }) => {
                 </View>
               </View>
 
-              <TouchableOpacity style={styles.forgotPassword} onPress={() => navigation.navigate('ResetPassword')}>
-                <Text style={styles.forgotPasswordText}>Quên mật khẩu?</Text>
-              </TouchableOpacity>
+              <View style={styles.inlineActions}>
+                <TouchableOpacity style={styles.registerInline} onPress={() => setShowRegister(true)}>
+                  <Text style={styles.registerInlineText}>Đăng ký tài khoản</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.forgotPassword} onPress={() => navigation.navigate('ResetPassword')}>
+                  <Text style={styles.forgotPasswordText}>Quên mật khẩu?</Text>
+                </TouchableOpacity>
+              </View>
 
               <GlassButton title={loading ? '...' : 'Đăng nhập'} onPress={handleLogin} style={styles.signInButton} />
 
@@ -221,7 +246,7 @@ const LoginScreen = ({ navigation, route }) => {
 
           <View style={styles.footer}>
               <Text style={styles.footerText}>Chưa có tài khoản?</Text>
-              <TouchableOpacity onPress={() => navigation.navigate('Register')}>
+              <TouchableOpacity onPress={() => setShowRegister(true)}>
                 <Text style={styles.registerLink}>Đăng ký</Text>
               </TouchableOpacity>
             </View>
@@ -331,8 +356,23 @@ const styles = StyleSheet.create({
   profileButtonTextActive: {
     color: '#FFFFFF',
   },
+  inlineActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 6,
+    marginBottom: 6,
+  },
+  registerInline: {
+    paddingVertical: 6,
+  },
+  registerInlineText: {
+    color: colors.accent,
+    fontSize: 13,
+    fontFamily: 'Inter_600SemiBold',
+  },
   forgotPassword: {
-    alignSelf: 'flex-end',
+    paddingVertical: 6,
   },
   forgotPasswordText: {
     color: colors.accent,
@@ -394,3 +434,4 @@ const styles = StyleSheet.create({
 });
 
 export default LoginScreen;
+

@@ -1,23 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
-import { navigationRef } from './src/utils/navigationRef';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { PaperProvider } from 'react-native-paper';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { useFonts, Inter_400Regular, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
 import { View, ActivityIndicator } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import { colors } from './src/theme/designTokens';
 import authService from './src/services/authService';
 
-// Authentication Screens
+// Screens
 import LoginScreen from './src/screens/auth/LoginScreen.jsx';
 import RegisterScreen from './src/screens/auth/RegisterScreen.jsx';
 import OTPVerificationScreen from './src/screens/auth/OTPVerificationScreen.jsx';
 import ResetPasswordScreen from './src/screens/auth/ResetPasswordScreen.jsx';
-
-// Rider Screens
 import HomeScreen from './src/screens/main/HomeScreen.jsx';
 import ProfileScreen from './src/screens/main/ProfileScreen.jsx';
 import WalletScreen from './src/screens/main/WalletScreen.jsx';
@@ -35,10 +29,12 @@ import NotificationsScreen from './src/screens/main/NotificationsScreen.jsx';
 // Profile Screens
 import EditProfileScreen from './src/screens/profile/EditProfileScreen.jsx';
 import ChangePasswordScreen from './src/screens/profile/ChangePasswordScreen.jsx';
+// import ResetPasswordScreen from './src/screens/profile/ResetPasswordScreen.jsx';
 
-// Verification Screens
-import StudentVerificationScreen from './src/screens/verification/StudentVerificationScreen.jsx';
-import DriverVerificationScreen from './src/screens/verification/DriverVerificationScreen.jsx';
+// Ride Screens
+import RideBookingScreen from './src/screens/ride/RideBookingScreen.jsx';
+import RiderMatchingScreen from './src/screens/ride/RiderMatchingScreen.jsx';
+import RideTrackingScreen from './src/screens/ride/RideTrackingScreen.jsx';
 
 // Driver Screens
 import DriverHomeScreen from './src/screens/driver/DriverHomeScreen.jsx';
@@ -72,21 +68,23 @@ function MainTabs() {
           elevation: 0,
           height: 0,
         },
-        tabBarIcon: ({ color, size }) => {
-          let iconName = 'home';
-
-          if (route.name === 'Wallet') {
+        tabBarIcon: ({ focused, color, size }) => {
+          let iconName;
+          
+          if (route.name === 'Home') {
+            iconName = 'home';
+          } else if (route.name === 'Wallet') {
             iconName = 'account-balance-wallet';
           } else if (route.name === 'History') {
             iconName = 'history';
           } else if (route.name === 'Profile') {
             iconName = 'person';
           }
-
+          
           return <Icon name={iconName} size={size} color={color} />;
         },
-        tabBarActiveTintColor: colors.primaryDark,
-        tabBarInactiveTintColor: '#9CA3AF',
+        tabBarActiveTintColor: '#000',
+        tabBarInactiveTintColor: 'gray',
         headerShown: false,
       })}
       tabBar={(props) => <GlassTabBar {...props} />}
@@ -100,11 +98,6 @@ function MainTabs() {
 }
 
 export default function App() {
-  const [fontsLoaded] = useFonts({
-    Inter_400Regular,
-    Inter_600SemiBold,
-    Inter_700Bold,
-  });
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
@@ -123,11 +116,11 @@ export default function App() {
     }
   };
 
-  if (isLoading || !fontsLoaded) {
+  if (isLoading) {
     return (
       <PaperProvider>
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <ActivityIndicator size="large" color="#4CAF50" />
         </View>
       </PaperProvider>
     );
@@ -189,4 +182,3 @@ export default function App() {
     </SafeAreaProvider>
   );
 }
-
