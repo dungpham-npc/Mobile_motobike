@@ -9,6 +9,7 @@ import authService from '../services/authService';
 const ActiveRideCard = ({ navigation }) => {
   const [activeRide, setActiveRide] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [cancelling, setCancelling] = useState(false);
 
   useEffect(() => {
     loadActiveRide();
@@ -259,17 +260,44 @@ const ActiveRideCard = ({ navigation }) => {
   };
 
   const handleCancelRide = () => {
+    if (!activeRide) return;
+
+    const isDriver = activeRide.userType === 'driver';
+
     Alert.alert(
-      'Hủy chuyến đi',
-      'Bạn có chắc chắn muốn hủy chuyến đi đang diễn ra?',
+      isDriver ? 'Hủy chuyến xe' : 'Hủy chuyến đi',
+      isDriver
+        ? 'Bạn có chắc chắn muốn hủy chuyến xe này?'
+        : 'Bạn có chắc chắn muốn hủy chuyến đi đang diễn ra?',
       [
         { text: 'Không', style: 'cancel' },
         {
           text: 'Hủy',
           style: 'destructive',
           onPress: async () => {
-            await activeRideService.clearActiveRide();
-            setActiveRide(null);
+            try {
+              setCancelling(true);
+
+              if (isDriver) {
+                if (!activeRide.rideId) {
+                  throw new Error('Không tìm thấy mã chuyến xe để hủy.');
+                }
+                await rideService.cancelRide(activeRide.rideId);
+              } else if (activeRide.requestId) {
+                await rideService.cancelRequest(activeRide.requestId);
+              } else {
+                throw new Error('Không tìm thấy mã yêu cầu để hủy.');
+              }
+
+              await activeRideService.clearActiveRide();
+              setActiveRide(null);
+              Alert.alert('Thành công', isDriver ? 'Chuyến xe đã được hủy.' : 'Yêu cầu đã được hủy.');
+            } catch (error) {
+              console.error('Cancel ride error:', error);
+              Alert.alert('Lỗi', error?.message || 'Không thể hủy chuyến. Vui lòng thử lại.');
+            } finally {
+              setCancelling(false);
+            }
           }
         }
       ]
@@ -377,8 +405,9 @@ const ActiveRideCard = ({ navigation }) => {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.cancelButton}
+          style={[styles.cancelButton, cancelling && styles.cancelButtonDisabled]}
           onPress={handleCancelRide}
+          disabled={cancelling}
         >
           <Icon name="close" size={20} color="#F44336" />
         </TouchableOpacity>
@@ -492,6 +521,9 @@ const styles = StyleSheet.create({
     borderColor: '#F44336',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  cancelButtonDisabled: {
+    opacity: 0.5,
   },
 });
 

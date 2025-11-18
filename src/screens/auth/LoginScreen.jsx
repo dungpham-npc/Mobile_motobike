@@ -199,8 +199,6 @@ const LoginScreen = ({ navigation, route }) => {
               </TouchableOpacity>
 
               <GlassButton title={loading ? '...' : 'Đăng nhập'} onPress={handleLogin} style={styles.signInButton} />
-
-            
             </CleanCard>
 
           <View style={styles.footer}>

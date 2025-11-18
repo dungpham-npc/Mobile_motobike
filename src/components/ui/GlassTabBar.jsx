@@ -25,12 +25,17 @@ const GlassTabBar = ({ state, descriptors, navigation }) => {
     }
   };
 
+  const bottomOffset =
+    Platform.OS === 'android'
+      ? Math.max(insets.bottom - 2, 6)
+      : Math.max(insets.bottom - 2, 4);
+
   return (
     <View
       style={[
         styles.wrapper,
         {
-          paddingBottom: Math.max(insets.bottom, 26),
+          bottom: bottomOffset,
         },
       ]}
     >
@@ -119,7 +124,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: -2,
     alignItems: 'center',
     pointerEvents: 'box-none',
   },
@@ -171,7 +175,7 @@ const styles = StyleSheet.create({
   tabInner: {
     minWidth: 54,
     height: 44,
-    paddingHorizontal: 12,
+    // paddingHorizontal: 12,
     borderRadius: 26,
     justifyContent: 'center',
     alignItems: 'center',

@@ -56,6 +56,14 @@ class RatingService {
       throw error;
     }
   }
+
+  async getRiderRatingsHistory(page = 0, size = 20) {
+    return this.getRiderRatings(page, size);
+  }
+
+  async getDriverRatingsHistory(page = 0, size = 20) {
+    return this.getDriverRatings(page, size);
+  }
 }
 
 export default new RatingService();

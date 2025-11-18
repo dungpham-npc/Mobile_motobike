@@ -1,6 +1,7 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
 import DriverHomeScreen from '../screens/driver/DriverHomeScreen.jsx';
@@ -11,6 +12,10 @@ import DriverProfileScreen from '../screens/driver/DriverProfileScreen.jsx';
 const Tab = createBottomTabNavigator();
 
 const DriverTabNavigator = () => {
+  const insets = useSafeAreaInsets();
+  const extraBottomSpace = Math.max(insets.bottom, Platform.OS === 'android' ? 12 : 6);
+  const baseHeight = Platform.OS === 'ios' ? 64 : 56;
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -33,8 +38,8 @@ const DriverTabNavigator = () => {
         tabBarInactiveTintColor: 'gray',
         headerShown: false,
         tabBarStyle: {
-          height: Platform.OS === 'ios' ? 88 : 60,
-          paddingBottom: Platform.OS === 'ios' ? 28 : 8,
+          height: baseHeight + extraBottomSpace,
+          paddingBottom: extraBottomSpace,
           paddingTop: 8,
           backgroundColor: '#fff',
           borderTopWidth: 1,

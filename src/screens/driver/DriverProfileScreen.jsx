@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,28 +7,105 @@ import {
   TouchableOpacity,
   ScrollView,
   Image,
-  Alert
+  Alert,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Animatable from 'react-native-animatable';
+import { useFocusEffect } from '@react-navigation/native';
 
 import ModernButton from '../../components/ModernButton.jsx';
-import mockData from '../../data/mockData.json';
+import authService from '../../services/authService';
+import vehicleService from '../../services/vehicleService';
 
 const DriverProfileScreen = ({ navigation }) => {
   const [showVehicleInfo, setShowVehicleInfo] = useState(true);
+  const [user, setUser] = useState(null);
+  const [vehicles, setVehicles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const driver = mockData.users[1]; // Driver user
-  const vehicleInfo = driver.vehicleInfo;
+  useEffect(() => {
+    loadDriverData();
+  }, []);
 
-  const handleLogout = () => {
+  useFocusEffect(
+    React.useCallback(() => {
+      loadDriverData();
+    }, [])
+  );
+
+  const loadDriverData = async () => {
+    try {
+      setLoading(true);
+      
+      // Load user profile first
+      const userProfile = await authService.getCurrentUserProfile();
+      setUser(userProfile);
+      
+      // Try to load vehicles, but don't fail if it errors (403, etc.)
+      try {
+        const vehiclesData = await vehicleService.getDriverVehicles({ page: 0, size: 10 });
+        
+        // Extract vehicles from response (could be array or paginated response)
+        if (vehiclesData) {
+          if (Array.isArray(vehiclesData)) {
+            setVehicles(vehiclesData);
+          } else if (vehiclesData.content && Array.isArray(vehiclesData.content)) {
+            setVehicles(vehiclesData.content);
+          } else if (vehiclesData.data && Array.isArray(vehiclesData.data)) {
+            setVehicles(vehiclesData.data);
+          } else {
+            setVehicles([]);
+          }
+        } else {
+          setVehicles([]);
+        }
+      } catch (vehicleError) {
+        // If vehicle loading fails (403, 404, etc.), just set empty array
+        console.warn('Could not load vehicles (may not have permission or no vehicles):', vehicleError);
+        setVehicles([]);
+      }
+    } catch (error) {
+      console.error('Error loading driver data:', error);
+      // Only show alert if user profile failed to load
+      if (!user) {
+        Alert.alert('Lỗi', 'Không thể tải thông tin tài xế');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadDriverData();
+    setRefreshing(false);
+  };
+
+  // Get first vehicle or default
+  const vehicleInfo = vehicles.length > 0 ? vehicles[0] : null;
+
+  const handleLogout = async () => {
     Alert.alert(
       'Đăng xuất',
       'Bạn có chắc chắn muốn đăng xuất khỏi tài khoản tài xế?',
       [
         { text: 'Hủy', style: 'cancel' },
-        { text: 'Đăng xuất', onPress: () => navigation.replace('Login') }
+        { 
+          text: 'Đăng xuất', 
+          onPress: async () => {
+            try {
+              await authService.logout();
+              navigation.replace('Login');
+            } catch (error) {
+              console.error('Logout error:', error);
+              navigation.replace('Login');
+            }
+          }
+        }
       ]
     );
   };
@@ -70,9 +147,49 @@ const DriverProfileScreen = ({ navigation }) => {
     }
   ];
 
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#10412F" />
+          <Text style={styles.loadingText}>Đang tải thông tin...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!user) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.errorContainer}>
+          <Icon name="error-outline" size={48} color="#666" />
+          <Text style={styles.errorText}>Không thể tải thông tin tài xế</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={loadDriverData}>
+            <Text style={styles.retryButtonText}>Thử lại</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const driverProfile = user.driver_profile || {};
+
+  const isDriverProfileVerified = () => {
+    if (!driverProfile) return false;
+    if (driverProfile.status) {
+      return ['APPROVED', 'ACTIVE', 'VERIFIED'].includes(driverProfile.status.toUpperCase());
+    }
+    return !!driverProfile.license_verified_at || !!driverProfile.is_available;
+  };
+
+  const isVerified = isDriverProfileVerified();
+
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
         {/* Header */}
         <LinearGradient
           colors={['#10412F', '#000000']}
@@ -88,24 +205,28 @@ const DriverProfileScreen = ({ navigation }) => {
           <Animatable.View animation="fadeInUp" style={styles.profileCard}>
             <View style={styles.profileHeader}>
               <Image 
-                source={{ uri: driver.avatar }} 
+                source={{ 
+                  uri: user.user?.profile_photo_url 
+                    ? `${user.user.profile_photo_url}?t=${Date.now()}`
+                    : 'https://via.placeholder.com/100'
+                }} 
                 style={styles.avatar}
               />
               <View style={styles.profileInfo}>
-                <Text style={styles.driverName}>{driver.name}</Text>
-                <Text style={styles.driverEmail}>{driver.email}</Text>
-                <Text style={styles.studentId}>MSSV: {driver.studentId}</Text>
+                <Text style={styles.driverName}>{user.user?.full_name || 'Chưa cập nhật'}</Text>
+                <Text style={styles.driverEmail}>{user.user?.email || 'Chưa cập nhật'}</Text>
+                <Text style={styles.studentId}>MSSV: {user.user?.student_id || 'Chưa cập nhật'}</Text>
                 <View style={styles.verificationStatus}>
                   <Icon 
-                    name={driver.isVerified ? 'verified' : 'pending'} 
+                    name={isVerified ? 'verified' : 'pending'} 
                     size={16} 
-                    color={driver.isVerified ? '#4CAF50' : '#FF9800'} 
+                    color={isVerified ? '#4CAF50' : '#FF9800'} 
                   />
                   <Text style={[
                     styles.verificationText,
-                    { color: driver.isVerified ? '#4CAF50' : '#FF9800' }
+                    { color: isVerified ? '#4CAF50' : '#FF9800' }
                   ]}>
-                    {driver.isVerified ? 'Đã xác minh' : 'Chưa xác minh'}
+                    {isVerified ? 'Đã xác minh' : 'Chưa xác minh'}
                   </Text>
                 </View>
               </View>
@@ -126,7 +247,9 @@ const DriverProfileScreen = ({ navigation }) => {
                 >
                   <Icon name="star" size={20} color="#fff" />
                 </LinearGradient>
-                <Text style={styles.statValue}>{driver.rating}</Text>
+                <Text style={styles.statValue}>
+                  {driverProfile.rating_avg ? driverProfile.rating_avg.toFixed(1) : '0.0'}
+                </Text>
                 <Text style={styles.statLabel}>Đánh giá</Text>
               </View>
 
@@ -137,7 +260,9 @@ const DriverProfileScreen = ({ navigation }) => {
                 >
                   <Icon name="directions-car" size={20} color="#fff" />
                 </LinearGradient>
-                <Text style={styles.statValue}>{driver.totalRides}</Text>
+                <Text style={styles.statValue}>
+                  {driverProfile.total_shared_rides || 0}
+                </Text>
                 <Text style={styles.statLabel}>Chuyến đi</Text>
               </View>
 
@@ -146,10 +271,14 @@ const DriverProfileScreen = ({ navigation }) => {
                   colors={['#10412F', '#000000']}
                   style={styles.statIcon}
                 >
-                  <Icon name="schedule" size={20} color="#fff" />
+                  <Icon name="account-balance-wallet" size={20} color="#fff" />
                 </LinearGradient>
-                <Text style={styles.statValue}>6 tháng</Text>
-                <Text style={styles.statLabel}>Kinh nghiệm</Text>
+                <Text style={styles.statValue}>
+                  {user.wallet?.cached_balance 
+                    ? `${(user.wallet.cached_balance / 1000).toFixed(0)}k`
+                    : '0'}
+                </Text>
+                <Text style={styles.statLabel}>Số dư ví</Text>
               </View>
 
               <View style={styles.statItem}>
@@ -159,8 +288,12 @@ const DriverProfileScreen = ({ navigation }) => {
                 >
                   <Icon name="trending-up" size={20} color="#fff" />
                 </LinearGradient>
-                <Text style={styles.statValue}>96%</Text>
-                <Text style={styles.statLabel}>Hoàn thành</Text>
+                <Text style={styles.statValue}>
+                  {driverProfile.total_earned 
+                    ? `${(driverProfile.total_earned / 1000000).toFixed(1)}M`
+                    : '0'}
+                </Text>
+                <Text style={styles.statLabel}>Tổng thu nhập</Text>
               </View>
             </View>
           </View>
@@ -181,44 +314,67 @@ const DriverProfileScreen = ({ navigation }) => {
             
             {showVehicleInfo && (
               <Animatable.View animation="fadeInDown" style={styles.vehicleDetails}>
-                <View style={styles.vehicleRow}>
-                  <Icon name="motorcycle" size={20} color="#666" />
-                  <Text style={styles.vehicleLabel}>Loại xe:</Text>
-                  <Text style={styles.vehicleValue}>{vehicleInfo.type}</Text>
-                </View>
-                
-                <View style={styles.vehicleRow}>
-                  <Icon name="build" size={20} color="#666" />
-                  <Text style={styles.vehicleLabel}>Hãng:</Text>
-                  <Text style={styles.vehicleValue}>{vehicleInfo.brand}</Text>
-                </View>
-                
-                <View style={styles.vehicleRow}>
-                  <Icon name="category" size={20} color="#666" />
-                  <Text style={styles.vehicleLabel}>Dòng xe:</Text>
-                  <Text style={styles.vehicleValue}>{vehicleInfo.model}</Text>
-                </View>
-                
-                <View style={styles.vehicleRow}>
-                  <Icon name="confirmation-number" size={20} color="#666" />
-                  <Text style={styles.vehicleLabel}>Biển số:</Text>
-                  <Text style={styles.vehicleValue}>{vehicleInfo.licensePlate}</Text>
-                </View>
-                
-                <View style={styles.vehicleRow}>
-                  <Icon name="palette" size={20} color="#666" />
-                  <Text style={styles.vehicleLabel}>Màu sắc:</Text>
-                  <Text style={styles.vehicleValue}>{vehicleInfo.color}</Text>
-                </View>
-                
-                <ModernButton
-                  title="Cập nhật thông tin xe"
-                  variant="outline"
-                  size="small"
-                  icon="edit"
-                  onPress={handleVehicleEdit}
-                  style={styles.vehicleEditButton}
-                />
+                {vehicleInfo ? (
+                  <>
+                    <View style={styles.vehicleRow}>
+                      <Icon name="category" size={20} color="#666" />
+                      <Text style={styles.vehicleLabel}>Dòng xe:</Text>
+                      <Text style={styles.vehicleValue}>{vehicleInfo.model || 'Chưa cập nhật'}</Text>
+                    </View>
+                    
+                    <View style={styles.vehicleRow}>
+                      <Icon name="confirmation-number" size={20} color="#666" />
+                      <Text style={styles.vehicleLabel}>Biển số:</Text>
+                      <Text style={styles.vehicleValue}>
+                        {vehicleInfo.plate_number || vehicleInfo.plateNumber || 'Chưa cập nhật'}
+                      </Text>
+                    </View>
+                    
+                    <View style={styles.vehicleRow}>
+                      <Icon name="palette" size={20} color="#666" />
+                      <Text style={styles.vehicleLabel}>Màu sắc:</Text>
+                      <Text style={styles.vehicleValue}>{vehicleInfo.color || 'Chưa cập nhật'}</Text>
+                    </View>
+                    
+                    {vehicleInfo.year && (
+                      <View style={styles.vehicleRow}>
+                        <Icon name="calendar-today" size={20} color="#666" />
+                        <Text style={styles.vehicleLabel}>Năm SX:</Text>
+                        <Text style={styles.vehicleValue}>{vehicleInfo.year}</Text>
+                      </View>
+                    )}
+                    
+                    {vehicleInfo.capacity && (
+                      <View style={styles.vehicleRow}>
+                        <Icon name="people" size={20} color="#666" />
+                        <Text style={styles.vehicleLabel}>Số chỗ:</Text>
+                        <Text style={styles.vehicleValue}>{vehicleInfo.capacity}</Text>
+                      </View>
+                    )}
+                    
+                    <ModernButton
+                      title="Cập nhật thông tin xe"
+                      variant="outline"
+                      size="small"
+                      icon="edit"
+                      onPress={handleVehicleEdit}
+                      style={styles.vehicleEditButton}
+                    />
+                  </>
+                ) : (
+                  <View style={styles.noVehicleContainer}>
+                    <Icon name="directions-car" size={48} color="#ccc" />
+                    <Text style={styles.noVehicleText}>Chưa có thông tin xe</Text>
+                    <ModernButton
+                      title="Thêm xe mới"
+                      variant="outline"
+                      size="small"
+                      icon="add"
+                      onPress={() => navigation.navigate('AddVehicle')}
+                      style={styles.vehicleEditButton}
+                    />
+                  </View>
+                )}
               </Animatable.View>
             )}
           </View>
@@ -473,6 +629,51 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#999',
     marginBottom: 20,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#666',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  errorText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 18,
+  },
+  retryButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 18,
+    backgroundColor: '#10412F',
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  noVehicleContainer: {
+    alignItems: 'center',
+    paddingVertical: 32,
+  },
+  noVehicleText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#999',
+    marginBottom: 16,
   },
 });
 

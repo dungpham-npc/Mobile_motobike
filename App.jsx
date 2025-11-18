@@ -6,10 +6,11 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { PaperProvider } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts, Inter_400Regular, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Platform } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from './src/theme/designTokens';
 import authService from './src/services/authService';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Authentication Screens
 import LoginScreen from './src/screens/auth/LoginScreen.jsx';
@@ -81,6 +82,10 @@ function DriverMainStack() {
 }
 
 function MainTabs() {
+  const insets = useSafeAreaInsets();
+  const bottomSafe = Math.max(insets.bottom, Platform.OS === 'android' ? 10 : 8);
+  const tabBarOffset = 52;
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -109,6 +114,10 @@ function MainTabs() {
         headerShown: false,
       })}
       tabBar={(props) => <GlassTabBar {...props} />}
+      sceneContainerStyle={{
+        paddingBottom: tabBarOffset + bottomSafe,
+        backgroundColor: 'transparent',
+      }}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Wallet" component={WalletScreen} />
@@ -157,13 +166,7 @@ export default function App() {
       <PaperProvider>
         <NavigationContainer ref={navigationRef}>
           <Stack.Navigator
-            initialRouteName={
-              isAuthenticated
-                ? authService.isDriver()
-                  ? 'DriverMain'
-                  : 'Main'
-                : 'Login'
-            }
+            initialRouteName="Login"
             screenOptions={{ headerShown: false }}
           >
             {/* Auth */}

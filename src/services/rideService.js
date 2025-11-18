@@ -606,23 +606,6 @@ class RideService {
     }
   }
 
-  async cancelRide(rideId, reason) {
-    try {
-      const endpoint = ENDPOINTS.RIDES.CANCEL.replace("{rideId}", rideId);
-      const params = new URLSearchParams({
-        reason: reason,
-      });
-
-      const response = await this.apiService.delete(
-        `${endpoint}?${params.toString()}`
-      );
-      return response;
-    } catch (error) {
-      console.error("Cancel ride error:", error);
-      throw error;
-    }
-  }
-
   async getRideRequests(rideId, status = null, page = 0, size = 20) {
     try {
       const params = new URLSearchParams({

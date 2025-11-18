@@ -160,6 +160,12 @@ export const ENDPOINTS = {
     EARNINGS: "/wallet/earnings",
   },
 
+  // Transaction History API (New)
+  TRANSACTION: {
+    USER_HISTORY: "/transaction/history/user-transactions",
+    ALL: "/transaction/all", // Admin only
+  },
+
   // PayOS Payment Integration (Keep webhook for backend)
   PAYOS: {
     WEBHOOK: "/payos/webhook",
