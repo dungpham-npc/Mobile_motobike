@@ -53,7 +53,6 @@ import DriverDashboardScreen from './src/screens/driver/DriverDashboardScreen.js
 import DriverEarningsScreen from './src/screens/driver/DriverEarningsScreen.jsx';
 import DriverRatingsScreen from './src/screens/driver/DriverRatingsScreen.jsx';
 import DriverProfileScreen from './src/screens/driver/DriverProfileScreen.jsx';
-import DriverRideHistoryScreen from './src/screens/driver/DriverRideHistoryScreen.jsx';
 import SOSAlertScreen from './src/screens/driver/SOSAlertScreen.jsx';
 
 // Navigation & UI
