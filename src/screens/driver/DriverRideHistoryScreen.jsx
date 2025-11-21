@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   TouchableOpacity,
   ScrollView,
   RefreshControl,
@@ -11,6 +10,7 @@ import {
   Alert,
   StatusBar,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import * as Animatable from 'react-native-animatable';
 import { useFocusEffect } from '@react-navigation/native';
@@ -41,61 +41,6 @@ const DriverRideHistoryScreen = ({ navigation }) => {
     }, [])
   );
 
-  const normalizeStatus = (status) => {
-    if (!status) return 'UNKNOWN';
-    return String(status).toUpperCase();
-  };
-
-  const isOngoingStatus = (status) => {
-    const normalized = normalizeStatus(status);
-    return ['ONGOING', 'CONFIRMED', 'IN_PROGRESS', 'STARTED', 'ACTIVE', 'ACCEPTED'].includes(normalized);
-  };
-
-  const isCompletedStatus = (status) => {
-    const normalized = normalizeStatus(status);
-    return ['COMPLETED', 'FINISHED', 'DONE', 'ENDED'].includes(normalized);
-  };
-
-  const mapRidePayload = (ride) => {
-    const startAddr =
-      ride.start_location?.address ||
-      ride.start_location?.name ||
-      ride.start_location_name ||
-      'N/A';
-
-    let endAddr = 'N/A';
-    if (ride.end_location) {
-      if (ride.end_location.address && ride.end_location.address !== 'N/A') {
-        endAddr = ride.end_location.address;
-      } else if (ride.end_location.name) {
-        endAddr = ride.end_location.name;
-      }
-    } else if (ride.end_location_name) {
-      endAddr = ride.end_location_name;
-    }
-
-    return {
-      rideId: ride.shared_ride_id || ride.ride_id || ride.id,
-      status: normalizeStatus(ride.status),
-      userType: 'driver',
-      pickupAddress: startAddr,
-      dropoffAddress: endAddr,
-      totalEarnings: ride.total_earnings || ride.totalEarnings || null,
-      passengerCount: ride.passenger_count || ride.passengerCount || 0,
-      distance:
-        ride.actual_distance ||
-        ride.distance_km ||
-        ride.estimated_distance_km ||
-        null,
-      createdAt: ride.created_at || ride.createdAt,
-      departureTime: ride.departure_time || ride.departureTime,
-      estimatedDepartureTime: ride.estimated_departure_time || ride.estimatedDepartureTime,
-      actualStartTime: ride.actual_start_time || ride.actualStartTime,
-      actualEndTime: ride.actual_end_time || ride.actualEndTime || ride.completed_at || ride.completedAt,
-      raw: ride,
-    };
-  };
-
   const loadRides = async () => {
     try {
       setLoading(true);
@@ -107,29 +52,108 @@ const DriverRideHistoryScreen = ({ navigation }) => {
         return;
       }
 
-      // Load all rides once, then filter trên client để tránh lỗi status
-      const allRidesResponse = await rideService.getMyRides(null, 0, 100);
-      const allRidesData = allRidesResponse?.data || allRidesResponse?.content || [];
-      const mappedRides = allRidesData.map(mapRidePayload);
+      // Load ongoing rides (ONGOING, CONFIRMED status)
+      try {
+        const ongoingResponse = await rideService.getMyRides('ONGOING', 0, 50);
+        const confirmedResponse = await rideService.getMyRides('CONFIRMED', 0, 50);
 
-      setOngoingRides(mappedRides.filter((ride) => isOngoingStatus(ride.status)));
+        const ongoingData = ongoingResponse?.data || [];
+        const confirmedData = confirmedResponse?.data || [];
 
-      // Completed: ưu tiên endpoint riêng (nếu backend hỗ trợ) để lấy đủ dữ liệu
+        const allOngoing = [...ongoingData, ...confirmedData].map((ride) => {
+          const startAddr =
+            ride.start_location?.address ||
+            ride.start_location?.name ||
+            ride.start_location_name ||
+            'N/A';
+
+          let endAddr = 'N/A';
+          if (ride.end_location) {
+            if (ride.end_location.address && ride.end_location.address !== 'N/A') {
+              endAddr = ride.end_location.address;
+            } else if (ride.end_location.name) {
+              endAddr = ride.end_location.name;
+            }
+          } else if (ride.end_location_name) {
+            endAddr = ride.end_location_name;
+          }
+
+          return {
+            rideId: ride.shared_ride_id || ride.ride_id || ride.id,
+            status: ride.status,
+            userType: 'driver',
+            pickupAddress: startAddr,
+            dropoffAddress: endAddr,
+            totalEarnings: ride.total_earnings || ride.totalEarnings || null,
+            passengerCount: ride.passenger_count || ride.passengerCount || 0,
+            distance:
+              ride.actual_distance ||
+              ride.distance_km ||
+              ride.estimated_distance_km ||
+              null,
+            createdAt: ride.created_at || ride.createdAt,
+            departureTime: ride.departure_time || ride.departureTime,
+            estimatedDepartureTime: ride.estimated_departure_time || ride.estimatedDepartureTime,
+            actualStartTime: ride.actual_start_time || ride.actualStartTime,
+            actualEndTime: ride.actual_end_time || ride.actualEndTime,
+            raw: ride,
+          };
+        });
+
+        setOngoingRides(allOngoing);
+      } catch (error) {
+        console.error('Error loading ongoing rides:', error);
+        setOngoingRides([]);
+      }
+
+      // Load completed rides
       try {
         const completedResponse = await rideService.getMyCompletedRides(0, 50);
-        const completedData = completedResponse?.data || completedResponse?.content || [];
-        const completedMapped = completedData.map(mapRidePayload);
+        const completedData = completedResponse?.data || [];
 
-        // fallback: nếu endpoint trả rỗng thì lọc từ dataset chung
-        const normalizedCompleted =
-          completedMapped.length > 0
-            ? completedMapped
-            : mappedRides.filter((ride) => isCompletedStatus(ride.status));
+        const allCompleted = completedData.map((ride) => {
+          const startAddr =
+            ride.start_location?.address ||
+            ride.start_location?.name ||
+            ride.start_location_name ||
+            'N/A';
 
-        setCompletedRides(normalizedCompleted);
-      } catch (err) {
-        console.warn('Không lấy được danh sách hoàn thành từ endpoint riêng, dùng dữ liệu chung:', err);
-        setCompletedRides(mappedRides.filter((ride) => isCompletedStatus(ride.status)));
+          let endAddr = 'N/A';
+          if (ride.end_location) {
+            if (ride.end_location.address && ride.end_location.address !== 'N/A') {
+              endAddr = ride.end_location.address;
+            } else if (ride.end_location.name) {
+              endAddr = ride.end_location.name;
+            }
+          } else if (ride.end_location_name) {
+            endAddr = ride.end_location_name;
+          }
+
+          return {
+            rideId: ride.shared_ride_id || ride.ride_id || ride.id,
+            status: ride.status,
+            userType: 'driver',
+            pickupAddress: startAddr,
+            dropoffAddress: endAddr,
+            totalEarnings: ride.total_earnings || ride.totalEarnings || null,
+            passengerCount: ride.passenger_count || ride.passengerCount || 0,
+            distance:
+              ride.actual_distance ||
+              ride.distance_km ||
+              ride.estimated_distance_km ||
+              null,
+            createdAt: ride.created_at || ride.createdAt,
+            completedAt: ride.actual_end_time || ride.actualEndTime || ride.completed_at || ride.completedAt,
+            actualStartTime: ride.actual_start_time || ride.actualStartTime,
+            actualEndTime: ride.actual_end_time || ride.actualEndTime,
+            raw: ride,
+          };
+        });
+
+        setCompletedRides(allCompleted);
+      } catch (error) {
+        console.error('Error loading completed rides:', error);
+        setCompletedRides([]);
       }
     } catch (error) {
       console.error('Error loading rides:', error);
@@ -198,31 +222,6 @@ const DriverRideHistoryScreen = ({ navigation }) => {
     if (amount === 0) return 'Miễn phí';
     return `${Number(amount).toLocaleString('vi-VN')} ₫`;
   };
-
-  // Calculate statistics
-  const calculateStats = () => {
-    const totalRides = ongoingRides.length + completedRides.length;
-    const totalEarnings = completedRides.reduce((sum, ride) => {
-      const earnings = ride.totalEarnings || 0;
-      return sum + (typeof earnings === 'number' ? earnings : 0);
-    }, 0);
-    const totalPassengers = completedRides.reduce((sum, ride) => {
-      const passengers = ride.passengerCount || 0;
-      return sum + (typeof passengers === 'number' ? passengers : 0);
-    }, 0);
-    const avgEarningsPerRide = completedRides.length > 0 ? totalEarnings / completedRides.length : 0;
-
-    return {
-      totalRides,
-      totalEarnings,
-      totalPassengers,
-      avgEarningsPerRide,
-      ongoingCount: ongoingRides.length,
-      completedCount: completedRides.length,
-    };
-  };
-
-  const stats = calculateStats();
 
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
@@ -382,50 +381,6 @@ const DriverRideHistoryScreen = ({ navigation }) => {
           </View>
 
           <View style={styles.content}>
-            {/* Statistics Card */}
-            <Animatable.View animation="fadeInUp" duration={480} delay={30}>
-              <CleanCard style={styles.statsCard} contentStyle={styles.statsCardContent}>
-                <Text style={styles.statsTitle}>Thống kê</Text>
-                <View style={styles.statsGrid}>
-                  <View style={styles.statItem}>
-                    <View style={[styles.statIconContainer, { backgroundColor: 'rgba(34,197,94,0.15)' }]}>
-                      <Icon name="directions-car" size={20} color={colors.primary} />
-                    </View>
-                    <Text style={styles.statValue}>{stats.totalRides}</Text>
-                    <Text style={styles.statLabel}>Tổng chuyến đi</Text>
-                  </View>
-
-                  <View style={styles.statItem}>
-                    <View style={[styles.statIconContainer, { backgroundColor: 'rgba(255,152,0,0.15)' }]}>
-                      <Icon name="attach-money" size={20} color="#FF9800" />
-                    </View>
-                    <Text style={styles.statValue}>
-                      {stats.totalEarnings > 0 
-                        ? `${(stats.totalEarnings / 1000).toFixed(0)}k`
-                        : '0'}
-                    </Text>
-                    <Text style={styles.statLabel}>Tổng thu nhập</Text>
-                  </View>
-
-                  <View style={styles.statItem}>
-                    <View style={[styles.statIconContainer, { backgroundColor: 'rgba(33,150,243,0.15)' }]}>
-                      <Icon name="check-circle" size={20} color="#2196F3" />
-                    </View>
-                    <Text style={styles.statValue}>{stats.completedCount}</Text>
-                    <Text style={styles.statLabel}>Hoàn thành</Text>
-                  </View>
-
-                  <View style={styles.statItem}>
-                    <View style={[styles.statIconContainer, { backgroundColor: 'rgba(156,39,176,0.15)' }]}>
-                      <Icon name="people" size={20} color="#9C27B0" />
-                    </View>
-                    <Text style={styles.statValue}>{stats.totalPassengers}</Text>
-                    <Text style={styles.statLabel}>Hành khách</Text>
-                  </View>
-                </View>
-              </CleanCard>
-            </Animatable.View>
-
             <Animatable.View animation="fadeInUp" duration={480} delay={60}>
               <CleanCard style={styles.tabsCard} contentStyle={styles.tabsCardContent}>
                 <View style={styles.tabsContainer}>
@@ -474,49 +429,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     gap: 16,
   },
-  statsCard: {
-    marginBottom: 12,
-  },
-  statsCardContent: {
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-  },
-  statsTitle: {
-    fontSize: 18,
-    fontFamily: 'Inter_600SemiBold',
-    color: colors.textPrimary,
-    marginBottom: 16,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  statItem: {
-    width: '48%',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  statIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  statValue: {
-    fontSize: 18,
-    fontFamily: 'Inter_700Bold',
-    color: colors.textPrimary,
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 12,
-    fontFamily: 'Inter_400Regular',
-    color: colors.textSecondary,
-    textAlign: 'center',
-  },
   tabsCard: {
     marginBottom: 12,
   },
@@ -527,17 +439,13 @@ const styles = StyleSheet.create({
   tabsContainer: {
     flexDirection: 'row',
     gap: 8,
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
   },
   tab: {
-    flexGrow: 1,
-    minWidth: '30%',
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 12,
-    paddingHorizontal: 8,
     borderRadius: 12,
     gap: 6,
     backgroundColor: 'rgba(148,163,184,0.08)',
@@ -549,8 +457,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Inter_500Medium',
     color: colors.textMuted,
-    flexShrink: 1,
-    textAlign: 'center',
   },
   activeTabText: {
     color: colors.primary,
