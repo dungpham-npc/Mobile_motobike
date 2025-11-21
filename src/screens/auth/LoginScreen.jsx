@@ -113,7 +113,6 @@ const LoginScreen = ({ navigation, route }) => {
                   resizeMode="contain"
                 />
                 <Text style={styles.welcome}>Chào mừng trở lại</Text>
-                <Text style={styles.subtitle}>Tiếp tục hành trình cùng Campus Ride</Text>
               </View>
             </Animatable.View>
 

@@ -2,6 +2,15 @@ import * as Location from 'expo-location';
 import { Alert, Linking, Platform } from 'react-native';
 import permissionService from './permissionService';
 
+const LOCATION_TIMEOUT_MS = 8000;
+const LAST_KNOWN_MAX_AGE_MS = 2 * 60 * 1000; // 2 minutes
+const LAST_KNOWN_REQUIRED_ACCURACY = 1000; // meters
+const FALLBACK_LOCATION = {
+  latitude: 10.84148, // FPT University HCMC
+  longitude: 106.809844,
+  accuracy: null,
+};
+
 class LocationService {
   constructor() {
     this.currentLocation = null;
@@ -66,11 +75,41 @@ class LocationService {
         throw new Error('Location permission denied');
       }
 
-      const location = await Location.getCurrentPositionAsync({
+      const locationPromise = Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
-        timeout: 15000,
-        maximumAge: 10000,
+        mayShowUserSettingsDialog: true,
       });
+
+      const timeoutPromise = new Promise((resolve) => {
+        setTimeout(() => resolve(null), LOCATION_TIMEOUT_MS);
+      });
+
+      let location = await Promise.race([locationPromise, timeoutPromise]);
+
+      if (!location) {
+        console.warn(`Location request timed out after ${LOCATION_TIMEOUT_MS}ms, using last known position`);
+        location = await Location.getLastKnownPositionAsync({
+          maxAge: LAST_KNOWN_MAX_AGE_MS,
+          requiredAccuracy: LAST_KNOWN_REQUIRED_ACCURACY,
+        });
+      }
+
+      if (!location && this.currentLocation) {
+        console.warn('Falling back to cached in-memory location');
+        return this.currentLocation;
+      }
+
+      if (!location) {
+        console.warn('Unable to determine current location, using fallback coordinates');
+        location = {
+          coords: {
+            latitude: FALLBACK_LOCATION.latitude,
+            longitude: FALLBACK_LOCATION.longitude,
+            accuracy: FALLBACK_LOCATION.accuracy,
+          },
+          timestamp: Date.now(),
+        };
+      }
 
       this.currentLocation = {
         latitude: location.coords.latitude,
