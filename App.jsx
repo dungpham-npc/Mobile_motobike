@@ -2,11 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { navigationRef } from './src/utils/navigationRef';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createBottomTabNavigator, useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { PaperProvider } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts, Inter_400Regular, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
-import { View, ActivityIndicator, Platform } from 'react-native';
+import { View, ActivityIndicator, Platform, StyleSheet, TouchableOpacity } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from './src/theme/designTokens';
 import authService from './src/services/authService';
@@ -57,7 +57,6 @@ import SOSAlertScreen from './src/screens/driver/SOSAlertScreen.jsx';
 
 // Navigation & UI
 import DriverTabNavigator from './src/navigation/DriverTabNavigator.jsx';
-import GlassTabBar from './src/components/ui/GlassTabBar.jsx';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -84,48 +83,124 @@ function DriverMainStack() {
   );
 }
 
+// Custom Tab Bar Component để kiểm soát chính xác background
+const CustomTabBar = ({ state, descriptors, navigation, insets }) => {
+  const bottomSafe = Math.max(insets.bottom, Platform.OS === 'android' ? 12 : 6);
+  const baseHeight = Platform.OS === 'ios' ? 64 : 56;
+  const bottomOffset = 16;
+
+  return (
+    <View
+      style={{
+        position: 'absolute',
+        bottom: bottomOffset + bottomSafe,
+        left: 16,
+        right: 16,
+        height: baseHeight,
+        borderRadius: 24,
+        backgroundColor: '#FFFFFF',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-around',
+        paddingHorizontal: 8,
+        elevation: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 12,
+        overflow: 'hidden',
+      }}
+    >
+      {state.routes.map((route, index) => {
+        const { options } = descriptors[route.key];
+        const isFocused = state.index === index;
+
+        const onPress = () => {
+          const event = navigation.emit({
+            type: 'tabPress',
+            target: route.key,
+            canPreventDefault: true,
+          });
+
+          if (!isFocused && !event.defaultPrevented) {
+            navigation.navigate(route.name);
+          }
+        };
+
+        let iconName = 'home';
+        if (route.name === 'Wallet') {
+          iconName = 'account-balance-wallet';
+        } else if (route.name === 'History') {
+          iconName = 'history';
+        } else if (route.name === 'Profile') {
+          iconName = 'person';
+        }
+
+        return (
+          <View
+            key={route.key}
+            style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <TouchableOpacity
+              onPress={onPress}
+              style={{ alignItems: 'center', justifyContent: 'center' }}
+              activeOpacity={0.7}
+            >
+              <Icon
+                name={iconName}
+                size={24}
+                color={isFocused ? '#000000' : '#9CA3AF'}
+              />
+              {isFocused && (
+                <View
+                  style={{
+                    width: 4,
+                    height: 4,
+                    borderRadius: 2,
+                    backgroundColor: '#000000',
+                    marginTop: 4,
+                  }}
+                />
+              )}
+            </TouchableOpacity>
+          </View>
+        );
+      })}
+    </View>
+  );
+};
+
+// Wrapper component để thêm padding bottom cho các screen
+const withTabBarPadding = (Component) => {
+  return (props) => {
+    return <Component {...props} />;
+  };
+};
+
 function MainTabs() {
   const insets = useSafeAreaInsets();
-  const bottomSafe = Math.max(insets.bottom, Platform.OS === 'android' ? 10 : 8);
-  const tabBarOffset = 52;
+  const bottomSafe = Math.max(insets.bottom, Platform.OS === 'android' ? 12 : 6);
+  const baseHeight = Platform.OS === 'ios' ? 64 : 56;
+  const bottomOffset = 16; // Khoảng cách từ đáy màn hình
 
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
-        tabBarStyle: {
-          position: 'absolute',
-          backgroundColor: 'transparent',
-          borderTopWidth: 0,
-          elevation: 0,
-          height: 0,
-        },
-        tabBarIcon: ({ color, size }) => {
-          let iconName = 'home';
-
-          if (route.name === 'Wallet') {
-            iconName = 'account-balance-wallet';
-          } else if (route.name === 'History') {
-            iconName = 'history';
-          } else if (route.name === 'Profile') {
-            iconName = 'person';
-          }
-
-          return <Icon name={iconName} size={size} color={color} />;
-        },
-        tabBarActiveTintColor: colors.primaryDark,
-        tabBarInactiveTintColor: '#9CA3AF',
+      screenOptions={{
         headerShown: false,
-      })}
-      tabBar={(props) => <GlassTabBar {...props} />}
+        tabBarStyle: {
+          display: 'none',
+        },
+      }}
+      tabBar={(props) => <CustomTabBar {...props} insets={insets} />}
       sceneContainerStyle={{
-        paddingBottom: tabBarOffset + bottomSafe,
+        paddingBottom: 0,
         backgroundColor: 'transparent',
       }}
     >
-      <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Wallet" component={WalletScreen} />
-      <Tab.Screen name="History" component={RideHistoryScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen name="Home" component={withTabBarPadding(HomeScreen)} />
+      <Tab.Screen name="Wallet" component={withTabBarPadding(WalletScreen)} />
+      <Tab.Screen name="History" component={withTabBarPadding(RideHistoryScreen)} />
+      <Tab.Screen name="Profile" component={withTabBarPadding(ProfileScreen)} />
     </Tab.Navigator>
   );
 }
@@ -202,4 +277,5 @@ export default function App() {
     </SafeAreaProvider>
   );
 }
+
 
