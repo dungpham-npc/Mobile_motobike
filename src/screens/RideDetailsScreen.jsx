@@ -672,6 +672,10 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 4,
   },
+  card: {
+    marginHorizontal: 20,
+    marginBottom: 20,
+  },
   cardTitle: {
     fontSize: 18,
     fontFamily: 'Inter_700Bold',
@@ -763,9 +767,8 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_500Medium',
     color: colors.textSecondary,
   },
-  driverInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  routeInfoContainer: {
+    gap: 12,
   },
   driverAvatar: {
     width: 56,
@@ -776,7 +779,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 16,
   },
-  driverDetails: {
+  routeInfoText: {
     flex: 1,
   },
   driverName: {

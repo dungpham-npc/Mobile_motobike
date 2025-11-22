@@ -133,7 +133,7 @@ class ApiService {
       console.log(`API Request: ${config.method || 'GET'} ${url}`);
       
       let response = await fetch(url, config);
-      let data = await response.json();
+      let data = await this.parseResponse(response);
 
       // Check if token expired (401 Unauthorized)
       if (response.status === 401 && this.token) {
@@ -146,7 +146,7 @@ class ApiService {
           // Retry the original request with new token
           config.headers = this.getAuthHeaders();
           response = await fetch(url, config);
-          data = await response.json();
+          data = await this.parseResponse(response);
           
           if (!response.ok) {
             console.error('API Request Error after refresh:', data);
@@ -163,7 +163,8 @@ class ApiService {
       }
 
       if (!response.ok) {
-        throw new ApiError(data.message || 'API request failed', response.status, data);
+        const message = (data && data.message) || (typeof data === 'string' ? data : 'API request failed');
+        throw new ApiError(message, response.status, data);
       }
 
       return data;
@@ -244,6 +245,36 @@ class ApiService {
       headers,
       body: formData,
     });
+  }
+
+  async parseResponse(response) {
+    try {
+      if (response.status === 204 || response.status === 205) {
+        return null;
+      }
+
+      const contentLengthHeader = response.headers.get('content-length');
+      if (contentLengthHeader !== null && Number(contentLengthHeader) === 0) {
+        return null;
+      }
+
+      const text = await response.text();
+
+      if (!text) {
+        return null;
+      }
+
+      const contentType = response.headers.get('content-type') || '';
+
+      if (contentType.includes('application/json')) {
+        return JSON.parse(text);
+      }
+
+      return text;
+    } catch (error) {
+      console.error('Failed to parse API response:', error);
+      throw new ApiError('Invalid response from server', response.status, error);
+    }
   }
 }
 

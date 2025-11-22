@@ -394,7 +394,7 @@ const RiderMatchingScreen = ({ navigation, route }) => {
               </View>
             </View>
 
-            {rideRequest.fare && (
+            {/*rideRequest.fare && (
               <View style={styles.fareRow}>
                 {
                 }
@@ -403,7 +403,7 @@ const RiderMatchingScreen = ({ navigation, route }) => {
                   {rideRequest.fare.total.toLocaleString() || '0'} VNĐ
                 </Text>
               </View>
-            )}
+            )*/}
           </View>
         )}
 

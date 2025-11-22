@@ -6,6 +6,7 @@ import { PaperProvider } from 'react-native-paper';
 import { View, ActivityIndicator } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import authService from './src/services/authService';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Screens
 import LoginScreen from './src/screens/auth/LoginScreen.jsx';
@@ -55,8 +56,34 @@ import GlassTabBar from './src/components/ui/GlassTabBar.jsx';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
+const DriverStack = createNativeStackNavigator();
+
+function DriverMainStack() {
+  return (
+    <DriverStack.Navigator screenOptions={{ headerShown: false }}>
+      <DriverStack.Screen name="DriverTabs" component={DriverTabNavigator} />
+      <DriverStack.Screen name="DriverRideTracking" component={DriverRideTrackingScreen} />
+      <DriverStack.Screen name="DriverRideDetails" component={DriverRideDetailsScreen} />
+      <DriverStack.Screen name="DriverRideHistory" component={DriverRideHistoryScreen} />
+      <DriverStack.Screen name="DriverCompletion" component={DriverCompletionScreen} />
+      <DriverStack.Screen name="CreateSharedRide" component={CreateSharedRideScreen} />
+      <DriverStack.Screen name="VehicleManagement" component={VehicleManagementScreen} />
+      <DriverStack.Screen name="DriverDashboard" component={DriverDashboardScreen} />
+      <DriverStack.Screen name="DriverEarnings" component={DriverEarningsScreen} />
+      <DriverStack.Screen name="DriverRatings" component={DriverRatingsScreen} />
+      <DriverStack.Screen name="DriverProfile" component={DriverProfileScreen} />
+
+      <DriverStack.Screen name="SOSAlert" component={SOSAlertScreen} />
+      <DriverStack.Screen name="DriverTest" component={DriverTestScreen} />
+    </DriverStack.Navigator>
+  );
+}
 
 function MainTabs() {
+  const insets = useSafeAreaInsets();
+  const bottomSafe = Math.max(insets.bottom, Platform.OS === 'android' ? 10 : 8);
+  const tabBarOffset = 52;
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -87,6 +114,10 @@ function MainTabs() {
         headerShown: false,
       })}
       tabBar={(props) => <GlassTabBar {...props} />}
+      sceneContainerStyle={{
+        paddingBottom: tabBarOffset + bottomSafe,
+        backgroundColor: 'transparent',
+      }}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Wallet" component={WalletScreen} />

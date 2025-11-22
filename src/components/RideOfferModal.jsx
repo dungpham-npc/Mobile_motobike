@@ -18,6 +18,15 @@ import locationService from "../services/LocationService";
 
 const { width, height } = Dimensions.get("window");
 
+const sanitizeLocationText = (value) => {
+  if (!value) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed || trimmed.toUpperCase() === "N/A") {
+    return null;
+  }
+  return trimmed;
+};
+
 const RideOfferModal = ({
   visible,
   offer,
@@ -48,10 +57,14 @@ const RideOfferModal = ({
   };
 
   const formatDistance = (lat1, lng1, lat2, lng2) => {
-    if (!lat1 || !lng1 || !lat2 || !lng2) return "N/A";
+    if (!lat1 || !lng1 || !lat2 || !lng2) return null;
 
     const distance = locationService.calculateDistance(lat1, lng1, lat2, lng2);
     return locationService.formatDistance(distance);
+  };
+
+  const getLocationDisplay = (primary, secondary) => {
+    return sanitizeLocationText(primary) || sanitizeLocationText(secondary) || "Đang xác định";
   };
 
   const handleAccept = async () => {
@@ -155,8 +168,24 @@ const RideOfferModal = ({
     return null;
   }
 
-  const isExpired = countdown <= 0;
-  const isUrgent = countdown <= 10;
+  const hasDeadline = Boolean(offer.offerExpiresAt);
+  const safeCountdown = hasDeadline ? Math.max(countdown, 0) : null;
+  const isExpired = hasDeadline && safeCountdown <= 0;
+  const isUrgent = hasDeadline && safeCountdown !== null && safeCountdown <= 10;
+  const isBroadcastRequest =
+    offer.broadcast === true ||
+    offer?.status === "BROADCASTING" ||
+    offer?.requestStatus === "BROADCASTING";
+
+  const routeDistanceDisplay = (() => {
+    const text = formatDistance(
+      offer.pickupLat,
+      offer.pickupLng,
+      offer.dropoffLat,
+      offer.dropoffLng
+    );
+    return text || "Khoảng cách đang cập nhật";
+  })();
 
   return (
     <Modal
@@ -173,7 +202,9 @@ const RideOfferModal = ({
         >
           {/* Header */}
           <LinearGradient
-            colors={isExpired ? ["#F44336", "#D32F2F"] : ["#4CAF50", "#2E7D32"]}
+            colors={
+              isExpired ? ["#F44336", "#D32F2F"] : ["#4CAF50", "#2E7D32"]
+            }
             style={styles.header}
           >
             <View style={styles.headerContent}>
@@ -186,14 +217,16 @@ const RideOfferModal = ({
                 </Text>
               </View>
 
-              <View style={styles.timerContainer}>
-                <Icon name="timer" size={20} color="#fff" />
-                <Text
-                  style={[styles.timerText, isUrgent && styles.urgentTimer]}
-                >
-                  {formatTime(countdown)}
-                </Text>
-              </View>
+              {hasDeadline && (
+                <View style={styles.timerContainer}>
+                  <Icon name="timer" size={20} color="#fff" />
+                  <Text
+                    style={[styles.timerText, isUrgent && styles.urgentTimer]}
+                  >
+                    {formatTime(safeCountdown)}
+                  </Text>
+                </View>
+              )}
             </View>
           </LinearGradient>
 
@@ -206,16 +239,13 @@ const RideOfferModal = ({
               </View>
               <View style={styles.riderDetails}>
                 <Text style={styles.riderName}>{offer.riderName}</Text>
-                <Text style={styles.riderRating}>⭐ 4.8 • 127 chuyến</Text>
               </View>
               <View style={styles.fareContainer}>
                 <Text style={styles.fareAmount}>
                   {formatCurrency(
-                    offer.fareAmount ?? offer.totalFare ?? offer.fare?.total
+                    offer.fareAmount ?? offer.totalFare ?? offer.fare?.total ?? 0
                   )}
                 </Text>
-
-                <Text style={styles.fareLabel}>Thu nhập</Text>
               </View>
             </View>
 
@@ -229,7 +259,7 @@ const RideOfferModal = ({
                 <View style={styles.locationInfo}>
                   <Text style={styles.locationLabel}>Điểm đón</Text>
                   <Text style={styles.locationName}>
-                    {offer.pickupLocationName || "Vị trí tùy chỉnh"}
+                    {getLocationDisplay(offer.pickupLocationName, offer.pickupAddress)}
                   </Text>
                   {offer.pickupTime && (
                     <Text style={styles.locationTime}>
@@ -246,12 +276,7 @@ const RideOfferModal = ({
               <View style={styles.routeLine}>
                 <View style={styles.routeDash} />
                 <Text style={styles.routeDistance}>
-                  {formatDistance(
-                    offer.pickupLat,
-                    offer.pickupLng,
-                    offer.dropoffLat,
-                    offer.dropoffLng
-                  )}
+                  {routeDistanceDisplay}
                 </Text>
               </View>
 
@@ -263,7 +288,7 @@ const RideOfferModal = ({
                 <View style={styles.locationInfo}>
                   <Text style={styles.locationLabel}>Điểm đến</Text>
                   <Text style={styles.locationName}>
-                    {offer.dropoffLocationName || "Vị trí tùy chỉnh"}
+                    {getLocationDisplay(offer.dropoffLocationName, offer.dropoffAddress)}
                   </Text>
                 </View>
               </View>
@@ -280,33 +305,34 @@ const RideOfferModal = ({
             )}
 
             {/* Proposal Rank */}
-            {offer.proposalRank > 1 && (
+            {/* {offer.proposalRank > 1 && (
               <View style={styles.rankContainer}>
                 <Icon name="info" size={16} color="#FF9800" />
                 <Text style={styles.rankText}>
                   Bạn là lựa chọn thứ {offer.proposalRank}
                 </Text>
               </View>
-            )}
+            )} */}
           </View>
 
           {/* Actions */}
           <View style={styles.actions}>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.rejectButton]}
-              onPress={showRejectOptions}
-              disabled={accepting || rejecting || isExpired}
-            >
-              {rejecting ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <>
-                  <Icon name="close" size={20} color="#fff" />
-                  <Text style={styles.rejectButtonText}>Từ chối</Text>
-                </>
-              )}
-            </TouchableOpacity>
-
+            {!isBroadcastRequest && (
+              <TouchableOpacity
+                style={[styles.actionButton, styles.rejectButton]}
+                onPress={showRejectOptions}
+                disabled={accepting || rejecting || isExpired}
+              >
+                {rejecting ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <Icon name="close" size={20} color="#fff" />
+                    <Text style={styles.rejectButtonText}>Từ chối</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               style={[
                 styles.actionButton,

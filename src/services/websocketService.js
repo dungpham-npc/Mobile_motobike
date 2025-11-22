@@ -459,6 +459,50 @@ class WebSocketService {
     }
   }
 
+  // Subscribe to ride tracking updates
+  subscribeToRideTracking(rideId, callback) {
+    if (!this.isConnected || !this.client) {
+      throw new Error('WebSocket not connected');
+    }
+
+    const destination = ENDPOINTS.WEBSOCKET.RIDE_TRACKING.replace('{rideId}', rideId);
+    console.log('📡 Subscribing to ride tracking:', destination);
+
+    const subscription = this.client.subscribe(destination, (message) => {
+      try {
+        const data = JSON.parse(message.body);
+        if (callback) {
+          callback(data);
+        }
+      } catch (error) {
+        console.error('❌ [WebSocket] Error parsing ride tracking message:', error);
+        console.error('❌ [WebSocket] Raw message body:', message.body);
+      }
+    });
+
+    const subscriptionKey = `ride-tracking-${rideId}`;
+    this.subscriptions.set(subscriptionKey, subscription);
+    this.messageHandlers.set(subscriptionKey, callback);
+
+    return subscriptionKey;
+  }
+
+  // Unsubscribe from ride tracking
+  unsubscribeFromRideTracking(rideId) {
+    const subscriptionKey = `ride-tracking-${rideId}`;
+    const subscription = this.subscriptions.get(subscriptionKey);
+    if (subscription) {
+      try {
+        subscription.unsubscribe();
+        this.subscriptions.delete(subscriptionKey);
+        this.messageHandlers.delete(subscriptionKey);
+        console.log(`✅ Unsubscribed from ride tracking for ride ${rideId}`);
+      } catch (error) {
+        console.error(`❌ Error unsubscribing from ride tracking:`, error);
+      }
+    }
+  }
+
   // Unsubscribe from a destination
   unsubscribe(key) {
     const subscription = this.subscriptions.get(key);

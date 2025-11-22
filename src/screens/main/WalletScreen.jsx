@@ -12,10 +12,13 @@ import {
   ActivityIndicator,
   RefreshControl,
   StatusBar,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Animatable from 'react-native-animatable';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import ModernButton from '../../components/ModernButton.jsx';
 import CleanCard from '../../components/ui/CleanCard.jsx';
@@ -27,6 +30,7 @@ import { ApiError } from '../../services/api';
 import { colors } from '../../theme/designTokens';
 
 const WalletScreen = ({ navigation }) => {
+  const insets = useSafeAreaInsets();
   const [user, setUser] = useState(null);
   const [walletData, setWalletData] = useState(null);
   const [transactions, setTransactions] = useState([]);
@@ -70,12 +74,28 @@ const WalletScreen = ({ navigation }) => {
     if (showLoading) setLoadingTransactions(true);
 
     try {
-      const response = await paymentService.getTransactionHistory(0, 10);
-      if (response && response.content) {
-        setTransactions(response.content);
+      // Use new transaction history API endpoint
+      const response = await paymentService.getTransactionHistory(0, 20);
+      console.log('Transaction history response:', response);
+      
+      // Handle both old and new API response formats
+      if (response) {
+        if (response.content && Array.isArray(response.content)) {
+          setTransactions(response.content);
+        } else if (Array.isArray(response)) {
+          setTransactions(response);
+        } else if (response.data && Array.isArray(response.data)) {
+          setTransactions(response.data);
+        } else {
+          console.warn('Unexpected transaction history response format:', response);
+          setTransactions([]);
+        }
+      } else {
+        setTransactions([]);
       }
     } catch (error) {
       console.error('Error loading transactions:', error);
+      setTransactions([]);
     } finally {
       if (showLoading) setLoadingTransactions(false);
     }
@@ -206,18 +226,20 @@ const WalletScreen = ({ navigation }) => {
   };
 
   const getTransactionIcon = (type, direction) => {
-    const icon = paymentService.getTransactionIcon(type, direction);
+    const normalized = normalizeDirection(direction);
+    const icon = paymentService.getTransactionIcon(type, normalized);
     let color = colors.textSecondary;
 
     switch (type) {
       case 'TOP_UP':
+      case 'TOPUP':
         color = '#22C55E';
         break;
       case 'WITHDRAW':
         color = '#F97316';
         break;
       case 'RIDE_PAYMENT':
-        color = direction === 'OUTBOUND' ? '#EF4444' : '#22C55E';
+        color = normalized === 'OUTBOUND' ? '#EF4444' : '#22C55E';
         break;
       case 'RIDE_EARNING':
         color = '#3B82F6';
@@ -243,25 +265,75 @@ const WalletScreen = ({ navigation }) => {
     })}`;
   };
 
+  // Normalize direction from backend (IN/OUT) to standard format (INBOUND/OUTBOUND)
+  const normalizeDirection = (direction) => {
+    if (!direction) return 'OUTBOUND';
+    const upper = direction.toUpperCase();
+    if (upper === 'IN' || upper === 'INBOUND') return 'INBOUND';
+    if (upper === 'OUT' || upper === 'OUTBOUND') return 'OUTBOUND';
+    return 'OUTBOUND';
+  };
+
   const formatTransactionAmount = (amount, direction) => {
-    const sign = direction === 'INBOUND' ? '+' : '-';
+    const normalized = normalizeDirection(direction);
+    const sign = normalized === 'INBOUND' ? '+' : '-';
     return `${sign}${paymentService.formatCurrency(Math.abs(amount))}`;
   };
 
   const getTransactionAmountColor = (direction) => {
-    return direction === 'INBOUND' ? '#22C55E' : '#EF4444';
+    const normalized = normalizeDirection(direction);
+    return normalized === 'INBOUND' ? '#22C55E' : '#EF4444';
+  };
+
+  // Calculate total topped up and total spent from transactions
+  const calculateStats = () => {
+    if (!transactions || transactions.length === 0) {
+      return {
+        totalToppedUp: walletData?.total_topped_up || walletData?.totalToppedUp || 0,
+        totalSpent: walletData?.total_spent || walletData?.totalSpent || 0,
+      };
+    }
+
+    let totalToppedUp = 0;
+    let totalSpent = 0;
+
+    transactions.forEach((transaction) => {
+      const normalized = normalizeDirection(transaction.direction);
+      const amount = Math.abs(transaction.amount || 0);
+
+      if (transaction.type === 'TOP_UP' || transaction.type === 'TOPUP') {
+        totalToppedUp += amount;
+      } else if (normalized === 'INBOUND') {
+        // Other inbound transactions (earnings, refunds, etc.)
+        // Don't count as top-up
+      } else if (normalized === 'OUTBOUND') {
+        // Outbound transactions (payments, withdrawals, etc.)
+        totalSpent += amount;
+      }
+    });
+
+    // Use walletData if available, otherwise use calculated values
+    return {
+      totalToppedUp: walletData?.total_topped_up || walletData?.totalToppedUp || totalToppedUp,
+      totalSpent: walletData?.total_spent || walletData?.totalSpent || totalSpent,
+    };
   };
 
   if (loading) {
     return (
       <AppBackground>
-        <SafeAreaView style={styles.safe}>
-          <StatusBar barStyle="dark-content" />
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={colors.accent} />
-            <Text style={styles.loadingText}>Đang tải thông tin ví...</Text>
-          </View>
-        </SafeAreaView>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={{ flex: 1 }}
+        >
+          <SafeAreaView style={styles.safe}>
+            <StatusBar barStyle="dark-content" />
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={colors.accent} />
+              <Text style={styles.loadingText}>Đang tải thông tin ví...</Text>
+            </View>
+          </SafeAreaView>
+        </KeyboardAvoidingView>
       </AppBackground>
     );
   }
@@ -299,14 +371,23 @@ const WalletScreen = ({ navigation }) => {
                   </View>
                 </View>
 
-                {walletData?.pendingBalance > 0 && (
-                  <View style={styles.pendingBalance}>
-                    <Icon name="hourglass-empty" size={16} color="#F97316" />
-                    <Text style={styles.pendingBalanceText}>
-                      Đang chờ: {paymentService.formatCurrency(walletData.pendingBalance || walletData.pending_balance)}
-                    </Text>
+            <Animatable.View animation="fadeInUp" duration={500}>
+              <CleanCard style={styles.cardSpacing} contentStyle={styles.balanceCardContent}>
+                <LinearGradient
+                  colors={['#EEF7FF', '#E0EDFF']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.balanceGradient}
+                >
+                  <View style={styles.balanceHeader}>
+                    <Icon name="account-balance-wallet" size={30} color="#0F172A" />
+                    <View style={styles.balanceInfo}>
+                      <Text style={styles.balanceLabel}>Số dư khả dụng</Text>
+                      <Text style={styles.balanceAmount}>
+                        {paymentService.formatCurrency(walletData?.availableBalance)}
+                      </Text>
+                    </View>
                   </View>
-                )}
 
                 <View style={styles.actionButtons}>
                   <TouchableOpacity style={styles.actionButton} onPress={() => setShowTopUpModal(true)}>
@@ -377,49 +458,106 @@ const WalletScreen = ({ navigation }) => {
                   <Icon name="receipt" size={44} color={colors.textMuted} />
                   <Text style={styles.emptyTransactionsText}>Chưa có giao dịch nào</Text>
                 </View>
-              ) : (
-                transactions.slice(0, 5).map((transaction) => {
-                  const icon = getTransactionIcon(transaction.type, transaction.direction);
-                  return (
-                    <View key={transaction.txnId || transaction.id} style={styles.transactionItem}>
-                      <View style={styles.transactionLeft}>
-                        <View style={[styles.transactionIcon, { backgroundColor: icon.color + '20' }]}>
-                          <Icon name={icon.name} size={20} color={icon.color} />
+              </CleanCard>
+            </Animatable.View>
+
+            {(() => {
+              const stats = calculateStats();
+              return (stats.totalToppedUp > 0 || stats.totalSpent > 0) ? (
+                <Animatable.View animation="fadeInUp" duration={500} delay={140}>
+                  <CleanCard style={styles.cardSpacing} contentStyle={styles.statsCardContent}>
+                    <Text style={styles.sectionTitle}>Thống kê</Text>
+                    <View style={styles.statsContainer}>
+                      <View style={styles.statItem}>
+                        <View style={[styles.statIconContainer, { backgroundColor: '#22C55E20' }]}>
+                          <Icon name="trending-up" size={22} color="#22C55E" />
                         </View>
-                        <View style={styles.transactionInfo}>
-                          <Text style={styles.transactionDescription}>
-                            {paymentService.getTransactionTypeText(transaction.type)}
-                          </Text>
-                          <Text style={styles.transactionNote}>
-                            {transaction.note || 'Giao dịch ví'}
-                          </Text>
-                          <Text style={styles.transactionDate}>{formatDate(transaction.createdAt || transaction.created_at)}</Text>
-                        </View>
+                        <Text style={styles.statValue}>
+                          {paymentService.formatCurrency(stats.totalToppedUp)}
+                        </Text>
+                        <Text style={styles.statLabel}>Tổng nạp</Text>
                       </View>
-                      <Text style={[styles.transactionAmount, { color: getTransactionAmountColor(transaction.direction) }]}>
-                        {formatTransactionAmount(transaction.amount, transaction.direction)}
-                      </Text>
+                      <View style={styles.statDivider} />
+                      <View style={styles.statItem}>
+                        <View style={[styles.statIconContainer, { backgroundColor: '#EF444420' }]}>
+                          <Icon name="trending-down" size={22} color="#EF4444" />
+                        </View>
+                        <Text style={styles.statValue}>
+                          {paymentService.formatCurrency(stats.totalSpent)}
+                        </Text>
+                        <Text style={styles.statLabel}>Tổng chi</Text>
+                      </View>
                     </View>
-                  );
-                })
-              )}
+                  </CleanCard>
+                </Animatable.View>
+              ) : null;
+            })()}
+
+            <Animatable.View animation="fadeInUp" duration={500} delay={200}>
+              <CleanCard style={styles.cardSpacing} contentStyle={styles.transactionCardContent}>
+                <View style={styles.transactionHeader}>
+                  <Text style={styles.sectionTitle}>Lịch sử giao dịch</Text>
+                  {loadingTransactions && <ActivityIndicator size="small" color={colors.accent} />}
+                </View>
+
+                {transactions.length === 0 ? (
+                  <View style={styles.emptyTransactions}>
+                    <Icon name="receipt" size={44} color={colors.textMuted} />
+                    <Text style={styles.emptyTransactionsText}>Chưa có giao dịch nào</Text>
+                  </View>
+                ) : (
+                  transactions.map((transaction) => {
+                    const icon = getTransactionIcon(transaction.type, transaction.direction);
+                    return (
+                      <View key={transaction.txnId || transaction.id} style={styles.transactionItem}>
+                        <View style={styles.transactionLeft}>
+                          <View style={[styles.transactionIcon, { backgroundColor: icon.color + '20' }]}>
+                            <Icon name={icon.name} size={20} color={icon.color} />
+                          </View>
+                          <View style={styles.transactionInfo}>
+                            <Text style={styles.transactionDescription}>
+                              {paymentService.getTransactionTypeText(transaction.type)}
+                            </Text>
+                            <Text style={styles.transactionNote}>
+                              {transaction.note || 'Giao dịch ví'}
+                            </Text>
+                            <Text style={styles.transactionDate}>{formatDate(transaction.createdAt || transaction.created_at)}</Text>
+                          </View>
+                        </View>
+                        <Text style={[styles.transactionAmount, { color: getTransactionAmountColor(transaction.direction) }]}>
+                          {formatTransactionAmount(transaction.amount, transaction.direction)}
+                        </Text>
+                      </View>
+                    );
+                  })
+                )}
 
               </CleanCard>
             </Animatable.View>
           </View>
         </ScrollView>
 
-        {renderTopUpModal()}
-        {renderWithdrawModal()}
-      </SafeAreaView>
+          {renderTopUpModal()}
+          {renderWithdrawModal()}
+        </SafeAreaView>
+      </KeyboardAvoidingView>
     </AppBackground>
   );
 
   function renderTopUpModal() {
     return (
-      <Modal visible={showTopUpModal} transparent animationType="slide" onRequestClose={() => setShowTopUpModal(false)}>
+      <Modal
+        visible={showTopUpModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowTopUpModal(false)}
+      >
         <View style={styles.modalOverlay}>
-          <Animatable.View animation="fadeInUp" duration={300} style={styles.modalContainer}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={{ width: '100%' }}
+          >
+            <Animatable.View animation="fadeInUp" duration={300} style={styles.modalContainer}>
             <Text style={styles.modalTitle}>Nạp tiền ví</Text>
             <Text style={styles.modalSubtitle}>Nhập số tiền muốn nạp</Text>
             <TextInput
@@ -437,7 +575,8 @@ const WalletScreen = ({ navigation }) => {
               </TouchableOpacity>
               <ModernButton title="Tiếp tục" size="small" onPress={handleCustomTopUp} />
             </View>
-          </Animatable.View>
+            </Animatable.View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     );
@@ -445,9 +584,18 @@ const WalletScreen = ({ navigation }) => {
 
   function renderWithdrawModal() {
     return (
-      <Modal visible={showWithdrawModal} transparent animationType="slide" onRequestClose={() => setShowWithdrawModal(false)}>
+      <Modal
+        visible={showWithdrawModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowWithdrawModal(false)}
+      >
         <View style={styles.modalOverlay}>
-          <Animatable.View animation="fadeInUp" duration={300} style={styles.modalContainer}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={{ width: '100%' }}
+          >
+            <Animatable.View animation="fadeInUp" duration={300} style={styles.modalContainer}>
             <Text style={styles.modalTitle}>Rút tiền</Text>
             <Text style={styles.modalSubtitle}>Nhập thông tin chuyển khoản</Text>
 
@@ -490,7 +638,8 @@ const WalletScreen = ({ navigation }) => {
               </TouchableOpacity>
               <ModernButton title="Xác nhận" size="small" onPress={handleWithdraw} />
             </View>
-          </Animatable.View>
+            </Animatable.View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     );
@@ -618,7 +767,15 @@ const styles = StyleSheet.create({
   statItem: {
     flex: 1,
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
+  },
+  statIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 4,
   },
   statValue: {
     fontSize: 16,

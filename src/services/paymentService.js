@@ -81,7 +81,7 @@ class PaymentService {
     }
   }
 
-  // Get transaction history (Updated API - uses authentication)
+  // Get transaction history (Updated API - uses new transaction controller endpoint)
   async getTransactionHistory(page = 0, size = 20, type = null, status = null) {
     try {
       const params = new URLSearchParams({
@@ -92,10 +92,12 @@ class PaymentService {
       if (type) params.append('type', type);
       if (status) params.append('status', status);
 
+      // Use new transaction history endpoint from TransactionController
       const response = await this.apiService.get(
-        `${ENDPOINTS.WALLET.TRANSACTIONS}?${params.toString()}`
+        `${ENDPOINTS.TRANSACTION.USER_HISTORY}?${params.toString()}`
       );
 
+      console.log('Transaction history response:', response);
       return response;
     } catch (error) {
       console.error('Get transaction history error:', error);

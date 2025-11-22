@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,69 +6,86 @@ import {
   SafeAreaView,
   TouchableOpacity,
   ScrollView,
-  TextInput
+  ActivityIndicator,
+  RefreshControl,
+  Alert,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Animatable from 'react-native-animatable';
+import { useFocusEffect } from '@react-navigation/native';
+import ratingService from '../../services/ratingService';
 
 const DriverRatingsScreen = () => {
   const [selectedFilter, setSelectedFilter] = useState('all');
-
-  const ratingStats = {
-    overall: 4.8,
-    total: 156,
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [ratings, setRatings] = useState([]);
+  const [ratingStats, setRatingStats] = useState({
+    overall: 0,
+    total: 0,
     breakdown: {
-      5: 98,
-      4: 32,
-      3: 18,
-      2: 6,
-      1: 2
+      5: 0,
+      4: 0,
+      3: 0,
+      2: 0,
+      1: 0
+    }
+  });
+
+  useFocusEffect(
+    useCallback(() => {
+      loadRatings();
+    }, [])
+  );
+
+  const loadRatings = async () => {
+    try {
+      setLoading(true);
+      const response = await ratingService.getDriverRatingsHistory(0, 100);
+      const ratingsData = response?.data || response?.content || [];
+      
+      setRatings(ratingsData);
+
+      // Calculate stats from ratings
+      const total = ratingsData.length;
+      let sum = 0;
+      const breakdown = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+
+      ratingsData.forEach((rating) => {
+        const score = rating.score || rating.rating || 0;
+        sum += score;
+        if (score >= 1 && score <= 5) {
+          breakdown[Math.floor(score)]++;
+        }
+      });
+
+      const overall = total > 0 ? sum / total : 0;
+
+      setRatingStats({
+        overall: parseFloat(overall.toFixed(1)),
+        total,
+        breakdown,
+      });
+    } catch (error) {
+      console.error('Error loading ratings:', error);
+      Alert.alert('Lỗi', 'Không thể tải đánh giá. Vui lòng thử lại.');
+      setRatings([]);
+      setRatingStats({
+        overall: 0,
+        total: 0,
+        breakdown: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 }
+      });
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  const recentReviews = [
-    {
-      id: 1,
-      riderName: 'Nguyen Van A',
-      rating: 5,
-      comment: 'Tài xế lái xe rất an toàn, đúng giờ và thái độ thân thiện. Sẽ chọn lại lần sau!',
-      date: '2024-01-16T14:30:00Z',
-      route: 'Ký túc xá A → Trường FPT'
-    },
-    {
-      id: 2,
-      riderName: 'Le Thi B',
-      rating: 4,
-      comment: 'Xe sạch sẽ, tài xế lịch sự. Chỉ có điều hơi nhanh một chút.',
-      date: '2024-01-15T16:20:00Z',
-      route: 'Nhà văn hóa → Chợ Bến Thành'
-    },
-    {
-      id: 3,
-      riderName: 'Pham Van C',
-      rating: 5,
-      comment: 'Tuyệt vời! Tài xế rất am hiểu đường và tránh được kẹt xe.',
-      date: '2024-01-15T12:45:00Z',
-      route: 'Trọ sinh viên → Trường FPT'
-    },
-    {
-      id: 4,
-      riderName: 'Hoang Thi D',
-      rating: 3,
-      comment: 'Bình thường, không có gì đặc biệt.',
-      date: '2024-01-14T18:15:00Z',
-      route: 'Vincom → Ký túc xá B'
-    },
-    {
-      id: 5,
-      riderName: 'Tran Van E',
-      rating: 5,
-      comment: 'Tài xế rất chuyên nghiệp, có mũ bảo hiểm dự phòng và lái xe cẩn thận.',
-      date: '2024-01-14T10:30:00Z',
-      route: 'Trường FPT → Chợ Bến Thành'
-    }
-  ];
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadRatings();
+  };
 
   const filterOptions = [
     { key: 'all', label: 'Tất cả', count: ratingStats.total },
@@ -79,10 +96,10 @@ const DriverRatingsScreen = () => {
   ];
 
   const filteredReviews = selectedFilter === 'all' 
-    ? recentReviews 
+    ? ratings 
     : selectedFilter === '2-1'
-    ? recentReviews.filter(review => review.rating <= 2)
-    : recentReviews.filter(review => review.rating.toString() === selectedFilter);
+    ? ratings.filter(review => (review.score || review.rating || 0) <= 2)
+    : ratings.filter(review => Math.floor(review.score || review.rating || 0).toString() === selectedFilter);
 
   const renderStars = (rating) => {
     return Array.from({ length: 5 }, (_, index) => (
@@ -96,17 +113,42 @@ const DriverRatingsScreen = () => {
   };
 
   const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('vi-VN');
+    if (!dateString) return 'N/A';
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('vi-VN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+    } catch (e) {
+      return dateString;
+    }
   };
 
   const getProgressWidth = (count) => {
     return (count / ratingStats.total) * 100;
   };
 
+  if (loading && ratings.length === 0) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#FF9800" />
+          <Text style={styles.loadingText}>Đang tải đánh giá...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#FF9800']} />
+        }
+      >
         {/* Header */}
         <LinearGradient
           colors={['#FF9800', '#F57C00']}
@@ -238,32 +280,43 @@ const DriverRatingsScreen = () => {
                 <Text style={styles.emptyText}>Chưa có đánh giá nào</Text>
               </View>
             ) : (
-              filteredReviews.map((review) => (
-                <Animatable.View 
-                  key={review.id} 
-                  animation="fadeInUp" 
-                  style={styles.reviewCard}
-                >
-                  <View style={styles.reviewHeader}>
-                    <View style={styles.reviewerInfo}>
-                      <View style={styles.reviewerAvatar}>
-                        <Icon name="person" size={20} color="#666" />
+              filteredReviews.map((review, index) => {
+                const score = review.score || review.rating || 0;
+                const riderName = review.rider_name || review.riderName || review.rider?.full_name || review.rider?.name || 'Khách hàng';
+                const comment = review.comment || review.comment_text || '';
+                const date = review.created_at || review.createdAt || review.date;
+                const route = review.route || 
+                  (review.pickup_location && review.dropoff_location 
+                    ? `${review.pickup_location.address || review.pickup_location.name || 'N/A'} → ${review.dropoff_location.address || review.dropoff_location.name || 'N/A'}`
+                    : 'N/A');
+
+                return (
+                  <Animatable.View 
+                    key={review.rating_id || review.id || index} 
+                    animation="fadeInUp" 
+                    style={styles.reviewCard}
+                  >
+                    <View style={styles.reviewHeader}>
+                      <View style={styles.reviewerInfo}>
+                        <View style={styles.reviewerAvatar}>
+                          <Icon name="person" size={20} color="#666" />
+                        </View>
+                        <View style={styles.reviewerDetails}>
+                          <Text style={styles.reviewerName}>{riderName}</Text>
+                          <Text style={styles.reviewDate}>{formatDate(date)}</Text>
+                        </View>
                       </View>
-                      <View style={styles.reviewerDetails}>
-                        <Text style={styles.reviewerName}>{review.riderName}</Text>
-                        <Text style={styles.reviewDate}>{formatDate(review.date)}</Text>
+                      <View style={styles.reviewRating}>
+                        {renderStars(Math.floor(score))}
                       </View>
                     </View>
-                    <View style={styles.reviewRating}>
-                      {renderStars(review.rating)}
-                    </View>
-                  </View>
-                  
-                  <Text style={styles.reviewRoute}>{review.route}</Text>
-                  
-                  <Text style={styles.reviewComment}>{review.comment}</Text>
-                </Animatable.View>
-              ))
+                    
+                    {route !== 'N/A' && <Text style={styles.reviewRoute}>{route}</Text>}
+                    
+                    {comment && <Text style={styles.reviewComment}>{comment}</Text>}
+                  </Animatable.View>
+                );
+              })
             )}
           </View>
 
@@ -569,6 +622,17 @@ const styles = StyleSheet.create({
     color: '#666',
     marginLeft: 12,
     lineHeight: 20,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#666',
   },
 });
 

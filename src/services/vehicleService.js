@@ -28,14 +28,14 @@ class VehicleService {
 
 
       const endpoint = ENDPOINTS.VEHICLES.GET_BY_DRIVER;
-      const queryParams = {
-        page: page,
-        size: size,
+      const queryParams = new URLSearchParams({
+        page: page.toString(),
+        size: size.toString(),
         sortBy,
         sortDir
-      };
+      });
 
-      const response = await this.apiService.get(endpoint, { params: queryParams });
+      const response = await this.apiService.get(`${endpoint}?${queryParams.toString()}`);
       
       return response;
     } catch (error) {
