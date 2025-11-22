@@ -11,6 +11,7 @@ import {
   ScrollView,
   StatusBar,
   Platform,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -26,6 +27,11 @@ import paymentService from '../../services/paymentService';
 import { locationStorageService } from '../../services/locationStorageService';
 import RideOfferModal from '../../components/RideOfferModal';
 import notificationService from '../../services/notificationService';
+import GlassHeader from '../../components/ui/GlassHeader.jsx';
+import CleanCard from '../../components/ui/CleanCard.jsx';
+import AppBackground from '../../components/layout/AppBackground.jsx';
+import { colors, typography, spacing } from '../../theme/designTokens';
+import * as Animatable from 'react-native-animatable';
 
 const { width } = Dimensions.get('window');
 
@@ -81,6 +87,7 @@ const DriverHomeScreen = ({ navigation }) => {
   const [activeSharedRide, setActiveSharedRide] = useState(null);
   const [pendingJoinRequests, setPendingJoinRequests] = useState({}); // { rideId: [requests] }
   const [unreadCount, setUnreadCount] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
   
   const countdownInterval = useRef(null);
 
@@ -777,6 +784,17 @@ const DriverHomeScreen = ({ navigation }) => {
     setShowOfferModal(true);
   };
 
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([
+      loadDriverStats(),
+      fetchUnreadCount(),
+      isOnline && activeTab === 'requests' ? loadBroadcastRequests() : Promise.resolve(),
+      isOnline && activeTab === 'shared' ? loadSharedRides() : Promise.resolve(),
+    ]);
+    setRefreshing(false);
+  };
+
   const handleRejectRequest = async (request) => {
     Alert.alert('Từ chối yêu cầu', 'Bạn có chắc muốn từ chối yêu cầu này?', [
       { text: 'Hủy', style: 'cancel' },
@@ -847,170 +865,195 @@ const DriverHomeScreen = ({ navigation }) => {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <View style={styles.userInfo}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{getInitials(user?.fullName)}</Text>
-            </View>
-            <View style={styles.userDetails}>
-              <Text style={styles.userName}>{user?.fullName || 'Tài xế'}</Text>
-              <Text style={styles.userRole}>Tài xế</Text>
-            </View>
-          </View>
-          <TouchableOpacity
-            style={styles.notificationButton}
-            onPress={() => navigation.navigate('Notifications')}
-          >
-            <Icon name="notifications" size={24} color="#333" />
-            {unreadCount > 0 && (
-              <View style={styles.notificationBadge}>
-                <Text style={styles.notificationBadgeText}>
-                  {unreadCount > 99 ? '99+' : unreadCount}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        {/* Online Toggle */}
-        <View style={styles.onlineToggleContainer}>
-          <View style={styles.onlineStatus}>
-            <View style={[styles.statusDot, { backgroundColor: isOnline ? '#4CAF50' : '#9E9E9E' }]} />
-            <Text style={styles.onlineStatusText}>
-              {isOnline ? 'Đang hoạt động' : 'Ngoại tuyến'}
-            </Text>
-          </View>
-          <Switch
-            value={isOnline}
-            onValueChange={handleToggleOnline}
-            trackColor={{ false: '#E0E0E0', true: '#C8E6C9' }}
-            thumbColor={isOnline ? '#4CAF50' : '#9E9E9E'}
-          />
-        </View>
-      </View>
-
-      {/* Earnings Summary */}
-      <View style={styles.earningsContainer}>
-        <LinearGradient colors={['#4CAF50', '#2196F3']} style={styles.earningsCard}>
-          <View style={styles.earningsHeader}>
-            <View>
-              <Text style={styles.earningsLabel}>Thu nhập hôm nay</Text>
-              <Text style={styles.earningsAmount}>
-                {formatCurrency(driverStats.todayEarnings)}
-              </Text>
-            </View>
-          </View>
-          
-          <View style={styles.earningsFooter}>
-            <View style={styles.earningsStat}>
-              <Icon name="navigation" size={16} color="#fff" />
-              <Text style={styles.earningsStatText}>{driverStats.totalRides} chuyến</Text>
-            </View>
-            <View style={styles.earningsStat}>
-              <Icon name="star" size={16} color="#FFD700" />
-              <Text style={styles.earningsStatText}>{driverStats.rating.toFixed(1)}</Text>
-            </View>
-            <View style={styles.earningsStat}>
-              <Icon name="account-balance-wallet" size={16} color="#fff" />
-              <Text style={styles.earningsStatText}>{formatCurrency(driverStats.balance)}</Text>
-            </View>
-          </View>
-        </LinearGradient>
-      </View>
-
-      {/* Tab Switcher */}
-      <View style={styles.tabContainer}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'requests' && styles.tabActive]}
-          onPress={() => setActiveTab('requests')}
+    <AppBackground>
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <StatusBar barStyle="light-content" />
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.accent]} />
+          }
         >
-          <Text style={[styles.tabText, activeTab === 'requests' && styles.tabTextActive]}>
-            Yêu cầu
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'shared' && styles.tabActive]}
-          onPress={() => setActiveTab('shared')}
-        >
-          <Text style={[styles.tabText, activeTab === 'shared' && styles.tabTextActive]}>
-            Chuyến chia sẻ
-          </Text>
-        </TouchableOpacity>
-      </View>
+          <View style={styles.headerSpacing}>
+            <GlassHeader
+              title={user?.user?.full_name || user?.fullName || 'Tài xế'}
+              subtitle={`Tài xế • ${isOnline ? 'Đang hoạt động' : 'Ngoại tuyến'}`}
+              onBellPress={() => navigation.navigate('Notifications')}
+              badgeCount={unreadCount}
+            />
+          </View>
 
-      {/* Main Content */}
-      <ScrollView
-        style={styles.content}
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPadding }]}
-        showsVerticalScrollIndicator={false}
-        contentInsetAdjustmentBehavior="automatic"
-      >
+          <View style={styles.content}>
+            {/* Online Toggle */}
+            <Animatable.View animation="fadeInUp" duration={400} delay={60}>
+              <CleanCard style={styles.onlineToggleCard} contentStyle={styles.onlineToggleCardContent}>
+                <View style={styles.onlineToggleContainer}>
+                  <View style={styles.onlineStatus}>
+                    <View style={[styles.statusDot, { backgroundColor: isOnline ? '#22C55E' : '#9CA3AF' }]} />
+                    <Text style={styles.onlineStatusText}>
+                      {isOnline ? 'Đang hoạt động' : 'Ngoại tuyến'}
+                    </Text>
+                  </View>
+                  <Switch
+                    value={isOnline}
+                    onValueChange={handleToggleOnline}
+                    trackColor={{ false: '#E5E7EB', true: '#D1FAE5' }}
+                    thumbColor={isOnline ? '#22C55E' : '#9CA3AF'}
+                  />
+                </View>
+              </CleanCard>
+            </Animatable.View>
+
+            {/* Earnings Summary */}
+            <Animatable.View animation="fadeInUp" duration={400} delay={120}>
+              <CleanCard style={styles.earningsCard} contentStyle={styles.earningsCardContent}>
+                <View style={styles.earningsHeader}>
+                  <View>
+                    <Text style={styles.earningsLabel}>Thu nhập hôm nay</Text>
+                    <Text style={styles.earningsAmount}>
+                      {formatCurrency(driverStats.todayEarnings)}
+                    </Text>
+                  </View>
+                  <View style={[styles.earningsIcon, { backgroundColor: colors.primary + '15' }]}>
+                    <Icon name="account-balance-wallet" size={24} color={colors.primary} />
+                  </View>
+                </View>
+                
+                <View style={styles.earningsFooter}>
+                  <View style={styles.earningsStat}>
+                    <View style={[styles.earningsStatIcon, { backgroundColor: '#E3F2FD' }]}>
+                      <Icon name="directions-car" size={14} color="#2196F3" />
+                    </View>
+                    <Text style={styles.earningsStatText}>{driverStats.totalRides} chuyến</Text>
+                  </View>
+                  <View style={styles.earningsStat}>
+                    <View style={[styles.earningsStatIcon, { backgroundColor: '#FFF4E6' }]}>
+                      <Icon name="star" size={14} color="#FF9800" />
+                    </View>
+                    <Text style={styles.earningsStatText}>{driverStats.rating.toFixed(1)}</Text>
+                  </View>
+                  <View style={styles.earningsStat}>
+                    <View style={[styles.earningsStatIcon, { backgroundColor: '#E8F5E9' }]}>
+                      <Icon name="account-balance-wallet" size={14} color={colors.primary} />
+                    </View>
+                    <Text style={styles.earningsStatText}>{formatCurrency(driverStats.balance)}</Text>
+                  </View>
+                </View>
+              </CleanCard>
+            </Animatable.View>
+
+            {/* Tab Switcher */}
+            <Animatable.View animation="fadeInUp" duration={400} delay={180}>
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.tabsContainer}
+              >
+                <TouchableOpacity
+                  style={[styles.tab, activeTab === 'requests' && styles.tabActive]}
+                  onPress={() => setActiveTab('requests')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.tabText, activeTab === 'requests' && styles.tabTextActive]}>
+                    Yêu cầu
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.tab, activeTab === 'shared' && styles.tabActive]}
+                  onPress={() => setActiveTab('shared')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.tabText, activeTab === 'shared' && styles.tabTextActive]}>
+                    Chuyến chia sẻ
+                  </Text>
+                </TouchableOpacity>
+              </ScrollView>
+            </Animatable.View>
+
+            {/* Main Content */}
+            <View style={styles.mainContent}>
         {!isOnline ? (
-          <View style={styles.offlineContainer}>
-            <View style={styles.offlineIcon}>
-              <Icon name="navigation" size={48} color="#9E9E9E" />
-            </View>
-            <Text style={styles.offlineTitle}>Bạn đang ngoại tuyến</Text>
-            <Text style={styles.offlineDescription}>
-              Bật trạng thái hoạt động để nhận yêu cầu chuyến đi
-            </Text>
-            <TouchableOpacity
-              style={styles.goOnlineButton}
-              onPress={() => handleToggleOnline(true)}
-            >
-              <Text style={styles.goOnlineButtonText}>Bắt đầu nhận chuyến</Text>
-            </TouchableOpacity>
-          </View>
+          <Animatable.View animation="fadeInUp" duration={400} delay={240}>
+            <CleanCard style={styles.offlineContainer} contentStyle={styles.offlineContainerContent}>
+              <View style={styles.offlineIcon}>
+                <Icon name="navigation" size={56} color={colors.textMuted} />
+              </View>
+              <Text style={styles.offlineTitle}>Bạn đang ngoại tuyến</Text>
+              <Text style={styles.offlineDescription}>
+                Bật trạng thái hoạt động để nhận yêu cầu chuyến đi
+              </Text>
+              <TouchableOpacity
+                style={styles.goOnlineButton}
+                onPress={() => handleToggleOnline(true)}
+                activeOpacity={0.8}
+              >
+                <Icon name="power-settings-new" size={20} color="#FFFFFF" />
+                <Text style={styles.goOnlineButtonText}>Bắt đầu nhận chuyến</Text>
+              </TouchableOpacity>
+            </CleanCard>
+          </Animatable.View>
         ) : activeTab === 'requests' ? (
           <View style={styles.requestsContainer}>
             <View style={styles.requestsHeader}>
               <Text style={styles.requestsTitle}>Yêu cầu chuyến đi</Text>
-              <View style={styles.requestsHeaderActions}>
-                <Text style={styles.requestsCount}>{totalRequests} yêu cầu</Text>
-                <TouchableOpacity
-                  style={styles.refreshButton}
-                  onPress={loadBroadcastRequests}
-                  disabled={loadingBroadcastRequests}
-                  accessibilityLabel="Làm mới danh sách yêu cầu"
-                >
-                  {loadingBroadcastRequests ? (
-                    <ActivityIndicator size="small" color="#2196F3" />
-                  ) : (
-                    <Icon name="refresh" size={20} color="#2196F3" />
-                  )}
-                </TouchableOpacity>
-              </View>
+              {totalRequests > 0 && (
+                <View style={styles.requestsHeaderActions}>
+                  <Text style={styles.requestsCount}>{totalRequests}</Text>
+                  <TouchableOpacity
+                    style={styles.refreshButton}
+                    onPress={loadBroadcastRequests}
+                    disabled={loadingBroadcastRequests}
+                    activeOpacity={0.7}
+                  >
+                    {loadingBroadcastRequests ? (
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    ) : (
+                      <Icon name="refresh" size={18} color={colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
             
             {totalRequests === 0 ? (
-              <View style={styles.emptyState}>
-                <Icon name="inbox" size={48} color="#9E9E9E" />
-                <Text style={styles.emptyStateText}>Chưa có yêu cầu nào</Text>
-                <Text style={styles.emptyStateSubtext}>Bạn sẽ nhận được thông báo hoặc có thể làm mới để xem yêu cầu mới</Text>
-              </View>
+              <Animatable.View animation="fadeInUp" duration={400} delay={300}>
+                <CleanCard style={styles.emptyState} contentStyle={styles.emptyStateContent}>
+                  <View style={styles.emptyIcon}>
+                    <Icon name="inbox" size={56} color={colors.textMuted} />
+                  </View>
+                  <Text style={styles.emptyStateTitle}>Chưa có yêu cầu nào</Text>
+                  <Text style={styles.emptyStateSubtext}>
+                    Bạn sẽ nhận được thông báo hoặc có thể làm mới để xem yêu cầu mới
+                  </Text>
+                </CleanCard>
+              </Animatable.View>
             ) : (
               <View style={styles.requestsList}>
-                {combinedRequests.map((request) => {
+                {combinedRequests.map((request, index) => {
                   const isBroadcastRequest = request.broadcast === true;
                   const requestKey = `request-${request.id}`;
                   const priceAmount = request.fare || request.fareAmount || request.total_fare || 0;
                   return (
-                  <View key={requestKey} style={[styles.requestCard, isBroadcastRequest && styles.broadcastCard]}>
-                    <View style={styles.requestHeader}>
+                  <Animatable.View
+                    key={requestKey}
+                    animation="fadeInUp"
+                    duration={400}
+                    delay={300 + index * 40}
+                  >
+                  <CleanCard style={styles.requestCard} contentStyle={styles.requestCardContent}>
+                    <View style={styles.requestTop}>
                       <View style={styles.riderInfo}>
                         <View style={styles.riderAvatar}>
                           <Text style={styles.riderAvatarText}>
                             {getInitials(request.rider)}
                           </Text>
                         </View>
-                        <View>
+                        <View style={styles.riderDetails}>
                           <Text style={styles.riderName}>{request.rider}</Text>
                           <View style={styles.riderMeta}>
-                            <Icon name="star" size={14} color="#FFD700" />
+                            <Icon name="star" size={12} color="#F59E0B" />
                             <Text style={styles.riderRating}>{request.rating.toFixed(1)}</Text>
                             {!isBroadcastRequest && (
                               <>
@@ -1030,7 +1073,7 @@ const DriverHomeScreen = ({ navigation }) => {
                             )}
                             {isBroadcastRequest && (
                               <View style={styles.broadcastBadge}>
-                                <Icon name="campaign" size={14} color="#1565C0" />
+                                <Icon name="campaign" size={12} color="#3B82F6" />
                                 <Text style={styles.broadcastBadgeText}>Yêu cầu mở</Text>
                               </View>
                             )}
@@ -1041,27 +1084,24 @@ const DriverHomeScreen = ({ navigation }) => {
                         <Text style={styles.requestPriceAmount}>
                           {formatCurrency(priceAmount)}
                         </Text>
-                        {request.distance ? (
-                          <Text style={styles.requestDistance}>{request.distance}</Text>
-                        ) : null}
                       </View>
                     </View>
 
                     <View style={styles.requestRoute}>
-                      <View style={styles.routePoint}>
+                      <View style={styles.routeItem}>
                         <View style={styles.routeDot} />
-                        <Text style={styles.routeText}>{request.pickup}</Text>
+                        <Text style={styles.routeText} numberOfLines={1}>{request.pickup}</Text>
                       </View>
                       <View style={styles.routeLine} />
-                      <View style={styles.routePoint}>
-                        <Icon name="location-on" size={16} color="#F44336" />
-                        <Text style={styles.routeText}>{request.dropoff}</Text>
+                      <View style={styles.routeItem}>
+                        <Icon name="location-on" size={12} color="#EF4444" />
+                        <Text style={styles.routeText} numberOfLines={1}>{request.dropoff}</Text>
                       </View>
                     </View>
 
                     <View style={styles.requestActions}>
                       <View style={styles.requestTime}>
-                        <Icon name="access-time" size={14} color="#666" />
+                        <Icon name="access-time" size={12} color={colors.textMuted} />
                         <Text style={styles.requestTimeText}>{request.time}</Text>
                       </View>
                       <View style={styles.requestButtons}>
@@ -1069,6 +1109,7 @@ const DriverHomeScreen = ({ navigation }) => {
                           <TouchableOpacity
                             style={styles.acceptButton}
                             onPress={() => handleAcceptRequest(request)}
+                            activeOpacity={0.8}
                           >
                             <Text style={styles.acceptButtonText}>Nhận chuyến</Text>
                           </TouchableOpacity>
@@ -1077,12 +1118,14 @@ const DriverHomeScreen = ({ navigation }) => {
                             <TouchableOpacity
                               style={styles.rejectButton}
                               onPress={() => handleRejectRequest(request)}
+                              activeOpacity={0.8}
                             >
                               <Text style={styles.rejectButtonText}>Từ chối</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                               style={styles.acceptButton}
                               onPress={() => handleAcceptRequest(request)}
+                              activeOpacity={0.8}
                             >
                               <Text style={styles.acceptButtonText}>Chấp nhận</Text>
                             </TouchableOpacity>
@@ -1090,7 +1133,8 @@ const DriverHomeScreen = ({ navigation }) => {
                         )}
                       </View>
                     </View>
-                  </View>
+                  </CleanCard>
+                  </Animatable.View>
                 );
                 })}
               </View>
@@ -1107,144 +1151,152 @@ const DriverHomeScreen = ({ navigation }) => {
               <>
                 {/* Active Shared Ride */}
                 {activeSharedRide && (
-                  <TouchableOpacity
-                    style={styles.activeSharedRideCard}
-                    onPress={() => {
-                      navigation.navigate('DriverRideDetails', {
-                        rideId: activeSharedRide.rideId,
-                      });
-                    }}
-                    activeOpacity={0.8}
-                  >
-                    <View style={styles.activeSharedRideHeader}>
-                      <View style={styles.activeSharedRideTitle}>
-                        <Icon name="people" size={20} color="#2196F3" />
-                        <Text style={styles.activeSharedRideTitleText}>Chuyến xe đang được chia sẻ</Text>
-                      </View>
-                      <View style={[
-                        styles.activeSharedRideBadge,
-                        activeSharedRide.status === 'ongoing' && styles.activeSharedRideBadgeOngoing
-                      ]}>
-                        <Text style={[
-                          styles.activeSharedRideBadgeText,
-                          activeSharedRide.status === 'ongoing' && styles.activeSharedRideBadgeTextOngoing
-                        ]}>
-                          {activeSharedRide.status === 'ongoing' ? 'Đang di chuyển' : 'Đang chờ'}
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.activeSharedRideRoute}>
-                      <View style={styles.routePoint}>
-                        <View style={[styles.routeDot, { backgroundColor: '#2196F3' }]} />
-                        <Text style={styles.routeText}>{activeSharedRide.from}</Text>
-                      </View>
-                      <View style={styles.routeLine} />
-                      <View style={styles.routePoint}>
-                        <Icon name="location-on" size={16} color="#F44336" />
-                        <Text style={styles.routeText}>{activeSharedRide.to}</Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.activeSharedRideStats}>
-                      <View style={styles.activeSharedRideStat}>
-                        <Text style={styles.activeSharedRideStatLabel}>Thời gian</Text>
-                        <Text style={styles.activeSharedRideStatValue}>
-                          {activeSharedRide.scheduledTime}
-                        </Text>
-                      </View>
-                      <View style={styles.activeSharedRideStat}>
-                        <Text style={styles.activeSharedRideStatLabel}>Hành khách</Text>
-                        <Text style={styles.activeSharedRideStatValue}>
-                          {activeSharedRide.currentPassengers}/{activeSharedRide.maxPassengers}
-                        </Text>
-                      </View>
-                    </View>
-
-                    {/* Pending Join Requests */}
-                    {pendingJoinRequests[activeSharedRide.rideId] && 
-                     pendingJoinRequests[activeSharedRide.rideId].length > 0 && (
-                      <View style={styles.pendingRequestsContainer}>
-                        <Text style={styles.pendingRequestsTitle}>
-                          Yêu cầu tham gia ({pendingJoinRequests[activeSharedRide.rideId].length})
-                        </Text>
-                        {pendingJoinRequests[activeSharedRide.rideId].map((req) => (
-                          <View key={req.shared_ride_request_id || req.sharedRideRequestId} style={styles.pendingRequestCard}>
-                            <View style={styles.pendingRequestHeader}>
-                              <View style={styles.pendingRequestRiderInfo}>
-                                <View style={styles.pendingRequestAvatar}>
-                                  <Text style={styles.pendingRequestAvatarText}>
-                                    {getInitials(req.rider_name || req.riderName || 'Hành khách')}
-                                  </Text>
-                                </View>
-                                <View>
-                                  <Text style={styles.pendingRequestRiderName}>
-                                    {req.rider_name || req.riderName || 'Hành khách'}
-                                  </Text>
-                                  <Text style={styles.pendingRequestFare}>
-                                    {formatCurrency(req.total_fare || req.totalFare || req.fareAmount || 0)}
-                                  </Text>
-                                </View>
-                              </View>
-                              <View style={styles.pendingRequestActions}>
-                                {req.status === 'PENDING' ? (
-                                  <>
-                                    <TouchableOpacity
-                                      style={styles.pendingRequestRejectButton}
-                                      onPress={() => {
-                                        console.log('Rejecting request:', req);
-                                        handleRejectRequest({
-                                          ...req,
-                                          requestId: req.shared_ride_request_id || req.sharedRideRequestId,
-                                          rideId: activeSharedRide.rideId,
-                                        });
-                                      }}
-                                      activeOpacity={0.7}
-                                    >
-                                      <Icon name="close" size={18} color="#F44336" />
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
-                                      style={styles.pendingRequestAcceptButton}
-                                      onPress={() => {
-                                        console.log('Accepting request:', req);
-                                        handleAcceptRequest({
-                                          ...req,
-                                          requestId: req.shared_ride_request_id || req.sharedRideRequestId,
-                                          rideId: activeSharedRide.rideId,
-                                          pickupLocation: req.pickup_location || req.pickupLocation,
-                                          dropoffLocation: req.dropoff_location || req.dropoffLocation,
-                                        });
-                                      }}
-                                      activeOpacity={0.7}
-                                    >
-                                      <Icon name="check" size={18} color="#4CAF50" />
-                                    </TouchableOpacity>
-                                  </>
-                                ) : (
-                                  <View style={styles.pendingRequestExpiredBadge}>
-                                    <Text style={styles.pendingRequestExpiredText}>
-                                      {req.status === 'EXPIRED' ? 'Hết hạn' : req.status === 'CANCELLED' ? 'Đã hủy' : req.status}
-                                    </Text>
-                                  </View>
-                                )}
+                  <Animatable.View animation="fadeInUp" duration={400} delay={300}>
+                    <CleanCard style={styles.activeSharedRideCard} contentStyle={styles.activeSharedRideCardContent}>
+                      <TouchableOpacity
+                        onPress={() => {
+                          navigation.navigate('DriverRideDetails', {
+                            rideId: activeSharedRide.rideId,
+                          });
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <View style={styles.activeSharedRideHeader}>
+                          <View style={styles.activeSharedRideTitle}>
+                            <View style={[styles.activeSharedRideIcon, { backgroundColor: '#EFF6FF' }]}>
+                              <Icon name="people" size={18} color="#3B82F6" />
+                            </View>
+                            <View style={styles.activeSharedRideTitleText}>
+                              <Text style={styles.activeSharedRideTitleMain}>Chuyến xe đang được chia sẻ</Text>
+                              <View style={[
+                                styles.activeSharedRideBadge,
+                                activeSharedRide.status === 'ongoing' && styles.activeSharedRideBadgeOngoing
+                              ]}>
+                                <Text style={[
+                                  styles.activeSharedRideBadgeText,
+                                  activeSharedRide.status === 'ongoing' && styles.activeSharedRideBadgeTextOngoing
+                                ]}>
+                                  {activeSharedRide.status === 'ongoing' ? 'Đang di chuyển' : 'Đang chờ'}
+                                </Text>
                               </View>
                             </View>
                           </View>
-                        ))}
-                      </View>
-                    )}
+                        </View>
 
-                    <TouchableOpacity 
-                      style={styles.viewDetailsButton}
-                      onPress={() => {
-                        navigation.navigate('DriverRideDetails', {
-                          rideId: activeSharedRide.rideId,
-                        });
-                      }}
-                    >
-                      <Text style={styles.viewDetailsButtonText}>Xem chi tiết</Text>
-                    </TouchableOpacity>
-                  </TouchableOpacity>
+                        <View style={styles.activeSharedRideRoute}>
+                          <View style={styles.routeItem}>
+                            <View style={styles.routeDot} />
+                            <Text style={styles.routeText} numberOfLines={1}>{activeSharedRide.from}</Text>
+                          </View>
+                          <View style={styles.routeLine} />
+                          <View style={styles.routeItem}>
+                            <Icon name="location-on" size={12} color="#EF4444" />
+                            <Text style={styles.routeText} numberOfLines={1}>{activeSharedRide.to}</Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.activeSharedRideStats}>
+                          <View style={styles.activeSharedRideStat}>
+                            <Icon name="access-time" size={14} color={colors.textMuted} />
+                            <Text style={styles.activeSharedRideStatValue}>
+                              {activeSharedRide.scheduledTime}
+                            </Text>
+                          </View>
+                          <View style={styles.activeSharedRideStatDivider} />
+                          <View style={styles.activeSharedRideStat}>
+                            <Icon name="people" size={14} color={colors.textMuted} />
+                            <Text style={styles.activeSharedRideStatValue}>
+                              {activeSharedRide.currentPassengers}/{activeSharedRide.maxPassengers}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {/* Pending Join Requests */}
+                        {pendingJoinRequests[activeSharedRide.rideId] && 
+                         pendingJoinRequests[activeSharedRide.rideId].length > 0 && (
+                          <View style={styles.pendingRequestsContainer}>
+                            <Text style={styles.pendingRequestsTitle}>
+                              Yêu cầu tham gia ({pendingJoinRequests[activeSharedRide.rideId].length})
+                            </Text>
+                            {pendingJoinRequests[activeSharedRide.rideId].map((req, idx) => (
+                              <CleanCard key={req.shared_ride_request_id || req.sharedRideRequestId} style={styles.pendingRequestCard} contentStyle={styles.pendingRequestCardContent}>
+                                <View style={styles.pendingRequestHeader}>
+                                  <View style={styles.pendingRequestRiderInfo}>
+                                    <View style={styles.pendingRequestAvatar}>
+                                      <Text style={styles.pendingRequestAvatarText}>
+                                        {getInitials(req.rider_name || req.riderName || 'Hành khách')}
+                                      </Text>
+                                    </View>
+                                    <View style={styles.pendingRequestDetails}>
+                                      <Text style={styles.pendingRequestRiderName}>
+                                        {req.rider_name || req.riderName || 'Hành khách'}
+                                      </Text>
+                                      <Text style={styles.pendingRequestFare}>
+                                        {formatCurrency(req.total_fare || req.totalFare || req.fareAmount || 0)}
+                                      </Text>
+                                    </View>
+                                  </View>
+                                  <View style={styles.pendingRequestActions}>
+                                    {req.status === 'PENDING' ? (
+                                      <>
+                                        <TouchableOpacity
+                                          style={styles.pendingRequestRejectButton}
+                                          onPress={() => {
+                                            handleRejectRequest({
+                                              ...req,
+                                              requestId: req.shared_ride_request_id || req.sharedRideRequestId,
+                                              rideId: activeSharedRide.rideId,
+                                            });
+                                          }}
+                                          activeOpacity={0.7}
+                                        >
+                                          <Icon name="close" size={16} color="#EF4444" />
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                          style={styles.pendingRequestAcceptButton}
+                                          onPress={() => {
+                                            handleAcceptRequest({
+                                              ...req,
+                                              requestId: req.shared_ride_request_id || req.sharedRideRequestId,
+                                              rideId: activeSharedRide.rideId,
+                                              pickupLocation: req.pickup_location || req.pickupLocation,
+                                              dropoffLocation: req.dropoff_location || req.dropoffLocation,
+                                            });
+                                          }}
+                                          activeOpacity={0.7}
+                                        >
+                                          <Icon name="check" size={16} color="#22C55E" />
+                                        </TouchableOpacity>
+                                      </>
+                                    ) : (
+                                      <View style={styles.pendingRequestExpiredBadge}>
+                                        <Text style={styles.pendingRequestExpiredText}>
+                                          {req.status === 'EXPIRED' ? 'Hết hạn' : req.status === 'CANCELLED' ? 'Đã hủy' : req.status}
+                                        </Text>
+                                      </View>
+                                    )}
+                                  </View>
+                                </View>
+                              </CleanCard>
+                            ))}
+                          </View>
+                        )}
+
+                        <TouchableOpacity 
+                          style={styles.viewDetailsButton}
+                          onPress={() => {
+                            navigation.navigate('DriverRideDetails', {
+                              rideId: activeSharedRide.rideId,
+                            });
+                          }}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={styles.viewDetailsButtonText}>Xem chi tiết</Text>
+                          <Icon name="chevron-right" size={18} color="#FFFFFF" />
+                        </TouchableOpacity>
+                      </TouchableOpacity>
+                    </CleanCard>
+                  </Animatable.View>
                 )}
 
                 {/* List of Other Shared Rides */}
@@ -1253,83 +1305,99 @@ const DriverHomeScreen = ({ navigation }) => {
                     <Text style={styles.sharedRidesListTitle}>
                       Các chuyến khác ({sharedRides.length - 1})
                     </Text>
-                    {sharedRides.slice(1).map((ride) => (
-                      <TouchableOpacity
+                    {sharedRides.slice(1).map((ride, index) => (
+                      <Animatable.View
                         key={ride.rideId}
-                        style={styles.sharedRideCard}
-                        onPress={() => {
-                          navigation.navigate('DriverRideDetails', {
-                            rideId: ride.rideId || ride.shared_ride_id || ride.sharedRideId,
-                          });
-                        }}
+                        animation="fadeInUp"
+                        duration={400}
+                        delay={360 + index * 40}
                       >
-                        <View style={styles.sharedRideCardHeader}>
-                          <View style={styles.sharedRideCardRoute}>
-                            <View style={styles.routePoint}>
-                              <View style={styles.routeDot} />
-                              <Text style={styles.routeText} numberOfLines={1}>{ride.from}</Text>
+                        <CleanCard style={styles.sharedRideCard} contentStyle={styles.sharedRideCardContent}>
+                          <TouchableOpacity
+                            onPress={() => {
+                              navigation.navigate('DriverRideDetails', {
+                                rideId: ride.rideId || ride.shared_ride_id || ride.sharedRideId,
+                              });
+                            }}
+                            activeOpacity={0.7}
+                          >
+                            <View style={styles.sharedRideCardHeader}>
+                              <View style={styles.sharedRideCardRoute}>
+                                <View style={styles.routeItem}>
+                                  <View style={styles.routeDot} />
+                                  <Text style={styles.routeText} numberOfLines={1}>{ride.from}</Text>
+                                </View>
+                                <View style={styles.routeLine} />
+                                <View style={styles.routeItem}>
+                                  <Icon name="location-on" size={12} color="#EF4444" />
+                                  <Text style={styles.routeText} numberOfLines={1}>{ride.to}</Text>
+                                </View>
+                              </View>
+                              <View style={[
+                                styles.sharedRideStatusBadge,
+                                ride.status === 'ONGOING' && styles.sharedRideStatusBadgeOngoing
+                              ]}>
+                                <Text style={[
+                                  styles.sharedRideStatusText,
+                                  ride.status === 'ONGOING' && styles.sharedRideStatusTextOngoing
+                                ]}>
+                                  {ride.status === 'ONGOING' ? 'Đang di chuyển' : 'Đang chờ'}
+                                </Text>
+                              </View>
                             </View>
-                            <View style={styles.routeLine} />
-                            <View style={styles.routePoint}>
-                              <Icon name="location-on" size={14} color="#F44336" />
-                              <Text style={styles.routeText} numberOfLines={1}>{ride.to}</Text>
+                            <View style={styles.sharedRideCardFooter}>
+                              <View style={styles.sharedRideCardInfo}>
+                                <Icon name="access-time" size={12} color={colors.textMuted} />
+                                <Text style={styles.sharedRideCardInfoText}>{ride.scheduledTime}</Text>
+                                <Text style={styles.sharedRideCardInfoDot}>•</Text>
+                                <Icon name="people" size={12} color={colors.textMuted} />
+                                <Text style={styles.sharedRideCardInfoText}>
+                                  {ride.currentPassengers}/{ride.maxPassengers}
+                                </Text>
+                              </View>
+                              <Icon name="chevron-right" size={18} color={colors.textMuted} />
                             </View>
-                          </View>
-                          <View style={[
-                            styles.sharedRideStatusBadge,
-                            ride.status === 'ONGOING' && styles.sharedRideStatusBadgeOngoing
-                          ]}>
-                            <Text style={[
-                              styles.sharedRideStatusText,
-                              ride.status === 'ONGOING' && styles.sharedRideStatusTextOngoing
-                            ]}>
-                              {ride.status === 'ONGOING' ? 'Đang di chuyển' : 'Đang chờ'}
-                            </Text>
-                          </View>
-                        </View>
-                        <View style={styles.sharedRideCardFooter}>
-                          <View style={styles.sharedRideCardInfo}>
-                            <Icon name="access-time" size={14} color="#666" />
-                            <Text style={styles.sharedRideCardInfoText}>{ride.scheduledTime}</Text>
-                            <Text style={styles.sharedRideCardInfoDot}>•</Text>
-                            <Icon name="people" size={14} color="#666" />
-                            <Text style={styles.sharedRideCardInfoText}>
-                              {ride.currentPassengers}/{ride.maxPassengers}
-                            </Text>
-                          </View>
-                          <Icon name="chevron-right" size={20} color="#999" />
-                        </View>
-                      </TouchableOpacity>
+                          </TouchableOpacity>
+                        </CleanCard>
+                      </Animatable.View>
                     ))}
                   </View>
                 )}
 
                 {/* Create Shared Ride */}
-                <LinearGradient
-                  colors={['#2196F3', '#9C27B0']}
-                  style={styles.createSharedRideCard}
-                >
-                  <View style={styles.createSharedRideHeader}>
-                    <View style={styles.createSharedRideIcon}>
-                      <Icon name="people" size={24} color="#fff" />
+                <Animatable.View animation="fadeInUp" duration={400} delay={300}>
+                  <CleanCard style={styles.createSharedRideCard} contentStyle={styles.createSharedRideCardContent}>
+                    <View style={styles.createSharedRideHeader}>
+                      <View style={[styles.createSharedRideIcon, { backgroundColor: '#E3F2FD' }]}>
+                        <Icon name="people" size={24} color="#2196F3" />
+                      </View>
+                      <View style={styles.createSharedRideInfo}>
+                        <Text style={styles.createSharedRideTitle}>Chia sẻ chuyến đi</Text>
+                        <Text style={styles.createSharedRideSubtitle}>
+                          Tạo chuyến đi và mời hành khách tham gia
+                        </Text>
+                      </View>
                     </View>
-                    <Text style={styles.createSharedRideTitle}>Chia sẻ chuyến đi</Text>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.createSharedRideButton}
-                    onPress={() => navigation.navigate('CreateSharedRide')}
-                  >
-                    <Text style={styles.createSharedRideButtonText}>Chia sẻ chuyến đi</Text>
-                  </TouchableOpacity>
-                </LinearGradient>
+                    <TouchableOpacity
+                      style={styles.createSharedRideButton}
+                      onPress={() => navigation.navigate('CreateSharedRide')}
+                      activeOpacity={0.8}
+                    >
+                      <Icon name="add" size={20} color="#FFFFFF" />
+                      <Text style={styles.createSharedRideButtonText}>Tạo chuyến chia sẻ</Text>
+                    </TouchableOpacity>
+                  </CleanCard>
+                </Animatable.View>
               </>
             )}
           </View>
         )}
-      </ScrollView>
+            </View>
+          </View>
+        </ScrollView>
 
-      {/* Ride Offer Modal */}
-      {showOfferModal && currentOffer && (
+        {/* Ride Offer Modal */}
+        {showOfferModal && currentOffer && (
         <RideOfferModal
           visible={showOfferModal}
           offer={currentOffer}
@@ -1341,8 +1409,9 @@ const DriverHomeScreen = ({ navigation }) => {
           navigation={navigation}
           currentLocation={currentLocation}
         />
-      )}
-    </SafeAreaView>
+        )}
+      </SafeAreaView>
+    </AppBackground>
   );
 };
 
@@ -1434,142 +1503,184 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
+  onlineToggleCard: {
+    marginBottom: spacing.md,
+  },
+  onlineToggleCardContent: {
+    padding: spacing.md,
+  },
   onlineToggleContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#F5F5F5',
-    borderRadius: 12,
-    padding: 12,
   },
   onlineStatus: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.sm,
   },
   statusDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 8,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
   },
   onlineStatusText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-  },
-  earningsContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
+    fontSize: typography.body,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
   },
   earningsCard: {
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 5,
+    marginBottom: spacing.md,
+  },
+  earningsCardContent: {
+    padding: spacing.lg,
   },
   earningsHeader: {
-    marginBottom: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: spacing.lg,
   },
   earningsLabel: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.9)',
-    marginBottom: 4,
+    fontSize: typography.small,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
   },
   earningsAmount: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontSize: 36,
+    fontFamily: 'Inter_700Bold',
+    color: colors.textPrimary,
+    letterSpacing: -1,
+  },
+  earningsIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   earningsFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
   },
   earningsStat: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: spacing.xs,
+  },
+  earningsStatIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   earningsStatText: {
-    fontSize: 14,
-    color: '#fff',
+    fontSize: typography.small,
+    fontFamily: 'Inter_500Medium',
+    color: colors.textPrimary,
   },
-  tabContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    gap: 8,
+  tabsContainer: {
+    paddingVertical: spacing.sm,
+    gap: spacing.sm,
   },
   tab: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    backgroundColor: '#fff',
-    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: 20,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    marginRight: spacing.sm,
   },
   tabActive: {
-    backgroundColor: '#4CAF50',
-    shadowColor: '#4CAF50',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   tabText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#666',
+    fontSize: typography.small,
+    fontFamily: 'Inter_500Medium',
+    color: colors.textSecondary,
   },
   tabTextActive: {
-    color: '#fff',
-  },
-  content: {
-    flex: 1,
+    color: '#FFFFFF',
+    fontFamily: 'Inter_600SemiBold',
   },
   scrollContent: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingBottom: 160,
+    paddingTop: 24,
+  },
+  headerSpacing: {
+    marginBottom: 24,
+  },
+  content: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    gap: spacing.md,
+  },
+  mainContent: {
+    paddingTop: spacing.sm,
   },
   offlineContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 32,
+    marginBottom: spacing.md,
+  },
+  offlineContainerContent: {
+    paddingVertical: spacing.xl * 2,
+    paddingHorizontal: spacing.lg,
     alignItems: 'center',
-    marginTop: 16,
+    gap: spacing.md,
   },
   offlineIcon: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: '#F9FAFB',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: spacing.sm,
   },
   offlineTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 8,
+    fontSize: typography.subheading,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
   },
   offlineDescription: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: typography.body,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textSecondary,
     textAlign: 'center',
-    marginBottom: 24,
+    lineHeight: 22,
+    marginBottom: spacing.md,
   },
   goOnlineButton: {
-    backgroundColor: '#4CAF50',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: 16,
+    gap: spacing.sm,
+    ...Platform.select({
+      ios: {
+        shadowColor: colors.primary,
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.3,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
   },
   goOnlineButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    color: '#FFFFFF',
+    fontSize: typography.body,
+    fontFamily: 'Inter_600SemiBold',
   },
   requestsContainer: {
     marginTop: 16,
@@ -1578,51 +1689,67 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: spacing.md,
+    paddingHorizontal: spacing.xs,
   },
   requestsHeaderActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: spacing.sm,
   },
   requestsTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
+    fontSize: typography.subheading,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
   },
   requestsCount: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: typography.small,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.primary,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: colors.primary + '15',
   },
   refreshButton: {
-    padding: 6,
-    borderRadius: 8,
+    padding: spacing.sm,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
-    backgroundColor: '#fff',
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
   },
   emptyState: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 32,
-    alignItems: 'center',
-    marginTop: 16,
+    marginBottom: spacing.sm,
   },
-  emptyStateText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginTop: 16,
+  emptyStateContent: {
+    paddingVertical: spacing.xl * 2,
+    paddingHorizontal: spacing.lg,
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  emptyIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#F9FAFB',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  emptyStateTitle: {
+    fontSize: typography.subheading,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
   },
   emptyStateSubtext: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 8,
+    fontSize: typography.body,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textSecondary,
     textAlign: 'center',
+    lineHeight: 22,
   },
   requestsList: {
-    gap: 12,
-    marginTop: 8,
+    gap: spacing.sm,
   },
   broadcastCard: {
     borderWidth: 1,
@@ -1643,166 +1770,191 @@ const styles = StyleSheet.create({
     color: '#1565C0',
   },
   requestCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-    borderWidth: 2,
-    borderColor: 'transparent',
+    marginBottom: spacing.sm,
   },
-  requestHeader: {
+  requestCardContent: {
+    padding: spacing.md,
+    gap: spacing.md,
+  },
+  requestTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    alignItems: 'flex-start',
+    marginBottom: spacing.md,
   },
   riderInfo: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
+    gap: spacing.sm,
+  },
+  riderDetails: {
+    flex: 1,
   },
   riderAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#2196F3',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.primary + '15',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: spacing.sm,
   },
   riderAvatarText: {
-    color: '#fff',
+    color: colors.primary,
     fontSize: 18,
-    fontWeight: 'bold',
+    fontFamily: 'Inter_700Bold',
   },
   riderName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
+    fontSize: typography.body,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
   },
   riderMeta: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
-    gap: 4,
+    gap: spacing.xs,
+    flexWrap: 'wrap',
   },
   riderRating: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: typography.small,
+    fontFamily: 'Inter_500Medium',
+    color: colors.textSecondary,
   },
   riderMetaDot: {
-    fontSize: 12,
-    color: '#666',
-    marginHorizontal: 4,
+    fontSize: typography.small,
+    color: colors.textMuted,
   },
   rideTypeBadge: {
-    paddingHorizontal: 8,
+    paddingHorizontal: spacing.sm,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: 6,
   },
   rideTypeShared: {
-    backgroundColor: '#E3F2FD',
+    backgroundColor: '#EFF6FF',
   },
   rideTypeDirect: {
-    backgroundColor: '#F3E5F5',
+    backgroundColor: '#F5F3FF',
   },
   rideTypeText: {
-    fontSize: 11,
-    fontWeight: '600',
+    fontSize: typography.small - 1,
+    fontFamily: 'Inter_600SemiBold',
   },
   rideTypeTextShared: {
-    color: '#2196F3',
+    color: '#3B82F6',
   },
   rideTypeTextDirect: {
-    color: '#9C27B0',
+    color: '#8B5CF6',
+  },
+  broadcastBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: '#EFF6FF',
+  },
+  broadcastBadgeText: {
+    fontSize: typography.small - 1,
+    fontFamily: 'Inter_600SemiBold',
+    color: '#3B82F6',
   },
   requestPrice: {
     alignItems: 'flex-end',
   },
   requestPriceAmount: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#4CAF50',
-  },
-  requestDistance: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 4,
+    fontSize: typography.subheading,
+    fontFamily: 'Inter_700Bold',
+    color: colors.primary,
   },
   requestRoute: {
-    marginBottom: 12,
+    gap: spacing.xs,
+    marginBottom: spacing.md,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
   },
-  routePoint: {
+  routeItem: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 4,
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   routeDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#4CAF50',
-    marginRight: 8,
-    marginTop: 2,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.primary,
   },
   routeLine: {
-    width: 2,
-    height: 16,
-    backgroundColor: '#E0E0E0',
-    marginLeft: 5,
-    marginBottom: 4,
+    width: 1,
+    height: 10,
+    backgroundColor: '#E5E7EB',
+    marginLeft: 2,
   },
   routeText: {
     flex: 1,
-    fontSize: 14,
-    color: '#333',
+    fontSize: typography.small,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textSecondary,
   },
   requestActions: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 12,
+    paddingTop: spacing.sm,
     borderTopWidth: 1,
-    borderTopColor: '#F5F5F5',
+    borderTopColor: '#F3F4F6',
   },
   requestTime: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: spacing.xs,
   },
   requestTimeText: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: typography.small,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textMuted,
   },
   requestButtons: {
     flexDirection: 'row',
     gap: 8,
   },
   rejectButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
-    borderRadius: 8,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
   },
   rejectButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#666',
+    fontSize: typography.small,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textSecondary,
   },
   acceptButton: {
-    paddingHorizontal: 24,
-    paddingVertical: 8,
-    backgroundColor: '#4CAF50',
-    borderRadius: 8,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.primary,
+    borderRadius: 12,
+    ...Platform.select({
+      ios: {
+        shadowColor: colors.primary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   acceptButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#fff',
+    fontSize: typography.small,
+    fontFamily: 'Inter_600SemiBold',
+    color: '#FFFFFF',
   },
   sharedContainer: {
     marginTop: 16,
@@ -1819,98 +1971,101 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   activeSharedRideCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 2,
-    borderColor: '#2196F3',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    marginBottom: spacing.sm,
+  },
+  activeSharedRideCardContent: {
+    padding: spacing.md,
+    gap: spacing.md,
   },
   activeSharedRideHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: spacing.sm,
   },
   activeSharedRideTitle: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: spacing.sm,
+  },
+  activeSharedRideIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   activeSharedRideTitleText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
+    flex: 1,
+  },
+  activeSharedRideTitleMain: {
+    fontSize: typography.body,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
   },
   activeSharedRideBadge: {
-    paddingHorizontal: 12,
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.sm,
     paddingVertical: 4,
-    backgroundColor: '#E3F2FD',
-    borderRadius: 12,
+    borderRadius: 8,
+    backgroundColor: '#EFF6FF',
   },
   activeSharedRideBadgeOngoing: {
-    backgroundColor: '#E8F5E9',
+    backgroundColor: '#ECFDF5',
   },
   activeSharedRideBadgeText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#2196F3',
+    fontSize: typography.small - 1,
+    fontFamily: 'Inter_600SemiBold',
+    color: '#3B82F6',
   },
   activeSharedRideBadgeTextOngoing: {
-    color: '#4CAF50',
+    color: '#22C55E',
   },
   activeSharedRideRoute: {
-    marginBottom: 12,
+    gap: spacing.xs,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
   },
   activeSharedRideStats: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingTop: 12,
+    alignItems: 'center',
+    paddingTop: spacing.sm,
     borderTopWidth: 1,
-    borderTopColor: '#F5F5F5',
+    borderTopColor: '#F3F4F6',
+    gap: spacing.md,
   },
   activeSharedRideStat: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.xs,
   },
-  activeSharedRideStatLabel: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 4,
+  activeSharedRideStatDivider: {
+    width: 1,
+    height: 16,
+    backgroundColor: '#E5E7EB',
   },
   activeSharedRideStatValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
+    fontSize: typography.small,
+    fontFamily: 'Inter_500Medium',
+    color: colors.textPrimary,
   },
   pendingRequestsContainer: {
-    marginTop: 16,
-    marginBottom: 12,
-    paddingTop: 16,
+    marginTop: spacing.md,
+    gap: spacing.sm,
+    paddingTop: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: '#F5F5F5',
+    borderTopColor: '#F3F4F6',
   },
   pendingRequestsTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 12,
+    fontSize: typography.small,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
   },
   pendingRequestCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    marginBottom: 0,
+  },
+  pendingRequestCardContent: {
+    padding: spacing.sm,
   },
   pendingRequestHeader: {
     flexDirection: 'row',
@@ -1921,184 +2076,217 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-    gap: 10,
+    gap: spacing.sm,
   },
   pendingRequestAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#E3F2FD',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#EFF6FF',
     justifyContent: 'center',
     alignItems: 'center',
   },
   pendingRequestAvatarText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#2196F3',
+    fontSize: typography.small,
+    fontFamily: 'Inter_700Bold',
+    color: '#3B82F6',
+  },
+  pendingRequestDetails: {
+    flex: 1,
   },
   pendingRequestRiderName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 4,
+    fontSize: typography.small,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
+    marginBottom: 2,
   },
   pendingRequestFare: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#4CAF50',
+    fontSize: typography.small,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.primary,
   },
   pendingRequestActions: {
     flexDirection: 'row',
-    gap: 8,
+    gap: spacing.xs,
   },
   pendingRequestRejectButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#FFEBEE',
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#FEF2F2',
     justifyContent: 'center',
     alignItems: 'center',
   },
   pendingRequestAcceptButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#E8F5E9',
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#ECFDF5',
     justifyContent: 'center',
     alignItems: 'center',
   },
   pendingRequestExpiredBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    backgroundColor: '#F5F5F5',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: '#F9FAFB',
   },
   pendingRequestExpiredText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#999',
+    fontSize: typography.small - 1,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textMuted,
   },
   viewDetailsButton: {
-    width: '100%',
-    paddingVertical: 12,
-    backgroundColor: '#2196F3',
-    borderRadius: 8,
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 12,
+    justifyContent: 'center',
+    width: '100%',
+    paddingVertical: spacing.md,
+    backgroundColor: '#3B82F6',
+    borderRadius: 16,
+    marginTop: spacing.sm,
+    gap: spacing.xs,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#3B82F6',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.3,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
   },
   viewDetailsButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    color: '#FFFFFF',
+    fontSize: typography.body,
+    fontFamily: 'Inter_600SemiBold',
   },
   createSharedRideCard: {
-    borderRadius: 12,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 5,
+    marginBottom: spacing.sm,
+  },
+  createSharedRideCardContent: {
+    padding: spacing.md,
+    gap: spacing.md,
   },
   createSharedRideHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
-    gap: 12,
+    gap: spacing.md,
   },
   createSharedRideIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    width: 56,
+    height: 56,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
   },
+  createSharedRideInfo: {
+    flex: 1,
+  },
   createSharedRideTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontSize: typography.subheading,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  createSharedRideSubtitle: {
+    fontSize: typography.small,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textSecondary,
   },
   createSharedRideButton: {
-    width: '100%',
-    paddingVertical: 12,
-    backgroundColor: '#fff',
-    borderRadius: 8,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    paddingVertical: spacing.md,
+    backgroundColor: '#2196F3',
+    borderRadius: 16,
+    gap: spacing.sm,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#2196F3',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.3,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
   },
   createSharedRideButtonText: {
-    color: '#2196F3',
-    fontSize: 16,
-    fontWeight: '600',
+    color: '#FFFFFF',
+    fontSize: typography.body,
+    fontFamily: 'Inter_600SemiBold',
   },
   sharedRidesList: {
-    marginTop: 16,
+    gap: spacing.sm,
   },
   sharedRidesListTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 12,
+    fontSize: typography.subheading,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+    paddingHorizontal: spacing.xs,
   },
   sharedRideCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    marginBottom: 0,
+  },
+  sharedRideCardContent: {
+    padding: spacing.md,
+    gap: spacing.md,
   },
   sharedRideCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 12,
+    marginBottom: spacing.sm,
   },
   sharedRideCardRoute: {
     flex: 1,
-    marginRight: 12,
+    gap: spacing.xs,
   },
   sharedRideStatusBadge: {
-    paddingHorizontal: 10,
+    paddingHorizontal: spacing.sm,
     paddingVertical: 4,
-    backgroundColor: '#E3F2FD',
     borderRadius: 8,
+    backgroundColor: '#EFF6FF',
   },
   sharedRideStatusBadgeOngoing: {
-    backgroundColor: '#E8F5E9',
+    backgroundColor: '#ECFDF5',
   },
   sharedRideStatusText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#2196F3',
+    fontSize: typography.small - 1,
+    fontFamily: 'Inter_600SemiBold',
+    color: '#3B82F6',
   },
   sharedRideStatusTextOngoing: {
-    color: '#4CAF50',
+    color: '#22C55E',
   },
   sharedRideCardFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 12,
+    paddingTop: spacing.sm,
     borderTopWidth: 1,
-    borderTopColor: '#F5F5F5',
+    borderTopColor: '#F3F4F6',
   },
   sharedRideCardInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: spacing.xs,
   },
   sharedRideCardInfoText: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: typography.small,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textMuted,
   },
   sharedRideCardInfoDot: {
-    fontSize: 12,
-    color: '#666',
-    marginHorizontal: 4,
+    fontSize: typography.small,
+    color: colors.textMuted,
   },
 });
 

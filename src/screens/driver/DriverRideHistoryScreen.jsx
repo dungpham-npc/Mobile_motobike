@@ -20,7 +20,7 @@ import authService from '../../services/authService';
 import GlassHeader from '../../components/ui/GlassHeader.jsx';
 import CleanCard from '../../components/ui/CleanCard.jsx';
 import AppBackground from '../../components/layout/AppBackground.jsx';
-import { colors } from '../../theme/designTokens';
+import { colors, typography, spacing } from '../../theme/designTokens';
 
 const DriverRideHistoryScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
@@ -52,7 +52,7 @@ const DriverRideHistoryScreen = ({ navigation }) => {
         return;
       }
 
-      // Load ongoing rides (ONGOING, CONFIRMED status)
+      // Load ongoing rides
       try {
         const ongoingResponse = await rideService.getMyRides('ONGOING', 0, 50);
         const confirmedResponse = await rideService.getMyRides('CONFIRMED', 0, 50);
@@ -169,52 +169,11 @@ const DriverRideHistoryScreen = ({ navigation }) => {
     loadRides();
   };
 
-  const handleResumeRide = (ride) => {
-    console.log('📍 Resuming ride:', ride);
-    navigation.navigate('DriverRideTracking', {
-      rideId: ride.rideId,
-      initialRideData: ride,
-    });
-  };
-
   const handleViewDetails = (ride) => {
     navigation.navigate('DriverRideDetails', {
       ride: ride,
       rideId: ride.rideId,
     });
-  };
-
-  const getStatusColor = (status) => {
-    switch (status?.toUpperCase()) {
-      case 'ONGOING':
-      case 'CONFIRMED':
-        return '#F97316';
-      case 'COMPLETED':
-        return '#22C55E';
-      case 'CANCELLED':
-        return '#EF4444';
-      case 'SCHEDULED':
-        return '#3B82F6';
-      default:
-        return '#6B7280';
-    }
-  };
-
-  const getStatusText = (status) => {
-    switch (status?.toUpperCase()) {
-      case 'ONGOING':
-        return 'Đang diễn ra';
-      case 'CONFIRMED':
-        return 'Đã xác nhận';
-      case 'COMPLETED':
-        return 'Hoàn thành';
-      case 'CANCELLED':
-        return 'Đã hủy';
-      case 'SCHEDULED':
-        return 'Đã lên lịch';
-      default:
-        return status || 'Không xác định';
-    }
   };
 
   const formatCurrency = (amount) => {
@@ -229,39 +188,9 @@ const DriverRideHistoryScreen = ({ navigation }) => {
       const date = new Date(dateString);
       const day = String(date.getUTCDate()).padStart(2, '0');
       const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-      const year = date.getUTCFullYear();
       const hours = String(date.getUTCHours()).padStart(2, '0');
       const minutes = String(date.getUTCMinutes()).padStart(2, '0');
-      return `${day}/${month}/${year} ${hours}:${minutes}`;
-    } catch (e) {
-      return dateString;
-    }
-  };
-
-  const formatDateForList = (dateString) => {
-    if (!dateString) return 'N/A';
-    try {
-      const date = new Date(dateString);
-      const months = [
-        'Th 1',
-        'Th 2',
-        'Th 3',
-        'Th 4',
-        'Th 5',
-        'Th 6',
-        'Th 7',
-        'Th 8',
-        'Th 9',
-        'Th 10',
-        'Th 11',
-        'Th 12',
-      ];
-      const day = date.getUTCDate();
-      const month = months[date.getUTCMonth()];
-      const hours = date.getUTCHours() % 12 || 12;
-      const minutes = String(date.getUTCMinutes()).padStart(2, '0');
-      const period = date.getUTCHours() >= 12 ? 'PM' : 'AM';
-      return `${day} ${month}, ${hours}:${minutes} ${period}`;
+      return `${day}/${month} ${hours}:${minutes}`;
     } catch (e) {
       return dateString;
     }
@@ -271,40 +200,73 @@ const DriverRideHistoryScreen = ({ navigation }) => {
     const isOngoing = ride.status === 'ONGOING' || ride.status === 'CONFIRMED';
 
     return (
-      <TouchableOpacity
-        onPress={() => handleViewDetails(ride)}
-        activeOpacity={0.7}
-        style={styles.rideCardWrapper}
+      <Animatable.View
+        key={`${ride.rideId}-${index}`}
+        animation="fadeInUp"
+        duration={400}
+        delay={100 + index * 30}
       >
-        <CleanCard style={styles.rideCard} contentStyle={styles.rideCardContent}>
-          <View style={styles.leftSection}>
-            <View style={styles.serviceIcon}>
-              <Icon name="two-wheeler" size={24} color="#fff" />
-              {isOngoing && (
-                <View style={styles.clockIcon}>
-                  <Icon name="access-time" size={10} color="#fff" />
+        <TouchableOpacity
+          onPress={() => handleViewDetails(ride)}
+          activeOpacity={0.7}
+        >
+          <CleanCard style={styles.rideCard} contentStyle={styles.rideCardContent}>
+            <View style={styles.rideTop}>
+              <View style={styles.rideLeft}>
+                <View style={[styles.rideIcon, { backgroundColor: isOngoing ? '#FEF3C7' : '#D1FAE5' }]}>
+                  <Icon 
+                    name="two-wheeler" 
+                    size={18} 
+                    color={isOngoing ? '#F59E0B' : '#10B981'} 
+                  />
                 </View>
-              )}
+                <View style={styles.rideInfo}>
+                  <Text style={styles.rideTitle}>Chuyến đi của tôi</Text>
+                  <View style={styles.rideMeta}>
+                    {ride.createdAt && (
+                      <>
+                        <Icon name="access-time" size={12} color={colors.textMuted} />
+                        <Text style={styles.rideMetaText}>{formatDate(ride.createdAt)}</Text>
+                      </>
+                    )}
+                    {ride.passengerCount > 0 && (
+                      <>
+                        <Text style={styles.rideMetaDot}>•</Text>
+                        <Icon name="people" size={12} color={colors.textMuted} />
+                        <Text style={styles.rideMetaText}>{ride.passengerCount} hành khách</Text>
+                      </>
+                    )}
+                  </View>
+                </View>
+              </View>
+              <View style={styles.rideRight}>
+                <Text style={styles.ridePrice}>
+                  {ride.totalEarnings !== null && ride.totalEarnings !== undefined
+                    ? formatCurrency(ride.totalEarnings)
+                    : 'Chưa có'}
+                </Text>
+                <Icon name="chevron-right" size={20} color={colors.textMuted} />
+              </View>
             </View>
-            <View style={styles.serviceInfo}>
-              <Text style={styles.serviceName}>Chuyến đi của tôi</Text>
-              {ride.createdAt && <Text style={styles.dateTimeText}>{formatDateForList(ride.createdAt)}</Text>}
-              {ride.passengerCount > 0 && (
-                <Text style={styles.passengerText}>{ride.passengerCount} hành khách</Text>
-              )}
+            
+            <View style={styles.rideRoute}>
+              <View style={styles.routeItem}>
+                <View style={styles.routeDot} />
+                <Text style={styles.routeText} numberOfLines={1}>
+                  {ride.pickupAddress}
+                </Text>
+              </View>
+              <View style={styles.routeLine} />
+              <View style={styles.routeItem}>
+                <Icon name="location-on" size={12} color="#EF4444" />
+                <Text style={styles.routeText} numberOfLines={1}>
+                  {ride.dropoffAddress}
+                </Text>
+              </View>
             </View>
-          </View>
-
-          <View style={styles.rightSection}>
-            <Text style={styles.priceText}>
-              {ride.totalEarnings !== null && ride.totalEarnings !== undefined
-                ? formatCurrency(ride.totalEarnings)
-                : 'Chưa có'}
-            </Text>
-            <Icon name="chevron-right" size={24} color={colors.textMuted} />
-          </View>
-        </CleanCard>
-      </TouchableOpacity>
+          </CleanCard>
+        </TouchableOpacity>
+      </Animatable.View>
     );
   };
 
@@ -336,18 +298,19 @@ const DriverRideHistoryScreen = ({ navigation }) => {
 
     if (displayRides.length === 0) {
       return (
-        <Animatable.View animation="fadeInUp" duration={480} delay={120}>
+        <Animatable.View animation="fadeInUp" duration={400} delay={100}>
           <CleanCard style={styles.emptyCard} contentStyle={styles.emptyCardContent}>
-            <Icon name="inbox" size={64} color={colors.textMuted} />
-            <Text style={styles.emptyText}>
-              {selectedTab === 'ongoing' ? 'Bạn chưa có chuyến đi nào đang diễn ra' : 'Chưa có lịch sử chuyến đi'}
+            <View style={styles.emptyIcon}>
+              <Icon name="inbox" size={48} color={colors.textMuted} />
+            </View>
+            <Text style={styles.emptyTitle}>
+              {selectedTab === 'ongoing' ? 'Chưa có chuyến đi đang diễn ra' : 'Chưa có lịch sử chuyến đi'}
             </Text>
-            {selectedTab === 'ongoing' && (
-              <TouchableOpacity style={styles.createRideButton} onPress={() => navigation.navigate('DriverHome')} activeOpacity={0.8}>
-                <Icon name="add" size={20} color="#fff" />
-                <Text style={styles.createRideButtonText}>Tạo chuyến mới</Text>
-              </TouchableOpacity>
-            )}
+            <Text style={styles.emptySubtitle}>
+              {selectedTab === 'ongoing' 
+                ? 'Bạn sẽ thấy các chuyến đi đang diễn ra ở đây'
+                : 'Lịch sử chuyến đi của bạn sẽ hiển thị ở đây'}
+            </Text>
           </CleanCard>
         </Animatable.View>
       );
@@ -355,11 +318,7 @@ const DriverRideHistoryScreen = ({ navigation }) => {
 
     return (
       <View style={styles.ridesContainer}>
-        {displayRides.map((ride, index) => (
-          <Animatable.View key={`${ride.rideId}-${index}`} animation="fadeInUp" duration={480} delay={120 + index * 60}>
-            {renderRideCard(ride, index)}
-          </Animatable.View>
-        ))}
+        {displayRides.map((ride, index) => renderRideCard(ride, index))}
       </View>
     );
   };
@@ -381,29 +340,32 @@ const DriverRideHistoryScreen = ({ navigation }) => {
           </View>
 
           <View style={styles.content}>
-            <Animatable.View animation="fadeInUp" duration={480} delay={60}>
-              <CleanCard style={styles.tabsCard} contentStyle={styles.tabsCardContent}>
-                <View style={styles.tabsContainer}>
-                  {tabs.map((tab) => (
-                    <TouchableOpacity
-                      key={tab.key}
-                      style={[styles.tab, selectedTab === tab.key && styles.activeTab]}
-                      onPress={() => setSelectedTab(tab.key)}
-                      activeOpacity={0.7}
-                    >
-                      <Icon
-                        name={tab.icon}
-                        size={20}
-                        color={selectedTab === tab.key ? colors.primary : colors.textMuted}
-                      />
-                      <Text style={[styles.tabText, selectedTab === tab.key && styles.activeTabText]}>
-                        {tab.label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </CleanCard>
-            </Animatable.View>
+            {/* Tabs */}
+            <View style={styles.tabsWrapper}>
+              {tabs.map((tab) => (
+                <TouchableOpacity
+                  key={tab.key}
+                  style={[
+                    styles.tab,
+                    selectedTab === tab.key && styles.tabActive
+                  ]}
+                  onPress={() => setSelectedTab(tab.key)}
+                  activeOpacity={0.7}
+                >
+                  <Icon
+                    name={tab.icon}
+                    size={16}
+                    color={selectedTab === tab.key ? colors.primary : colors.textMuted}
+                  />
+                  <Text style={[
+                    styles.tabText,
+                    selectedTab === tab.key && styles.tabTextActive
+                  ]}>
+                    {tab.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
 
             {renderContent()}
           </View>
@@ -425,171 +387,181 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   content: {
-    paddingTop: 12,
-    paddingHorizontal: 20,
-    gap: 16,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    gap: spacing.md,
   },
-  tabsCard: {
-    marginBottom: 12,
-  },
-  tabsCardContent: {
-    paddingVertical: 8,
-    paddingHorizontal: 8,
-  },
-  tabsContainer: {
+  // Tabs
+  tabsWrapper: {
     flexDirection: 'row',
-    gap: 8,
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
   },
   tab: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
+    paddingVertical: spacing.sm + 2,
     borderRadius: 12,
-    gap: 6,
-    backgroundColor: 'rgba(148,163,184,0.08)',
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    gap: spacing.xs,
   },
-  activeTab: {
-    backgroundColor: 'rgba(34,197,94,0.15)',
+  tabActive: {
+    backgroundColor: colors.primary + '10',
+    borderColor: colors.primary,
   },
   tabText: {
-    fontSize: 14,
+    fontSize: typography.small,
     fontFamily: 'Inter_500Medium',
     color: colors.textMuted,
   },
-  activeTabText: {
+  tabTextActive: {
     color: colors.primary,
     fontFamily: 'Inter_600SemiBold',
   },
+  // Loading
   centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 40,
+    padding: spacing.xl * 2,
     minHeight: 200,
   },
   loadingText: {
-    marginTop: 12,
-    fontSize: 16,
+    marginTop: spacing.md,
+    fontSize: typography.body,
     fontFamily: 'Inter_400Regular',
     color: colors.textSecondary,
   },
+  // Empty State
   emptyCard: {
-    marginBottom: 12,
+    marginBottom: spacing.sm,
   },
   emptyCardContent: {
-    paddingVertical: 40,
-    paddingHorizontal: 24,
+    paddingVertical: spacing.xl * 2,
+    paddingHorizontal: spacing.lg,
     alignItems: 'center',
-    gap: 16,
+    gap: spacing.md,
   },
-  emptyText: {
-    fontSize: 16,
+  emptyIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#F9FAFB',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  emptyTitle: {
+    fontSize: typography.subheading,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    fontSize: typography.body,
     fontFamily: 'Inter_400Regular',
     color: colors.textSecondary,
     textAlign: 'center',
+    lineHeight: 22,
   },
-  createRideButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.primary,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 16,
-    marginTop: 8,
-    gap: 8,
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  createRideButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontFamily: 'Inter_600SemiBold',
-  },
+  // Rides Container
   ridesContainer: {
-    gap: 12,
+    gap: spacing.sm,
   },
-  rideCardWrapper: {
-    marginBottom: 12,
-  },
+  // Ride Card
   rideCard: {
     marginBottom: 0,
   },
   rideCardContent: {
-    paddingVertical: 16,
-    paddingHorizontal: 18,
+    padding: spacing.md,
+    gap: spacing.md,
+  },
+  rideTop: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'flex-start',
   },
-  leftSection: {
+  rideLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
+    gap: spacing.sm,
   },
-  serviceIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+  rideIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  rideInfo: {
+    flex: 1,
+  },
+  rideTitle: {
+    fontSize: typography.body,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  rideMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    flexWrap: 'wrap',
+  },
+  rideMetaText: {
+    fontSize: typography.small,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textMuted,
+  },
+  rideMetaDot: {
+    fontSize: typography.small,
+    color: colors.textMuted,
+  },
+  rideRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  ridePrice: {
+    fontSize: typography.body,
+    fontFamily: 'Inter_700Bold',
+    color: colors.textPrimary,
+  },
+  // Route
+  rideRoute: {
+    gap: spacing.xs,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  routeItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  routeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
     backgroundColor: colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 14,
-    position: 'relative',
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
   },
-  clockIcon: {
-    position: 'absolute',
-    top: -2,
-    right: -2,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#3B82F6',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#fff',
+  routeLine: {
+    width: 1,
+    height: 10,
+    backgroundColor: '#E5E7EB',
+    marginLeft: 2,
   },
-  serviceInfo: {
+  routeText: {
     flex: 1,
-  },
-  serviceName: {
-    fontSize: 17,
-    fontFamily: 'Inter_700Bold',
-    color: colors.textPrimary,
-    marginBottom: 4,
-  },
-  dateTimeText: {
-    fontSize: 13,
+    fontSize: typography.small,
     fontFamily: 'Inter_400Regular',
     color: colors.textSecondary,
-  },
-  passengerText: {
-    fontSize: 12,
-    fontFamily: 'Inter_400Regular',
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  rightSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  priceText: {
-    fontSize: 17,
-    fontFamily: 'Inter_700Bold',
-    color: colors.textPrimary,
   },
 });
 
 export default DriverRideHistoryScreen;
-
