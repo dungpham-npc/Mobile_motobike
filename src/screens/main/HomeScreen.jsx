@@ -10,6 +10,7 @@ import {
   StatusBar,
   ActivityIndicator,
   RefreshControl,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -540,7 +541,12 @@ const HomeScreen = ({ navigation }) => {
 
           {/* Wallet Card */}
           <Animatable.View animation="fadeInDown" duration={400} useNativeDriver>
-            <LinearGradient colors={['#4CAF50', '#2196F3']} style={styles.walletCard}>
+            <LinearGradient 
+              colors={['#87CEEB', '#4169E1']} 
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.walletCard}
+            >
               <View style={styles.walletContent}>
                 <View style={styles.walletInfo}>
                   <Text style={styles.walletLabel}>Số dư ví</Text>
@@ -562,23 +568,29 @@ const HomeScreen = ({ navigation }) => {
 
           {/* Tab Switcher */}
           <Animatable.View animation="fadeInUp" duration={420} delay={50} useNativeDriver>
-            <View style={styles.tabSwitcher}>
-              <TouchableOpacity
-                style={[styles.tabButton, activeTab === 'book' && styles.tabButtonActive]}
-                onPress={() => setActiveTab('book')}
-              >
-                <Text style={[styles.tabButtonText, activeTab === 'book' && styles.tabButtonTextActive]}>
-                  Đặt xe
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.tabButton, activeTab === 'share' && styles.tabButtonActive]}
-                onPress={() => setActiveTab('share')}
-              >
-                <Text style={[styles.tabButtonText, activeTab === 'share' && styles.tabButtonTextActive]}>
-                  Chuyến đi đang được chia sẻ
-                </Text>
-              </TouchableOpacity>
+            <View style={styles.tabSwitcherCard}>
+              <View style={styles.tabSwitcherCardInner}>
+                <View style={styles.tabSwitcherInner}>
+                  <View style={styles.tabSwitcher}>
+                  <TouchableOpacity
+                    style={[styles.tabButton, activeTab === 'book' && styles.tabButtonActive]}
+                    onPress={() => setActiveTab('book')}
+                  >
+                    <Text style={[styles.tabButtonText, activeTab === 'book' && styles.tabButtonTextActive]}>
+                      Đặt xe
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.tabButton, activeTab === 'share' && styles.tabButtonActive]}
+                    onPress={() => setActiveTab('share')}
+                  >
+                    <Text style={[styles.tabButtonText, activeTab === 'share' && styles.tabButtonTextActive]}>
+                      Chuyến đi đang được chia sẻ
+                    </Text>
+                  </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
             </View>
           </Animatable.View>
 
@@ -588,23 +600,27 @@ const HomeScreen = ({ navigation }) => {
               <Animatable.View animation="fadeInUp" duration={480} delay={100} useNativeDriver>
                 <View style={styles.bookTabContent}>
                   {/* Single Location Selection Button */}
-                  <CleanCard style={styles.card} contentStyle={styles.locationCard}>
-                    <TouchableOpacity
-                      style={styles.locationField}
-                      onPress={() => navigation.navigate('RideBooking', {
-                        pickup: pickupLocation,
-                        pickupAddress: pickupAddress,
-                        dropoff: dropoffLocation,
-                        dropoffAddress: dropoffAddress,
-                      })}
-                    >
-                      <View style={styles.locationFieldContent}>
-                        <Icon name="location-on" size={24} color="#4CAF50" />
-                        <Text style={styles.locationFieldText}>Chọn địa điểm</Text>
-                        <Icon name="chevron-right" size={24} color="#999" />
+                  <View style={styles.locationCardContainer}>
+                    <View style={styles.locationCardContainerInner}>
+                      <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16 }}>
+                        <TouchableOpacity
+                          style={styles.locationCard}
+                          onPress={() => navigation.navigate('RideBooking', {
+                            pickup: pickupLocation,
+                            pickupAddress: pickupAddress,
+                            dropoff: dropoffLocation,
+                            dropoffAddress: dropoffAddress,
+                          })}
+                        >
+                          <View style={styles.locationFieldContent}>
+                            <Icon name="location-on" size={24} color="#4CAF50" />
+                            <Text style={styles.locationFieldText}>Chọn địa điểm</Text>
+                            <Icon name="chevron-right" size={24} color="#999" />
+                          </View>
+                        </TouchableOpacity>
                       </View>
-                    </TouchableOpacity>
-                  </CleanCard>
+                    </View>
+                  </View>
                 </View>
               </Animatable.View>
             ) : (
@@ -628,11 +644,17 @@ const HomeScreen = ({ navigation }) => {
                         <Text style={styles.loadingRidesText}>Đang tải chuyến đi...</Text>
                       </View>
                     ) : nearbyRides.length === 0 ? (
-                      <CleanCard style={styles.card} contentStyle={styles.emptyCard}>
-                        <Icon name="directions-car" size={48} color="#ccc" />
-                        <Text style={styles.emptyText}>Không có chuyến đi nào</Text>
-                        <Text style={styles.emptySubtext}>Hãy thử lại sau</Text>
-                      </CleanCard>
+                      <View style={styles.emptyCardContainer}>
+                        <View style={styles.emptyCardContainerInner}>
+                          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16 }}>
+                            <View style={styles.emptyCard}>
+                              <Icon name="directions-car" size={48} color="#ccc" />
+                              <Text style={styles.emptyText}>Không có chuyến đi nào</Text>
+                              <Text style={styles.emptySubtext}>Hãy thử lại sau</Text>
+                            </View>
+                          </View>
+                        </View>
+                      </View>
                     ) : (
                       nearbyRides.map((ride) => {
                         const rideId = ride.shared_ride_id || ride.sharedRideId || ride.rideId;
@@ -663,65 +685,71 @@ const HomeScreen = ({ navigation }) => {
                         const availableSeats = ride.available_seats !== undefined ? ride.available_seats : 1;
 
                         return (
-                          <CleanCard key={rideId} style={styles.card} contentStyle={styles.rideCard}>
-                            <View style={styles.rideCardHeader}>
-                              <View style={styles.rideDriverInfo}>
-                                <View style={styles.rideDriverAvatar}>
-                                  <Text style={styles.rideDriverAvatarText}>
-                                    {getInitials(driverName)}
-                                  </Text>
-                                </View>
-                                <View>
-                                  <Text style={styles.rideDriverName}>{driverName}</Text>
-                                  <View style={styles.rideDriverMeta}>
-                                    <Icon name="star" size={14} color="#FFD700" />
-                                    <Text style={styles.rideDriverRating}>
-                                      {driverRating.toFixed(1)}
-                                    </Text>
+                          <View key={rideId} style={styles.rideCardContainer}>
+                            <View style={styles.rideCardContainerInner}>
+                              <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16 }}>
+                                <View style={styles.rideCard}>
+                                  <View style={styles.rideCardHeader}>
+                                    <View style={styles.rideDriverInfo}>
+                                      <View style={styles.rideDriverAvatar}>
+                                        <Text style={styles.rideDriverAvatarText}>
+                                          {getInitials(driverName)}
+                                        </Text>
+                                      </View>
+                                      <View>
+                                        <Text style={styles.rideDriverName}>{driverName}</Text>
+                                        <View style={styles.rideDriverMeta}>
+                                          <Icon name="star" size={14} color="#FFD700" />
+                                          <Text style={styles.rideDriverRating}>
+                                            {driverRating.toFixed(1)}
+                                          </Text>
+                                        </View>
+                                      </View>
+                                    </View>
+                                  </View>
+
+                                  <View style={styles.rideRoute}>
+                                    <View style={styles.routePoint}>
+                                      <View style={styles.routeDot} />
+                                      <Text style={styles.routeText} numberOfLines={1}>
+                                        {startLocation}
+                                      </Text>
+                                    </View>
+                                    <View style={styles.routeLine} />
+                                    <View style={styles.routePoint}>
+                                      <Icon name="location-on" size={16} color="#F44336" />
+                                      <Text style={styles.routeText} numberOfLines={1}>
+                                        {endLocation}
+                                      </Text>
+                                    </View>
+                                  </View>
+
+                                  <View style={styles.rideCardFooter}>
+                                    <View style={styles.rideMeta}>
+                                      <View style={styles.rideMetaItem}>
+                                        <Icon name="access-time" size={14} color="#666" />
+                                        <Text style={styles.rideMetaText}>
+                                          {formatScheduledTime(scheduledTime)}
+                                        </Text>
+                                      </View>
+                                      <View style={styles.rideMetaItem}>
+                                        <Icon name="people" size={14} color="#666" />
+                                        <Text style={styles.rideMetaText}>
+                                          {availableSeats} chỗ trống
+                                        </Text>
+                                      </View>
+                                    </View>
+                                    <TouchableOpacity
+                                      style={styles.joinButton}
+                                      onPress={() => navigation.navigate('RideDetails', { rideId })}
+                                    >
+                                      <Text style={styles.joinButtonText}>Tham gia</Text>
+                                    </TouchableOpacity>
                                   </View>
                                 </View>
                               </View>
                             </View>
-
-                            <View style={styles.rideRoute}>
-                              <View style={styles.routePoint}>
-                                <View style={styles.routeDot} />
-                                <Text style={styles.routeText} numberOfLines={1}>
-                                  {startLocation}
-                                </Text>
-                              </View>
-                              <View style={styles.routeLine} />
-                              <View style={styles.routePoint}>
-                                <Icon name="location-on" size={16} color="#F44336" />
-                                <Text style={styles.routeText} numberOfLines={1}>
-                                  {endLocation}
-                                </Text>
-                              </View>
-                            </View>
-
-                            <View style={styles.rideCardFooter}>
-                              <View style={styles.rideMeta}>
-                                <View style={styles.rideMetaItem}>
-                                  <Icon name="access-time" size={14} color="#666" />
-                                  <Text style={styles.rideMetaText}>
-                                    {formatScheduledTime(scheduledTime)}
-                                  </Text>
-                                </View>
-                                <View style={styles.rideMetaItem}>
-                                  <Icon name="people" size={14} color="#666" />
-                                  <Text style={styles.rideMetaText}>
-                                    {availableSeats} chỗ trống
-                                  </Text>
-                                </View>
-                              </View>
-                              <TouchableOpacity
-                                style={styles.joinButton}
-                                onPress={() => navigation.navigate('RideDetails', { rideId })}
-                              >
-                                <Text style={styles.joinButtonText}>Tham gia</Text>
-                              </TouchableOpacity>
-                            </View>
-                          </CleanCard>
+                          </View>
                         );
                       })
                     )}
@@ -791,21 +819,51 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   topUpButtonText: {
-    color: '#4CAF50',
+    color: '#4169E1',
     fontSize: 14,
     fontWeight: '600',
   },
-  tabSwitcher: {
-    flexDirection: 'row',
+  tabSwitcherCard: {
     marginHorizontal: 16,
     marginTop: 16,
-    gap: 8,
+    backgroundColor: '#EBEBF0',
+    borderRadius: 16,
+    padding: 6,
+    // Shadow soft (neumorphism style - giống CleanCard)
+    shadowColor: '#FFFFFF',
+    shadowOpacity: 0.75,
+    shadowRadius: 16,
+    shadowOffset: { width: -5, height: -5 },
+  },
+  tabSwitcherCardInner: {
+    borderRadius: 16,
+    backgroundColor: '#EBEBF0',
+    // Shadow depth (neumorphism style - giống CleanCard)
+    shadowColor: 'rgba(163, 177, 198, 0.65)',
+    shadowOpacity: 0.32,
+    shadowRadius: 18,
+    shadowOffset: { width: 8, height: 10 },
+    overflow: 'hidden',
+    ...Platform.select({
+      android: {
+        elevation: 6,
+      },
+    }),
+  },
+  tabSwitcherInner: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 6,
+  },
+  tabSwitcher: {
+    flexDirection: 'row',
+    gap: 6,
   },
   tabButton: {
     flex: 1,
     paddingVertical: 12,
     borderRadius: 12,
-    backgroundColor: '#fff',
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -830,17 +888,32 @@ const styles = StyleSheet.create({
   shareTabContent: {
     gap: 16,
   },
-  card: {
+  locationCardContainer: {
+    backgroundColor: '#EBEBF0',
+    borderRadius: 16,
     marginBottom: 0,
+    // Shadow soft (neumorphism style - giống CleanCard)
+    shadowColor: '#FFFFFF',
+    shadowOpacity: 0.75,
+    shadowRadius: 16,
+    shadowOffset: { width: -5, height: -5 },
   },
-  cardBody: {
-    padding: 16,
-    gap: 12,
+  locationCardContainerInner: {
+    borderRadius: 16,
+    backgroundColor: '#EBEBF0',
+    // Shadow depth (neumorphism style - giống CleanCard)
+    shadowColor: 'rgba(163, 177, 198, 0.65)',
+    shadowOpacity: 0.32,
+    shadowRadius: 18,
+    shadowOffset: { width: 8, height: 10 },
+    overflow: 'hidden',
+    ...Platform.select({
+      android: {
+        elevation: 6,
+      },
+    }),
   },
   locationCard: {
-    padding: 0,
-  },
-  locationField: {
     padding: 16,
   },
   locationFieldContent: {
@@ -887,6 +960,31 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textSecondary,
   },
+  emptyCardContainer: {
+    backgroundColor: '#EBEBF0',
+    borderRadius: 16,
+    marginBottom: 0,
+    // Shadow soft (neumorphism style - giống CleanCard)
+    shadowColor: '#FFFFFF',
+    shadowOpacity: 0.75,
+    shadowRadius: 16,
+    shadowOffset: { width: -5, height: -5 },
+  },
+  emptyCardContainerInner: {
+    borderRadius: 16,
+    backgroundColor: '#EBEBF0',
+    // Shadow depth (neumorphism style - giống CleanCard)
+    shadowColor: 'rgba(163, 177, 198, 0.65)',
+    shadowOpacity: 0.32,
+    shadowRadius: 18,
+    shadowOffset: { width: 8, height: 10 },
+    overflow: 'hidden',
+    ...Platform.select({
+      android: {
+        elevation: 6,
+      },
+    }),
+  },
   emptyCard: {
     padding: 32,
     alignItems: 'center',
@@ -902,6 +1000,31 @@ const styles = StyleSheet.create({
   emptySubtext: {
     fontSize: 14,
     color: colors.textSecondary,
+  },
+  rideCardContainer: {
+    backgroundColor: '#EBEBF0',
+    borderRadius: 16,
+    marginBottom: 12,
+    // Shadow soft (neumorphism style - giống CleanCard)
+    shadowColor: '#FFFFFF',
+    shadowOpacity: 0.75,
+    shadowRadius: 16,
+    shadowOffset: { width: -5, height: -5 },
+  },
+  rideCardContainerInner: {
+    borderRadius: 16,
+    backgroundColor: '#EBEBF0',
+    // Shadow depth (neumorphism style - giống CleanCard)
+    shadowColor: 'rgba(163, 177, 198, 0.65)',
+    shadowOpacity: 0.32,
+    shadowRadius: 18,
+    shadowOffset: { width: 8, height: 10 },
+    overflow: 'hidden',
+    ...Platform.select({
+      android: {
+        elevation: 6,
+      },
+    }),
   },
   rideCard: {
     padding: 16,

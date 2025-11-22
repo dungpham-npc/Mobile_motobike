@@ -10,7 +10,8 @@ import {
   Linking,
   ActivityIndicator,
   Image,
-  Dimensions
+  Dimensions,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -213,15 +214,17 @@ const QRPaymentScreen = ({ navigation, route }) => {
 
         {/* Total Amount Display */}
         <View style={styles.totalAmountCard}>
-          <LinearGradient
-            colors={['#34D399', '#059669']}
-            style={styles.totalAmountGradient}
-          >
-            <Text style={styles.totalAmountLabel}>Số tiền nạp</Text>
-            <Text style={styles.totalAmountValue}>
-              {paymentService.formatCurrency(isCustomAmount ? (customAmount || 0) : amount)}
-            </Text>
-          </LinearGradient>
+          <View style={styles.totalAmountCardInner}>
+            <LinearGradient
+              colors={['#34D399', '#059669']}
+              style={styles.totalAmountGradient}
+            >
+              <Text style={styles.totalAmountLabel}>Số tiền nạp</Text>
+              <Text style={styles.totalAmountValue}>
+                {paymentService.formatCurrency(isCustomAmount ? (customAmount || 0) : amount)}
+              </Text>
+            </LinearGradient>
+          </View>
         </View>
       </View>
     );
@@ -236,18 +239,24 @@ const QRPaymentScreen = ({ navigation, route }) => {
             
             {paymentData?.qrCode && (
               <View style={styles.qrContainer}>
-                <Image
-                  source={{ uri: paymentData.qrCode }}
-                  style={styles.qrCodeImage}
-                  resizeMode="contain"
-                />
-                <Text style={styles.qrDescription}>
-                  Quét mã QR bằng ứng dụng ngân hàng để thanh toán
-                </Text>
+                <View style={styles.qrContainerInner}>
+                  <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, padding: 24, alignItems: 'center' }}>
+                    <Image
+                      source={{ uri: paymentData.qrCode }}
+                      style={styles.qrCodeImage}
+                      resizeMode="contain"
+                    />
+                    <Text style={styles.qrDescription}>
+                      Quét mã QR bằng ứng dụng ngân hàng để thanh toán
+                    </Text>
+                  </View>
+                </View>
               </View>
             )}
 
             <View style={styles.paymentInfoCard}>
+              <View style={styles.paymentInfoCardInner}>
+                <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, padding: 20 }}>
               <Text style={styles.paymentInfoTitle}>Thông tin thanh toán</Text>
               <View style={styles.paymentInfoRow}>
                 <Text style={styles.paymentInfoLabel}>Mã đơn hàng:</Text>
@@ -268,39 +277,59 @@ const QRPaymentScreen = ({ navigation, route }) => {
                   {paymentService.getPaymentStatusText(paymentData?.status)}
                 </Text>
               </View>
+                </View>
+              </View>
             </View>
           </View>
         );
 
       case 'processing':
         return (
-          <Animatable.View animation="pulse" iterationCount="infinite" style={styles.statusContainer}>
-            <ActivityIndicator size={64} color="#FF9800" />
-            <Text style={styles.statusText}>Đang xử lý thanh toán...</Text>
-            <Text style={styles.statusSubtext}>Vui lòng không đóng ứng dụng</Text>
-          </Animatable.View>
+          <View style={styles.statusContainer}>
+            <View style={styles.statusContainerInner}>
+              <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, padding: 40, alignItems: 'center' }}>
+                <Animatable.View animation="pulse" iterationCount="infinite">
+                  <ActivityIndicator size={64} color="#FF9800" />
+                  <Text style={styles.statusText}>Đang xử lý thanh toán...</Text>
+                  <Text style={styles.statusSubtext}>Vui lòng không đóng ứng dụng</Text>
+                </Animatable.View>
+              </View>
+            </View>
+          </View>
         );
 
       case 'success':
         return (
-          <Animatable.View animation="bounceIn" style={styles.statusContainer}>
-            <Icon name="check-circle" size={64} color="#4CAF50" />
-            <Text style={[styles.statusText, { color: '#4CAF50' }]}>Thanh toán thành công!</Text>
-            <Text style={styles.statusSubtext}>
-              Số dư ví của bạn đã được cập nhật
-            </Text>
-          </Animatable.View>
+          <View style={styles.statusContainer}>
+            <View style={styles.statusContainerInner}>
+              <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, padding: 40, alignItems: 'center' }}>
+                <Animatable.View animation="bounceIn">
+                  <Icon name="check-circle" size={64} color="#4CAF50" />
+                  <Text style={[styles.statusText, { color: '#4CAF50' }]}>Thanh toán thành công!</Text>
+                  <Text style={styles.statusSubtext}>
+                    Số dư ví của bạn đã được cập nhật
+                  </Text>
+                </Animatable.View>
+              </View>
+            </View>
+          </View>
         );
 
       case 'failed':
         return (
-          <Animatable.View animation="shake" style={styles.statusContainer}>
-            <Icon name="error" size={64} color="#F44336" />
-            <Text style={[styles.statusText, { color: '#F44336' }]}>Thanh toán thất bại</Text>
-            <Text style={styles.statusSubtext}>
-              Vui lòng thử lại hoặc liên hệ hỗ trợ
-            </Text>
-          </Animatable.View>
+          <View style={styles.statusContainer}>
+            <View style={styles.statusContainerInner}>
+              <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, padding: 40, alignItems: 'center' }}>
+                <Animatable.View animation="shake">
+                  <Icon name="error" size={64} color="#F44336" />
+                  <Text style={[styles.statusText, { color: '#F44336' }]}>Thanh toán thất bại</Text>
+                  <Text style={styles.statusSubtext}>
+                    Vui lòng thử lại hoặc liên hệ hỗ trợ
+                  </Text>
+                </Animatable.View>
+              </View>
+            </View>
+          </View>
         );
 
       default:
@@ -401,22 +430,26 @@ const QRPaymentScreen = ({ navigation, route }) => {
         {/* Payment Instructions */}
         {paymentStatus === 'pending' && (
           <View style={styles.instructionsCard}>
-            <Text style={styles.instructionsTitle}>Hướng dẫn thanh toán:</Text>
-            <View style={styles.instruction}>
-              <Icon name="looks-one" size={20} color="#4CAF50" />
-              <Text style={styles.instructionText}>Mở ứng dụng ngân hàng hoặc ví điện tử</Text>
-            </View>
-            <View style={styles.instruction}>
-              <Icon name="looks-two" size={20} color="#4CAF50" />
-              <Text style={styles.instructionText}>Quét mã QR PayOS phía trên</Text>
-            </View>
-            <View style={styles.instruction}>
-              <Icon name="looks-3" size={20} color="#4CAF50" />
-              <Text style={styles.instructionText}>Xác nhận thông tin và thanh toán</Text>
-            </View>
-            <View style={styles.instruction}>
-              <Icon name="looks-4" size={20} color="#4CAF50" />
-              <Text style={styles.instructionText}>Chờ hệ thống cập nhật số dư</Text>
+            <View style={styles.instructionsCardInner}>
+              <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, padding: 20 }}>
+                <Text style={styles.instructionsTitle}>Hướng dẫn thanh toán:</Text>
+                <View style={styles.instruction}>
+                  <Icon name="looks-one" size={20} color="#4CAF50" />
+                  <Text style={styles.instructionText}>Mở ứng dụng ngân hàng hoặc ví điện tử</Text>
+                </View>
+                <View style={styles.instruction}>
+                  <Icon name="looks-two" size={20} color="#4CAF50" />
+                  <Text style={styles.instructionText}>Quét mã QR PayOS phía trên</Text>
+                </View>
+                <View style={styles.instruction}>
+                  <Icon name="looks-3" size={20} color="#4CAF50" />
+                  <Text style={styles.instructionText}>Xác nhận thông tin và thanh toán</Text>
+                </View>
+                <View style={styles.instruction}>
+                  <Icon name="looks-4" size={20} color="#4CAF50" />
+                  <Text style={styles.instructionText}>Chờ hệ thống cập nhật số dư</Text>
+                </View>
+              </View>
             </View>
           </View>
         )}
@@ -536,12 +569,27 @@ const styles = StyleSheet.create({
   },
   totalAmountCard: {
     borderRadius: 16,
+    backgroundColor: '#EBEBF0',
+    // Shadow soft (neumorphism style - giống CleanCard)
+    shadowColor: '#FFFFFF',
+    shadowOpacity: 0.75,
+    shadowRadius: 16,
+    shadowOffset: { width: -5, height: -5 },
+  },
+  totalAmountCardInner: {
+    borderRadius: 16,
+    backgroundColor: '#EBEBF0',
     overflow: 'hidden',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
+    // Shadow depth (neumorphism style - giống CleanCard)
+    shadowColor: 'rgba(163, 177, 198, 0.65)',
+    shadowOpacity: 0.32,
+    shadowRadius: 18,
+    shadowOffset: { width: 8, height: 10 },
+    ...Platform.select({
+      android: {
+        elevation: 6,
+      },
+    }),
   },
   totalAmountGradient: {
     padding: 24,
@@ -561,16 +609,31 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   qrContainer: {
-    backgroundColor: '#fff',
+    backgroundColor: '#EBEBF0',
     borderRadius: 16,
+    marginBottom: 20,
+    // Shadow soft (neumorphism style - giống CleanCard)
+    shadowColor: '#FFFFFF',
+    shadowOpacity: 0.75,
+    shadowRadius: 16,
+    shadowOffset: { width: -5, height: -5 },
+  },
+  qrContainerInner: {
+    borderRadius: 16,
+    backgroundColor: '#EBEBF0',
     padding: 24,
     alignItems: 'center',
-    marginBottom: 20,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+    overflow: 'hidden',
+    // Shadow depth (neumorphism style - giống CleanCard)
+    shadowColor: 'rgba(163, 177, 198, 0.65)',
+    shadowOpacity: 0.32,
+    shadowRadius: 18,
+    shadowOffset: { width: 8, height: 10 },
+    ...Platform.select({
+      android: {
+        elevation: 6,
+      },
+    }),
   },
   qrCodeImage: {
     width: width * 0.6,
@@ -583,15 +646,30 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   paymentInfoCard: {
-    backgroundColor: '#fff',
+    backgroundColor: '#EBEBF0',
     borderRadius: 16,
-    padding: 20,
     marginBottom: 20,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+    // Shadow soft (neumorphism style - giống CleanCard)
+    shadowColor: '#FFFFFF',
+    shadowOpacity: 0.75,
+    shadowRadius: 16,
+    shadowOffset: { width: -5, height: -5 },
+  },
+  paymentInfoCardInner: {
+    borderRadius: 16,
+    backgroundColor: '#EBEBF0',
+    padding: 20,
+    overflow: 'hidden',
+    // Shadow depth (neumorphism style - giống CleanCard)
+    shadowColor: 'rgba(163, 177, 198, 0.65)',
+    shadowOpacity: 0.32,
+    shadowRadius: 18,
+    shadowOffset: { width: 8, height: 10 },
+    ...Platform.select({
+      android: {
+        elevation: 6,
+      },
+    }),
   },
   paymentInfoTitle: {
     fontSize: 16,
@@ -615,16 +693,31 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   statusContainer: {
-    backgroundColor: '#fff',
+    backgroundColor: '#EBEBF0',
     borderRadius: 16,
+    marginBottom: 24,
+    // Shadow soft (neumorphism style - giống CleanCard)
+    shadowColor: '#FFFFFF',
+    shadowOpacity: 0.75,
+    shadowRadius: 16,
+    shadowOffset: { width: -5, height: -5 },
+  },
+  statusContainerInner: {
+    borderRadius: 16,
+    backgroundColor: '#EBEBF0',
     padding: 40,
     alignItems: 'center',
-    marginBottom: 24,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+    overflow: 'hidden',
+    // Shadow depth (neumorphism style - giống CleanCard)
+    shadowColor: 'rgba(163, 177, 198, 0.65)',
+    shadowOpacity: 0.32,
+    shadowRadius: 18,
+    shadowOffset: { width: 8, height: 10 },
+    ...Platform.select({
+      android: {
+        elevation: 6,
+      },
+    }),
   },
   statusText: {
     fontSize: 18,
@@ -640,15 +733,30 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   instructionsCard: {
-    backgroundColor: '#fff',
+    backgroundColor: '#EBEBF0',
     borderRadius: 16,
-    padding: 20,
     marginBottom: 24,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+    // Shadow soft (neumorphism style - giống CleanCard)
+    shadowColor: '#FFFFFF',
+    shadowOpacity: 0.75,
+    shadowRadius: 16,
+    shadowOffset: { width: -5, height: -5 },
+  },
+  instructionsCardInner: {
+    borderRadius: 16,
+    backgroundColor: '#EBEBF0',
+    padding: 20,
+    overflow: 'hidden',
+    // Shadow depth (neumorphism style - giống CleanCard)
+    shadowColor: 'rgba(163, 177, 198, 0.65)',
+    shadowOpacity: 0.32,
+    shadowRadius: 18,
+    shadowOffset: { width: 8, height: 10 },
+    ...Platform.select({
+      android: {
+        elevation: 6,
+      },
+    }),
   },
   instructionsTitle: {
     fontSize: 16,

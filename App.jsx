@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Authentication Screens
 import LoginScreen from './src/screens/auth/LoginScreen.jsx';
+import DriverLoginScreen from './src/screens/auth/DriverLoginScreen.jsx';
 import RegisterScreen from './src/screens/auth/RegisterScreen.jsx';
 import OTPVerificationScreen from './src/screens/auth/OTPVerificationScreen.jsx';
 import ResetPasswordScreen from './src/screens/auth/ResetPasswordScreen.jsx';
@@ -100,27 +101,40 @@ const CustomTabBar = ({ state, descriptors, navigation, insets }) => {
         width: 240,
         height: baseHeight,
         borderRadius: 24,
-        overflow: 'hidden',
-        elevation: 4,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 0 }, // Shadow đều ở tất cả các cạnh
-        shadowOpacity: 0.05, // Giảm độ đậm shadow
-        shadowRadius: 20, // Tăng radius để shadow mềm và đều hơn
+        backgroundColor: 'transparent',
+        // Shadow depth (neumorphism style - giống CleanCard) - đặt ở View ngoài để shadow hiển thị
+        shadowColor: 'rgba(163, 177, 198, 0.65)',
+        shadowOpacity: 0.32,
+        shadowRadius: 18,
+        shadowOffset: { width: 8, height: 10 },
+        ...Platform.select({
+          android: {
+            elevation: 6,
+          },
+        }),
       }}
     >
-      <BlurView
-        intensity={80}
-        tint="light"
-        style={StyleSheet.absoluteFillObject}
+      <View
+        style={{
+          ...StyleSheet.absoluteFillObject,
+          borderRadius: 24,
+          overflow: 'hidden',
+        }}
       >
-        <View
-          style={{
-            ...StyleSheet.absoluteFillObject,
-            backgroundColor: 'rgba(255, 255, 255, 0.9)',
-            borderRadius: 24,
-          }}
-        />
-      </BlurView>
+        <BlurView
+          intensity={80}
+          tint="dark"
+          style={StyleSheet.absoluteFillObject}
+        >
+          <View
+            style={{
+              ...StyleSheet.absoluteFillObject,
+              backgroundColor: 'rgba(0, 0, 0, 0.9)',
+              borderRadius: 24,
+            }}
+          />
+        </BlurView>
+      </View>
       <View
         style={{
           flex: 1,
@@ -169,7 +183,7 @@ const CustomTabBar = ({ state, descriptors, navigation, insets }) => {
               <Icon
                 name={iconName}
                 size={24}
-                color={isFocused ? '#000000' : '#9CA3AF'}
+                color={isFocused ? '#FFFFFF' : '#9CA3AF'}
               />
               {isFocused && (
                 <View
@@ -177,7 +191,7 @@ const CustomTabBar = ({ state, descriptors, navigation, insets }) => {
                     width: 4,
                     height: 4,
                     borderRadius: 2,
-                    backgroundColor: '#000000',
+                    backgroundColor: '#FFFFFF',
                     marginTop: 4,
                   }}
                 />
@@ -269,6 +283,7 @@ export default function App() {
           >
             {/* Auth */}
             <Stack.Screen name="Login" component={LoginScreen} />
+            <Stack.Screen name="DriverLogin" component={DriverLoginScreen} />
             <Stack.Screen name="Register" component={RegisterScreen} />
             <Stack.Screen name="OTPVerification" component={OTPVerificationScreen} />
             <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
