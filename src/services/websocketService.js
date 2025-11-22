@@ -345,9 +345,63 @@ class WebSocketService {
     return subscriptionKey;
   }
 
+  // Subscribe to ride tracking updates
+  subscribeToRideTracking(rideId, callback) {
+    if (!this.isConnected || !this.client) {
+      throw new Error('WebSocket not connected');
+    }
+
+    const destination = ENDPOINTS.WEBSOCKET.RIDE_TRACKING.replace('{rideId}', rideId);
+    console.log('📡 Subscribing to ride tracking:', destination);
+
+    const subscription = this.client.subscribe(destination, (message) => {
+      try {
+        const data = JSON.parse(message.body);
+        if (callback) {
+          callback(data);
+        }
+      } catch (error) {
+        console.error('❌ [WebSocket] Error parsing ride tracking message:', error);
+        console.error('❌ [WebSocket] Raw message body:', message.body);
+      }
+    });
+
+    const subscriptionKey = `ride-tracking-${rideId}`;
+    this.subscriptions.set(subscriptionKey, subscription);
+    this.messageHandlers.set(subscriptionKey, callback);
+
+    return subscriptionKey;
+  }
+
+  // Unsubscribe from ride tracking
+  unsubscribeFromRideTracking(rideId) {
+    const subscriptionKey = `ride-tracking-${rideId}`;
+    const subscription = this.subscriptions.get(subscriptionKey);
+    if (subscription) {
+      try {
+        subscription.unsubscribe();
+        this.subscriptions.delete(subscriptionKey);
+        this.messageHandlers.delete(subscriptionKey);
+        console.log(`✅ Unsubscribed from ride tracking for ride ${rideId}`);
+      } catch (error) {
+        console.error(`❌ Error unsubscribing from ride tracking:`, error);
+      }
+    }
+  }
+
   // Connect as rider
   async connectAsRider(onRideMatching, onNotification) {
     try {
+      // If already connected, just update subscriptions (no need to reconnect)
+      if (this.isConnected && this.client) {
+        console.log('🔄 Already connected, updating rider subscriptions...');
+        this.subscribeToRiderMatching(onRideMatching);
+        this.subscribeToNotifications(onNotification);
+        console.log('✅ Rider subscriptions updated');
+        return true;
+      }
+
+      // Not connected yet, establish new connection
       await this.connect();
 
       // Subscribe to rider-specific queues
@@ -365,6 +419,16 @@ class WebSocketService {
   // Connect as driver
   async connectAsDriver(onRideOffer, onNotification) {
     try {
+      // If already connected, just update subscriptions (no need to reconnect)
+      if (this.isConnected && this.client) {
+        console.log('🔄 Already connected, updating driver subscriptions...');
+        this.subscribeToDriverOffers(onRideOffer);
+        this.subscribeToNotifications(onNotification);
+        console.log('✅ Driver subscriptions updated');
+        return true;
+      }
+
+      // Not connected yet, establish new connection
       await this.connect();
 
       // Subscribe to driver-specific queues

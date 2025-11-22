@@ -192,7 +192,6 @@ const DriverContactCard = ({
             'Bạn có muốn báo cáo sự cố với chuyến đi này?',
             [
               { text: 'Hủy', style: 'cancel' },
-              { text: 'Báo cáo', onPress: () => console.log('Report issue') }
             ]
           )}
         >

@@ -57,11 +57,11 @@ const LoginScreen = ({ navigation, route }) => {
           error.message?.includes("email-verification-pending") ||
           error.data?.error?.id === "user.validation.profile-not-exists") {
         // Automatically navigate to OTP verification screen for email verification
-        navigation.navigate('OTPVerification', {
-          email: email,
+                navigation.navigate('OTPVerification', {
+                  email: email,
           purpose: 'VERIFY_EMAIL',
           fromLogin: true, // Flag to indicate coming from login
-        });
+                });
         return;
       }
       

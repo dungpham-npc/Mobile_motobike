@@ -1,24 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
-import { navigationRef } from './src/utils/navigationRef';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { PaperProvider } from 'react-native-paper';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { useFonts, Inter_400Regular, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
-import { View, ActivityIndicator, Platform } from 'react-native';
+import { View, ActivityIndicator } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import { colors } from './src/theme/designTokens';
 import authService from './src/services/authService';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// Authentication Screens
+// Screens
 import LoginScreen from './src/screens/auth/LoginScreen.jsx';
 import RegisterScreen from './src/screens/auth/RegisterScreen.jsx';
 import OTPVerificationScreen from './src/screens/auth/OTPVerificationScreen.jsx';
 import ResetPasswordScreen from './src/screens/auth/ResetPasswordScreen.jsx';
-
-// Rider Screens
 import HomeScreen from './src/screens/main/HomeScreen.jsx';
 import ProfileScreen from './src/screens/main/ProfileScreen.jsx';
 import WalletScreen from './src/screens/main/WalletScreen.jsx';
@@ -26,34 +20,35 @@ import RideHistoryScreen from './src/screens/main/RideHistoryScreen.jsx';
 import RideDetailsScreen from './src/screens/RideDetailsScreen.jsx';
 import QRPaymentScreen from './src/screens/main/QRPaymentScreen.jsx';
 import ProfileSwitchScreen from './src/screens/main/ProfileSwitchScreen.jsx';
-import RideBookingScreen from './src/screens/ride/RideBookingScreen.jsx';
-import RideTrackingScreen from './src/screens/ride/RideTrackingScreen.jsx';
-import RiderMatchingScreen from './src/screens/ride/RiderMatchingScreen.jsx';
-import BrowseRidesScreen from './src/screens/ride/BrowseRidesScreen.jsx';
-import RideRatingScreen from './src/screens/ride/RideRatingScreen.jsx';
-import NotificationsScreen from './src/screens/main/NotificationsScreen.jsx';
-
-// Profile Screens
-import EditProfileScreen from './src/screens/profile/EditProfileScreen.jsx';
-import ChangePasswordScreen from './src/screens/profile/ChangePasswordScreen.jsx';
+import AccountVerificationScreen from './src/screens/main/AccountVerificationScreen.jsx';
 
 // Verification Screens
 import StudentVerificationScreen from './src/screens/verification/StudentVerificationScreen.jsx';
 import DriverVerificationScreen from './src/screens/verification/DriverVerificationScreen.jsx';
 
+// Profile Screens
+import EditProfileScreen from './src/screens/profile/EditProfileScreen.jsx';
+import ChangePasswordScreen from './src/screens/profile/ChangePasswordScreen.jsx';
+// import ResetPasswordScreen from './src/screens/profile/ResetPasswordScreen.jsx';
+
+// Ride Screens
+import RideBookingScreen from './src/screens/ride/RideBookingScreen.jsx';
+import RiderMatchingScreen from './src/screens/ride/RiderMatchingScreen.jsx';
+import RideTrackingScreen from './src/screens/ride/RideTrackingScreen.jsx';
+import RatingScreen from './src/screens/ride/RatingScreen.jsx';
+import AvailableRidesScreen from './src/screens/ride/AvailableRidesScreen.jsx';
+
 // Driver Screens
-import DriverTestScreen from './src/screens/driver/DriverTestScreen.jsx';
-import CreateSharedRideScreen from './src/screens/driver/CreateSharedRideScreen.jsx';
-import VehicleManagementScreen from './src/screens/driver/VehicleManagementScreen.jsx';
-import DriverRideTrackingScreen from './src/screens/driver/DriverRideTrackingScreen.jsx';
-import DriverRideDetailsScreen from './src/screens/driver/DriverRideDetailsScreen.jsx';
-import DriverRideHistoryScreen from './src/screens/driver/DriverRideHistoryScreen.jsx';
-import DriverCompletionScreen from './src/screens/driver/DriverCompletionScreen.jsx';
+import DriverHomeScreen from './src/screens/driver/DriverHomeScreen.jsx';
 import DriverDashboardScreen from './src/screens/driver/DriverDashboardScreen.jsx';
 import DriverEarningsScreen from './src/screens/driver/DriverEarningsScreen.jsx';
 import DriverRatingsScreen from './src/screens/driver/DriverRatingsScreen.jsx';
 import DriverProfileScreen from './src/screens/driver/DriverProfileScreen.jsx';
+import DriverRideTrackingScreen from './src/screens/driver/DriverRideTrackingScreen.jsx';
+import CreateSharedRideScreen from './src/screens/driver/CreateSharedRideScreen.jsx';
+import VehicleManagementScreen from './src/screens/driver/VehicleManagementScreen.jsx';
 import SOSAlertScreen from './src/screens/driver/SOSAlertScreen.jsx';
+import AvailableRequestsScreen from './src/screens/driver/AvailableRequestsScreen.jsx';
 
 // Navigation & UI
 import DriverTabNavigator from './src/navigation/DriverTabNavigator.jsx';
@@ -99,21 +94,23 @@ function MainTabs() {
           elevation: 0,
           height: 0,
         },
-        tabBarIcon: ({ color, size }) => {
-          let iconName = 'home';
-
-          if (route.name === 'Wallet') {
+        tabBarIcon: ({ focused, color, size }) => {
+          let iconName;
+          
+          if (route.name === 'Home') {
+            iconName = 'home';
+          } else if (route.name === 'Wallet') {
             iconName = 'account-balance-wallet';
           } else if (route.name === 'History') {
             iconName = 'history';
           } else if (route.name === 'Profile') {
             iconName = 'person';
           }
-
+          
           return <Icon name={iconName} size={size} color={color} />;
         },
-        tabBarActiveTintColor: colors.primaryDark,
-        tabBarInactiveTintColor: '#9CA3AF',
+        tabBarActiveTintColor: '#000',
+        tabBarInactiveTintColor: 'gray',
         headerShown: false,
       })}
       tabBar={(props) => <GlassTabBar {...props} />}
@@ -131,11 +128,6 @@ function MainTabs() {
 }
 
 export default function App() {
-  const [fontsLoaded] = useFonts({
-    Inter_400Regular,
-    Inter_600SemiBold,
-    Inter_700Bold,
-  });
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
@@ -154,52 +146,167 @@ export default function App() {
     }
   };
 
-  if (isLoading || !fontsLoaded) {
+  if (isLoading) {
     return (
       <PaperProvider>
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <ActivityIndicator size="large" color="#4CAF50" />
         </View>
       </PaperProvider>
     );
   }
 
   return (
-    <SafeAreaProvider>
-      <PaperProvider>
-        <NavigationContainer ref={navigationRef}>
-          <Stack.Navigator
-            initialRouteName="Login"
-            screenOptions={{ headerShown: false }}
-          >
-            {/* Auth */}
-            <Stack.Screen name="Login" component={LoginScreen} />
-            <Stack.Screen name="Register" component={RegisterScreen} />
-            <Stack.Screen name="OTPVerification" component={OTPVerificationScreen} />
-            <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
-
-            {/* Rider / Shared */}
-            <Stack.Screen name="Main" component={MainTabs} />
-            <Stack.Screen name="RideBooking" component={RideBookingScreen} />
-            <Stack.Screen name="BrowseRides" component={BrowseRidesScreen} />
-            <Stack.Screen name="RideTracking" component={RideTrackingScreen} />
-            <Stack.Screen name="RiderMatching" component={RiderMatchingScreen} />
-            <Stack.Screen name="RideDetails" component={RideDetailsScreen} />
-            <Stack.Screen name="RideRating" component={RideRatingScreen} />
-            <Stack.Screen name="QRPayment" component={QRPaymentScreen} />
-            <Stack.Screen name="ProfileSwitch" component={ProfileSwitchScreen} />
-            <Stack.Screen name="StudentVerification" component={StudentVerificationScreen} />
-            <Stack.Screen name="DriverVerification" component={DriverVerificationScreen} />
-            <Stack.Screen name="EditProfile" component={EditProfileScreen} />
-            <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
-            <Stack.Screen name="Notifications" component={NotificationsScreen} />
-
-            {/* Driver */}
-            <Stack.Screen name="DriverMain" component={DriverMainStack} />
-          </Stack.Navigator>
-        </NavigationContainer>
-      </PaperProvider>
-    </SafeAreaProvider>
+    <PaperProvider>
+      <NavigationContainer>
+        <Stack.Navigator initialRouteName={isAuthenticated ? (authService.isDriver() ? "DriverMain" : "Main") : "Login"}>
+          <Stack.Screen 
+            name="Login" 
+            component={LoginScreen} 
+            options={{ headerShown: false }}
+          />
+              <Stack.Screen 
+                name="Register" 
+                component={RegisterScreen} 
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen 
+                name="OTPVerification" 
+                component={OTPVerificationScreen} 
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen 
+                name="ResetPassword" 
+                component={ResetPasswordScreen} 
+                options={{ headerShown: false }}
+              />
+          <Stack.Screen 
+            name="Main" 
+            component={MainTabs} 
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen 
+            name="RideDetails" 
+            component={RideDetailsScreen} 
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen 
+            name="DriverHome" 
+            component={DriverHomeScreen} 
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen 
+            name="DriverMain" 
+            component={DriverTabNavigator} 
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen 
+            name="DriverDashboard" 
+            component={DriverDashboardScreen} 
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen 
+            name="DriverEarnings" 
+            component={DriverEarningsScreen} 
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen 
+            name="DriverRatings" 
+            component={DriverRatingsScreen} 
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen 
+            name="DriverProfile" 
+            component={DriverProfileScreen} 
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen 
+            name="SOSAlert" 
+            component={SOSAlertScreen} 
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen 
+            name="QRPayment" 
+            component={QRPaymentScreen} 
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen 
+            name="ProfileSwitch" 
+            component={ProfileSwitchScreen} 
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen 
+            name="AccountVerification" 
+            component={AccountVerificationScreen} 
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen 
+            name="StudentVerification" 
+            component={StudentVerificationScreen} 
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen 
+            name="DriverVerification" 
+            component={DriverVerificationScreen} 
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen 
+            name="EditProfile" 
+            component={EditProfileScreen} 
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen 
+            name="ChangePassword" 
+            component={ChangePasswordScreen} 
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen 
+            name="RideBooking" 
+            component={RideBookingScreen} 
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen 
+            name="RiderMatching" 
+            component={RiderMatchingScreen} 
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen 
+            name="RideTracking" 
+            component={RideTrackingScreen} 
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen 
+            name="RatingScreen" 
+            component={RatingScreen} 
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen 
+            name="AvailableRides" 
+            component={AvailableRidesScreen} 
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen 
+            name="DriverRideTracking" 
+            component={DriverRideTrackingScreen} 
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen 
+            name="CreateSharedRide" 
+            component={CreateSharedRideScreen} 
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen 
+            name="VehicleManagement" 
+            component={VehicleManagementScreen} 
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen 
+            name="AvailableRequests" 
+            component={AvailableRequestsScreen} 
+            options={{ headerShown: false }}
+          />
+        </Stack.Navigator>
+      </NavigationContainer>
+    </PaperProvider>
   );
 }
-

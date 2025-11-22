@@ -14,10 +14,10 @@ class RideService {
     // Handle both object with .amount property and direct number values
     const safeAmount = (obj) => {
       if (obj === null || obj === undefined) return null;
-      if (typeof obj === "number") return obj;
-      if (typeof obj === "object" && typeof obj.amount === "number")
+      if (typeof obj === 'number') return obj;
+      if (typeof obj === 'object' && typeof obj.amount === 'number')
         return obj.amount;
-      if (typeof obj === "string") {
+      if (typeof obj === 'string') {
         const parsed = parseFloat(obj);
         return isNaN(parsed) ? null : parsed;
       }
@@ -27,20 +27,12 @@ class RideService {
     // Extract quoteId - handle both camelCase and snake_case
     const quoteId = payload.quoteId || payload.quote_id || null;
 
-    console.log(
-      "Normalizing quote, payload:",
-      JSON.stringify(payload, null, 2)
-    );
-    console.log("Extracted quoteId:", quoteId);
-    console.log("Fare object:", JSON.stringify(fare, null, 2));
-
     // Handle fare.total in various formats
     const totalFare =
       safeAmount(fare.total) ||
       safeAmount(fare.totalVnd) ||
       safeAmount(payload.totalFare) ||
       0;
-    console.log("Extracted total fare:", totalFare);
 
     return {
       // giữ lại thông tin gốc quan trọng
@@ -53,9 +45,9 @@ class RideService {
 
       // quãng đường & thời gian
       distanceM:
-        typeof payload.distanceM === "number" ? payload.distanceM : null,
+        typeof payload.distanceM === 'number' ? payload.distanceM : null,
       durationS:
-        typeof payload.durationS === "number" ? payload.durationS : null,
+        typeof payload.durationS === 'number' ? payload.durationS : null,
 
       // toạ độ nếu cần dùng lại
       pickupLat: payload.pickupLat ?? null,
@@ -76,10 +68,10 @@ class RideService {
           null,
         discount: safeAmount(fare.discount) || null,
         commissionRate:
-          typeof fare.commissionRate === "number" ? fare.commissionRate : null,
+          typeof fare.commissionRate === 'number' ? fare.commissionRate : null,
         pricingVersion: fare.pricingVersion ?? fare.pricing_version ?? null,
         distanceMetersEcho:
-          typeof fare.distanceMeters === "number" ? fare.distanceMeters : null,
+          typeof fare.distanceMeters === 'number' ? fare.distanceMeters : null,
       },
 
       polyline: payload.polyline ?? null,
@@ -177,7 +169,7 @@ class RideService {
     }
   }
 
-  async joinRide(rideId, quoteId, desiredPickupTime = null, notes = null) {
+  async joinRide(rideId, pickupLocation = null, dropoffLocation = null, quoteId, desiredPickupTime = null, notes = null) {
     try {
       const endpoint = ENDPOINTS.RIDE_REQUESTS.JOIN_RIDE.replace(
         "{rideId}",
@@ -187,6 +179,32 @@ class RideService {
         quoteId: quoteId,
       };
 
+      // Add pickup location if provided (clean format - only lat/lng/locationId)
+      if (pickupLocation) {
+        body.pickup = {
+          latitude: pickupLocation.latitude,
+          longitude: pickupLocation.longitude
+        };
+        
+        // Add locationId if this is a POI
+        if (pickupLocation.locationId || pickupLocation.id) {
+          body.pickup.locationId = pickupLocation.locationId || pickupLocation.id;
+        }
+      }
+
+      // Add dropoff location if provided (clean format - only lat/lng/locationId)
+      if (dropoffLocation) {
+        body.dropoff = {
+          latitude: dropoffLocation.latitude,
+          longitude: dropoffLocation.longitude
+        };
+        
+        // Add locationId if this is a POI
+        if (dropoffLocation.locationId || dropoffLocation.id) {
+          body.dropoff.locationId = dropoffLocation.locationId || dropoffLocation.id;
+        }
+      }
+
       // Add optional fields if provided
       if (desiredPickupTime) {
         body.desiredPickupTime = desiredPickupTime;
@@ -194,6 +212,8 @@ class RideService {
       if (notes) {
         body.notes = notes;
       }
+
+      console.log('🚗 [RideService] Join ride request body:', JSON.stringify(body, null, 2));
 
       const response = await this.apiService.post(endpoint, body);
       return response;
@@ -244,6 +264,37 @@ class RideService {
       return response;
     } catch (error) {
       console.error("Get rider requests error:", error);
+      throw error;
+    }
+  }
+
+  // Get broadcast requests (for drivers to see pending manual requests)
+  async getBroadcastingRequests() {
+    try {
+      const response = await this.apiService.get(
+        ENDPOINTS.RIDE_REQUESTS.BROADCASTING
+      );
+      return response;
+    } catch (error) {
+      console.error('Get broadcasting requests error:', error);
+      throw error;
+    }
+  }
+
+  async getMyRiderRequests(status = null, page = 0, size = 20) {
+    try {
+      const params = new URLSearchParams({
+        page: page.toString(),
+        size: size.toString()
+      });
+      
+      if (status) params.append('status', status);
+
+      const endpoint = `${ENDPOINTS.RIDE_REQUESTS.GET_MY_REQUESTS}?${params.toString()}`;
+      const response = await this.apiService.get(endpoint);
+      return response;
+    } catch (error) {
+      console.error('Get my rider requests error:', error);
       throw error;
     }
   }
@@ -420,6 +471,13 @@ class RideService {
     }
   }
 
+  // Note: Snapshot API not implemented in backend
+  // All tracking data comes via WebSocket /topic/ride.tracking.{rideId}
+  async getRideTrackingSnapshot(rideId) {
+    console.warn('⚠️ [RideService] Snapshot API not available on backend');
+    return null;
+  }
+
   // Complete ride - will auto-complete all ride requests first
   async completeRide(rideId, rideRequestId = null) {
     try {
@@ -429,44 +487,56 @@ class RideService {
         ? requests
         : requests?.data || requests?.content || [];
 
-      // Complete any ONGOING requests first
-      const ongoingRequests = requestList.filter(
-        (req) => req.status === "ONGOING"
+      console.log(`📋 [Complete Ride] Found ${requestList.length} requests for ride ${rideId}`);
+      
+      // Complete any ONGOING or CONFIRMED requests first (CONFIRMED also needs to be completed)
+      const activeRequests = requestList.filter(
+        (req) => req.status === 'ONGOING' || req.status === 'CONFIRMED'
       );
-      for (const req of ongoingRequests) {
+      
+      console.log(`📋 [Complete Ride] ${activeRequests.length} active requests to complete`);
+
+      for (const req of activeRequests) {
+        // Try different possible field names for requestId (both camelCase and snake_case)
+        const reqId = req.shared_ride_request_id || req.sharedRideRequestId || req.rideRequestId || req.requestId || req.id;
+        
+        console.log(`📋 [Complete Ride] Request data:`, {
+          status: req.status,
+          shared_ride_request_id: req.shared_ride_request_id,
+          sharedRideRequestId: req.sharedRideRequestId,
+          rideRequestId: req.rideRequestId,
+          requestId: req.requestId,
+          id: req.id,
+          finalId: reqId
+        });
+        
+        if (!reqId) {
+          console.error('❌ [Complete Ride] Cannot find requestId in request object:', req);
+          continue;
+        }
+        
         try {
-          console.log(
-            `Completing ride request ${
-              req.sharedRideRequestId || req.rideRequestId
-            } before completing ride...`
-          );
-          await this.completeRideRequestOfRide(
-            rideId,
-            req.sharedRideRequestId || req.rideRequestId
-          );
+          await this.completeRideRequestOfRide(rideId, reqId);
+          console.log(`✅ [Complete Ride] Completed request ${reqId}`);
         } catch (err) {
-          console.warn(
-            `Failed to complete request ${
-              req.sharedRideRequestId || req.rideRequestId
-            }:`,
-            err
-          );
+          console.error(`❌ [Complete Ride] Failed to complete request ${reqId}:`, err);
+          // Don't throw, try to complete other requests
         }
       }
 
       // Now complete the ride
-      const endpoint = ENDPOINTS.SHARED_RIDES.COMPLETE.replace(
-        "{rideId}",
-        rideId
-      );
+      console.log(`📋 [Complete Ride] All requests completed, now completing ride ${rideId}`);
+      const endpoint = ENDPOINTS.SHARED_RIDES.COMPLETE.replace('{rideId}', rideId);
       const payload = { rideId };
       if (rideRequestId !== null && rideRequestId !== undefined) {
         payload.rideRequestId = rideRequestId;
       }
+      
       const response = await this.apiService.post(endpoint, payload);
+      console.log(`✅ [Complete Ride] Ride ${rideId} completed successfully`);
       return response;
     } catch (error) {
-      console.error("Complete ride error:", error);
+      console.error('❌ [Complete Ride] Error:', error);
       throw error;
     }
   }
@@ -584,8 +654,8 @@ class RideService {
     status = null,
     page = 0,
     size = 20,
-    sortBy = "createdAt",
-    sortDir = "desc"
+    sortBy = 'createdAt',
+    sortDir = 'desc'
   ) {
     try {
       const params = new URLSearchParams({
@@ -595,7 +665,17 @@ class RideService {
         sortDir: sortDir,
       });
 
-      if (status) params.append("status", status);
+      if (status) params.append('status', status);
+
+      const endpoint = `${ENDPOINTS.RIDES.GET_MY_RIDES}?${params.toString()}`;
+      const response = await this.apiService.get(endpoint);
+      return response;
+    } catch (error) {
+      console.error('Get my rides error:', error);
+      throw error;
+    }
+  }
+
 
       const endpoint = `${ENDPOINTS.RIDES.GET_MY_RIDES}?${params.toString()}`;
       const response = await this.apiService.get(endpoint);
@@ -705,18 +785,18 @@ class RideService {
     try {
       // Validate requestId
       if (!requestId || requestId === 'undefined' || requestId === 'null' || requestId === '{requestId}') {
-        console.error("❌ Invalid requestId:", requestId);
-        throw new Error("Invalid request ID");
+        console.error('❌ Invalid requestId:', requestId);
+        throw new Error('Invalid request ID');
       }
       
       const endpoint = ENDPOINTS.RIDE_REQUESTS.DETAILS.replace(
-        "{requestId}",
+        '{requestId}',
         requestId
       );
       const response = await this.apiService.get(endpoint);
       return response;
     } catch (error) {
-      console.error("Get request details error:", error);
+      console.error('Get request details error:', error);
       
       // If request not found (404), clear active ride from storage
       if (error?.message?.includes('not found') || error?.message?.includes('Không tìm thấy')) {

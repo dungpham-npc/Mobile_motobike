@@ -26,11 +26,11 @@ import { colors } from '../../theme/designTokens';
 const RideHistoryScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedTab, setSelectedTab] = useState('ongoing');
+  const [selectedTab, setSelectedTab] = useState('ongoing'); // ongoing, completed, all
   const [ongoingRides, setOngoingRides] = useState([]);
   const [completedRides, setCompletedRides] = useState([]);
-  const [ratedRequestIds, setRatedRequestIds] = useState(new Set());
-
+  const [ratedRequestIds, setRatedRequestIds] = useState(new Set()); // Track which requests have been rated
+  
   const tabs = [
     { key: 'ongoing', label: 'Đang diễn ra', icon: 'two-wheeler' },
     { key: 'completed', label: 'Hoàn thành', icon: 'check-circle' },
@@ -46,7 +46,8 @@ const RideHistoryScreen = ({ navigation }) => {
   const loadRides = async () => {
     try {
       setLoading(true);
-
+      
+      // Get current user to extract userId (thử dùng userId thay cho riderId)
       const currentUser = authService.getCurrentUser();
       if (!currentUser) {
         setOngoingRides([]);
@@ -54,6 +55,7 @@ const RideHistoryScreen = ({ navigation }) => {
         return;
       }
 
+      // Extract userId from user data
       const userId = currentUser?.user?.user_id || currentUser?.user_id;
       if (!userId) {
         setOngoingRides([]);
@@ -61,32 +63,36 @@ const RideHistoryScreen = ({ navigation }) => {
         return;
       }
 
+      // Load ratings to check which requests have been rated
       try {
         const ratingsResponse = await ratingService.getRiderRatingsHistory(0, 100);
         const ratings = ratingsResponse?.data || [];
-        const ratedIds = new Set(
-          ratings.map((rating) => rating.shared_ride_request_id || rating.requestId)
-        );
+        const ratedIds = new Set(ratings.map(rating => rating.shared_ride_request_id || rating.requestId));
         setRatedRequestIds(ratedIds);
       } catch (ratingError) {
         console.warn('⚠️ Could not load ratings (will assume no ratings):', ratingError);
         setRatedRequestIds(new Set());
       }
 
+      // Load ongoing rides (CONFIRMED, ONGOING) - thử dùng userId
       try {
         const ongoingResponse = await rideService.getRiderRequests(userId, 'ONGOING', 0, 50);
         const confirmedResponse = await rideService.getRiderRequests(userId, 'CONFIRMED', 0, 50);
 
+        
         const ongoingData = ongoingResponse?.data || [];
         const confirmedData = confirmedResponse?.data || [];
-
-        const allOngoing = [...ongoingData, ...confirmedData].map((request) => {
-          const pickupAddr =
-            request.pickup_location?.address ||
-            request.pickup_location?.name ||
-            request.pickup_location_name ||
-            'N/A';
-
+        
+        // Combine and transform to ride cards format
+        const allOngoing = [...ongoingData, ...confirmedData].map(request => {
+          
+          // Get pickup address - prioritize address, then name
+          const pickupAddr = request.pickup_location?.address || 
+                           request.pickup_location?.name || 
+                           request.pickup_location_name || 
+                           'N/A';
+          
+          // Get dropoff address - prioritize name if address is "N/A", then address, then name
           let dropoffAddr = 'N/A';
           if (request.dropoff_location) {
             if (request.dropoff_location.address && request.dropoff_location.address !== 'N/A') {
@@ -97,7 +103,7 @@ const RideHistoryScreen = ({ navigation }) => {
           } else if (request.dropoff_location_name) {
             dropoffAddr = request.dropoff_location_name;
           }
-
+          
           return {
             rideId: request.shared_ride_id,
             requestId: request.shared_ride_request_id,
@@ -105,14 +111,8 @@ const RideHistoryScreen = ({ navigation }) => {
             userType: 'rider',
             pickupAddress: pickupAddr,
             dropoffAddress: dropoffAddr,
-            totalFare:
-              request.fare_amount !== undefined && request.fare_amount !== null
-                ? request.fare_amount
-                : request.total_fare !== undefined && request.total_fare !== null
-                ? request.total_fare
-                : null,
-            distance:
-              request.distance_km || request.estimated_distance_km || request.actual_distance || null,
+            totalFare: request.fare_amount !== undefined && request.fare_amount !== null ? request.fare_amount : (request.total_fare !== undefined && request.total_fare !== null ? request.total_fare : null),
+            distance: request.distance_km || request.estimated_distance_km || request.actual_distance || null,
             driverInfo: {
               driverName: request.driver_name || null,
               driverId: request.driver_id || null,
@@ -122,6 +122,7 @@ const RideHistoryScreen = ({ navigation }) => {
             estimatedPickupTime: request.estimated_pickup_time,
             actualPickupTime: request.actual_pickup_time,
             actualDropoffTime: request.actual_dropoff_time,
+            // Raw data để debug
             raw: request,
           };
         });
@@ -132,17 +133,20 @@ const RideHistoryScreen = ({ navigation }) => {
         setOngoingRides([]);
       }
 
+      // Load completed rides
       try {
         const completedResponse = await rideService.getRiderRequests(userId, 'COMPLETED', 0, 50);
         const completedData = completedResponse?.data || [];
-
-        const allCompleted = completedData.map((request) => {
-          const pickupAddr =
-            request.pickup_location?.address ||
-            request.pickup_location?.name ||
-            request.pickup_location_name ||
-            'N/A';
-
+        
+        const allCompleted = completedData.map(request => {
+          
+          // Get pickup address - prioritize address, then name
+          const pickupAddr = request.pickup_location?.address || 
+                           request.pickup_location?.name || 
+                           request.pickup_location_name || 
+                           'N/A';
+          
+          // Get dropoff address - prioritize name if address is "N/A", then address, then name
           let dropoffAddr = 'N/A';
           if (request.dropoff_location) {
             if (request.dropoff_location.address && request.dropoff_location.address !== 'N/A') {
@@ -153,7 +157,7 @@ const RideHistoryScreen = ({ navigation }) => {
           } else if (request.dropoff_location_name) {
             dropoffAddr = request.dropoff_location_name;
           }
-
+          
           return {
             rideId: request.shared_ride_id,
             requestId: request.shared_ride_request_id,
@@ -161,17 +165,8 @@ const RideHistoryScreen = ({ navigation }) => {
             userType: 'rider',
             pickupAddress: pickupAddr,
             dropoffAddress: dropoffAddr,
-            totalFare:
-              request.fare_amount !== undefined && request.fare_amount !== null
-                ? request.fare_amount
-                : request.total_fare !== undefined && request.total_fare !== null
-                ? request.total_fare
-                : null,
-            distance:
-              request.actual_distance ||
-              request.distance_km ||
-              request.estimated_distance_km ||
-              null,
+            totalFare: request.fare_amount !== undefined && request.fare_amount !== null ? request.fare_amount : (request.total_fare !== undefined && request.total_fare !== null ? request.total_fare : null),
+            distance: request.actual_distance || request.distance_km || request.estimated_distance_km || null,
             driverInfo: {
               driverName: request.driver_name || null,
               driverId: request.driver_id || null,
@@ -180,6 +175,7 @@ const RideHistoryScreen = ({ navigation }) => {
             completedAt: request.actual_dropoff_time || request.estimated_dropoff_time,
             actualPickupTime: request.actual_pickup_time,
             actualDropoffTime: request.actual_dropoff_time,
+            // Raw data để debug
             raw: request,
           };
         });
@@ -189,6 +185,7 @@ const RideHistoryScreen = ({ navigation }) => {
         console.error('Error loading completed rides:', error);
         setCompletedRides([]);
       }
+      
     } catch (error) {
       console.error('Error loading rides:', error);
       Alert.alert('Lỗi', 'Không thể tải danh sách chuyến đi. Vui lòng thử lại.');
@@ -205,13 +202,15 @@ const RideHistoryScreen = ({ navigation }) => {
 
   const handleResumeRide = (ride) => {
     console.log('📍 Resuming ride:', ride);
-
+    
     if (ride.userType === 'driver') {
+      // Navigate to driver tracking screen
       navigation.navigate('DriverRideTracking', {
         rideId: ride.rideId,
         initialRideData: ride,
       });
     } else {
+      // Navigate to rider tracking screen
       navigation.navigate('RideTracking', {
         rideId: ride.rideId,
         requestId: ride.requestId,
@@ -222,6 +221,7 @@ const RideHistoryScreen = ({ navigation }) => {
   };
 
   const handleViewDetails = (ride) => {
+    // Navigate to ride details screen with full ride data
     navigation.navigate('RideDetails', {
       ride: ride,
       rideId: ride.rideId,
@@ -232,54 +232,73 @@ const RideHistoryScreen = ({ navigation }) => {
   const handleRateRide = async (ride) => {
     try {
       console.log('📋 Loading ride data for rating:', ride.rideId, ride.requestId);
-
+      
+      // Extract data from ride.raw first (most reliable source for request-specific data)
       const raw = ride.raw || {};
-
+      
+      // Try to get full ride data from API to ensure we have all information
       let rideData = null;
       let requestData = null;
       try {
         const rideResponse = await rideService.getRideById(ride.rideId);
-        if (
-          rideResponse?.data &&
-          typeof rideResponse.data === 'object' &&
-          Object.keys(rideResponse.data).length > 0
-        ) {
+        console.log('📦 Raw ride response:', JSON.stringify(rideResponse, null, 2));
+        
+        // Handle response structure - could be direct data or wrapped in { data: ... }
+        // Check if response has data property and it's not empty
+        if (rideResponse?.data && typeof rideResponse.data === 'object' && Object.keys(rideResponse.data).length > 0) {
           rideData = rideResponse.data;
         } else if (rideResponse && typeof rideResponse === 'object' && Object.keys(rideResponse).length > 0) {
           rideData = rideResponse;
         }
-
+        
+        console.log('✅ Processed rideData:', JSON.stringify(rideData, null, 2));
+        console.log('🔍 rideData fields:', {
+          hasDriverId: !!rideData?.driver_id,
+          hasDriverName: !!rideData?.driver_name,
+          hasActualDistance: rideData?.actual_distance !== undefined,
+          hasActualDuration: rideData?.actual_duration !== undefined,
+          driver_id: rideData?.driver_id,
+          driver_name: rideData?.driver_name,
+          actual_distance: rideData?.actual_distance,
+          actual_duration: rideData?.actual_duration,
+        });
+        
+        // Try to get request-specific data by fetching ride requests
         try {
           const requestsResponse = await rideService.getRideRequests(ride.rideId);
-          const requestList = Array.isArray(requestsResponse)
-            ? requestsResponse
-            : requestsResponse?.data || requestsResponse?.content || requestsResponse?.items || [];
-
-          requestData = requestList.find(
-            (req) =>
-              req.shared_ride_request_id === ride.requestId ||
-              req.shared_ride_request_id === parseInt(ride.requestId, 10) ||
-              req.request_id === ride.requestId
+          const requestList = Array.isArray(requestsResponse) 
+            ? requestsResponse 
+            : (requestsResponse?.data || requestsResponse?.content || requestsResponse?.items || []);
+          
+          requestData = requestList.find(req => 
+            req.shared_ride_request_id === ride.requestId || 
+            req.shared_ride_request_id === parseInt(ride.requestId) ||
+            req.request_id === ride.requestId
           );
+          console.log('✅ Found request data from ride requests:', JSON.stringify(requestData, null, 2));
         } catch (reqError) {
           console.warn('⚠️ Could not load ride requests, using raw data:', reqError);
         }
       } catch (error) {
         console.warn('⚠️ Could not load ride data, using cached data:', error);
       }
-
+      
+      // Use requestData if available, otherwise use raw
       const request = requestData || raw;
-
+      
+      // Extract values with explicit checks
+      // Driver info from rideData (most reliable)
       let driverId = null;
       let driverName = null;
       if (rideData) {
         driverId = rideData.driver_id ?? rideData.driver?.driver_id ?? null;
         driverName = rideData.driver_name ?? rideData.driver?.name ?? rideData.driver?.full_name ?? null;
       }
+      // Fallback to request/raw if rideData doesn't have it
       if (!driverId) driverId = request?.driver_id ?? null;
-      if (!driverName)
-        driverName = request?.driver_name ?? request?.driver?.name ?? request?.driver?.full_name ?? null;
-
+      if (!driverName) driverName = request?.driver_name ?? request?.driver?.name ?? request?.driver?.full_name ?? null;
+      
+      // Fare from request (request-specific) - check both fare_amount and total_fare
       let totalFare = null;
       if (request && request.fare_amount !== undefined && request.fare_amount !== null) {
         totalFare = request.fare_amount;
@@ -290,11 +309,20 @@ const RideHistoryScreen = ({ navigation }) => {
       } else if (raw && raw.total_fare !== undefined && raw.total_fare !== null) {
         totalFare = raw.total_fare;
       }
-
+      
+      console.log('💰 Fare extraction:', {
+        requestFareAmount: request?.fare_amount,
+        requestTotalFare: request?.total_fare,
+        rawFareAmount: raw?.fare_amount,
+        rawTotalFare: raw?.total_fare,
+        finalTotalFare: totalFare,
+      });
+      
+      // Distance from rideData (ride-level), fallback to request/raw
       let actualDistance = null;
-      if (rideData && rideData.actual_distance !== undefined && rideData.actual_distance !== null) {
+      if (rideData && (rideData.actual_distance !== undefined && rideData.actual_distance !== null)) {
         actualDistance = rideData.actual_distance;
-      } else if (request && request.actual_distance !== undefined && request.actual_distance !== null) {
+      } else if (request && (request.actual_distance !== undefined && request.actual_distance !== null)) {
         actualDistance = request.actual_distance;
       } else if (request && request.distance_km) {
         actualDistance = request.distance_km;
@@ -303,11 +331,12 @@ const RideHistoryScreen = ({ navigation }) => {
       } else if (raw && raw.distance_km) {
         actualDistance = raw.distance_km;
       }
-
+      
+      // Duration from rideData (ride-level), fallback to request/raw
       let actualDuration = null;
-      if (rideData && rideData.actual_duration !== undefined && rideData.actual_duration !== null) {
+      if (rideData && (rideData.actual_duration !== undefined && rideData.actual_duration !== null)) {
         actualDuration = rideData.actual_duration;
-      } else if (request && request.actual_duration !== undefined && request.actual_duration !== null) {
+      } else if (request && (request.actual_duration !== undefined && request.actual_duration !== null)) {
         actualDuration = request.actual_duration;
       } else if (request && request.duration_minutes) {
         actualDuration = request.duration_minutes;
@@ -316,7 +345,27 @@ const RideHistoryScreen = ({ navigation }) => {
       } else if (raw && raw.duration_minutes) {
         actualDuration = raw.duration_minutes;
       }
-
+      
+      console.log('📋 Final rating data:', {
+        rideId: ride.rideId,
+        requestId: ride.requestId,
+        driverId,
+        driverName,
+        totalFare,
+        actualDistance,
+        actualDuration,
+        debug: {
+          rideDataExists: !!rideData,
+          rideDataDriverId: rideData?.driver_id,
+          rideDataDriverName: rideData?.driver_name,
+          rideDataActualDistance: rideData?.actual_distance,
+          rideDataActualDuration: rideData?.actual_duration,
+          requestFareAmount: request?.fare_amount,
+          requestTotalFare: request?.total_fare,
+        },
+      });
+      
+      // Navigate to rating screen
       navigation.navigate('RatingScreen', {
         rideId: ride.rideId,
         requestId: ride.requestId,
@@ -374,7 +423,9 @@ const RideHistoryScreen = ({ navigation }) => {
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     try {
+      // Parse ISO string and format without timezone conversion
       const date = new Date(dateString);
+      // Use UTC methods to avoid timezone conversion
       const day = String(date.getUTCDate()).padStart(2, '0');
       const month = String(date.getUTCMonth() + 1).padStart(2, '0');
       const year = date.getUTCFullYear();
@@ -386,24 +437,27 @@ const RideHistoryScreen = ({ navigation }) => {
     }
   };
 
+  const formatTime = (dateString) => {
+    if (!dateString) return 'N/A';
+    try {
+      // Parse ISO string and format without timezone conversion
+      const date = new Date(dateString);
+      // Use UTC methods to avoid timezone conversion
+      const hours = String(date.getUTCHours()).padStart(2, '0');
+      const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+      const period = date.getUTCHours() >= 12 ? 'PM' : 'AM';
+      const displayHours = date.getUTCHours() % 12 || 12;
+      return `${displayHours}:${minutes} ${period}`;
+    } catch (e) {
+      return dateString;
+    }
+  };
+
   const formatDateForList = (dateString) => {
     if (!dateString) return 'N/A';
     try {
       const date = new Date(dateString);
-      const months = [
-        'Th 1',
-        'Th 2',
-        'Th 3',
-        'Th 4',
-        'Th 5',
-        'Th 6',
-        'Th 7',
-        'Th 8',
-        'Th 9',
-        'Th 10',
-        'Th 11',
-        'Th 12',
-      ];
+      const months = ['Th 1', 'Th 2', 'Th 3', 'Th 4', 'Th 5', 'Th 6', 'Th 7', 'Th 8', 'Th 9', 'Th 10', 'Th 11', 'Th 12'];
       const day = date.getUTCDate();
       const month = months[date.getUTCMonth()];
       const hours = date.getUTCHours() % 12 || 12;
@@ -417,7 +471,7 @@ const RideHistoryScreen = ({ navigation }) => {
 
   const renderRideCard = (ride, index) => {
     const isOngoing = ride.status === 'ONGOING' || ride.status === 'CONFIRMED';
-
+    
     return (
       <TouchableOpacity
         onPress={() => handleViewDetails(ride)}
@@ -425,6 +479,7 @@ const RideHistoryScreen = ({ navigation }) => {
         style={styles.rideCardWrapper}
       >
         <CleanCard style={styles.rideCard} contentStyle={styles.rideCardContent}>
+          {/* Left: Service Icon and Name */}
           <View style={styles.leftSection}>
             <View style={styles.serviceIcon}>
               <Icon name="two-wheeler" size={24} color="#fff" />
@@ -436,14 +491,19 @@ const RideHistoryScreen = ({ navigation }) => {
             </View>
             <View style={styles.serviceInfo}>
               <Text style={styles.serviceName}>Xe máy</Text>
-              {ride.createdAt && <Text style={styles.dateTimeText}>{formatDateForList(ride.createdAt)}</Text>}
+              {ride.createdAt && (
+                <Text style={styles.dateTimeText}>
+                  {formatDateForList(ride.createdAt)}
+                </Text>
+              )}
             </View>
           </View>
 
+          {/* Right: Price and Arrow */}
           <View style={styles.rightSection}>
             <Text style={styles.priceText}>
-              {ride.totalFare !== null && ride.totalFare !== undefined
-                ? formatCurrency(ride.totalFare)
+              {ride.totalFare !== null && ride.totalFare !== undefined 
+                ? formatCurrency(ride.totalFare) 
                 : 'Chưa có'}
             </Text>
             <Icon name="chevron-right" size={24} color={colors.textMuted} />
@@ -455,7 +515,7 @@ const RideHistoryScreen = ({ navigation }) => {
 
   const renderContent = () => {
     let displayRides = [];
-
+    
     switch (selectedTab) {
       case 'ongoing':
         displayRides = ongoingRides;
@@ -485,8 +545,20 @@ const RideHistoryScreen = ({ navigation }) => {
           <CleanCard style={styles.emptyCard} contentStyle={styles.emptyCardContent}>
             <Icon name="inbox" size={64} color={colors.textMuted} />
             <Text style={styles.emptyText}>
-              {selectedTab === 'ongoing' ? 'Bạn chưa có chuyến đi nào đang diễn ra' : 'Chưa có lịch sử chuyến đi'}
+              {selectedTab === 'ongoing' 
+                ? 'Bạn chưa có chuyến đi nào đang diễn ra' 
+                : 'Chưa có lịch sử chuyến đi'}
             </Text>
+            {selectedTab === 'ongoing' && (
+              <TouchableOpacity
+                style={styles.createRideButton}
+                onPress={() => navigation.navigate('Home')}
+                activeOpacity={0.8}
+              >
+                <Icon name="add" size={20} color="#fff" />
+                <Text style={styles.createRideButtonText}>Tạo chuyến mới</Text>
+              </TouchableOpacity>
+            )}
           </CleanCard>
         </Animatable.View>
       );
@@ -495,7 +567,12 @@ const RideHistoryScreen = ({ navigation }) => {
     return (
       <View style={styles.ridesContainer}>
         {displayRides.map((ride, index) => (
-          <Animatable.View key={`${ride.rideId || ride.requestId}-${index}`} animation="fadeInUp" duration={480} delay={120 + index * 60}>
+          <Animatable.View
+            key={`${ride.rideId || ride.requestId}-${index}`}
+            animation="fadeInUp"
+            duration={480}
+            delay={120 + index * 60}
+          >
             {renderRideCard(ride, index)}
           </Animatable.View>
         ))}
@@ -510,7 +587,9 @@ const RideHistoryScreen = ({ navigation }) => {
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />
+          }
         >
           <View style={styles.headerSpacing}>
             <GlassHeader
@@ -520,6 +599,7 @@ const RideHistoryScreen = ({ navigation }) => {
           </View>
 
           <View style={styles.content}>
+            {/* Tabs */}
             <Animatable.View animation="fadeInUp" duration={480} delay={60}>
               <CleanCard style={styles.tabsCard} contentStyle={styles.tabsCardContent}>
                 <View style={styles.tabsContainer}>
@@ -544,6 +624,7 @@ const RideHistoryScreen = ({ navigation }) => {
               </CleanCard>
             </Animatable.View>
 
+            {/* Content */}
             {renderContent()}
           </View>
         </ScrollView>
@@ -725,3 +806,4 @@ const styles = StyleSheet.create({
 });
 
 export default RideHistoryScreen;
+

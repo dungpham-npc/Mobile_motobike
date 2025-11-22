@@ -9,6 +9,7 @@ import { colors, radii } from '../../theme/designTokens';
 const iconMap = {
   Home: 'home',
   Wallet: 'account-balance-wallet',
+  Messages: 'forum',
   History: 'history',
   Profile: 'person',
 };

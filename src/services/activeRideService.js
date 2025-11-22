@@ -23,7 +23,6 @@ class ActiveRideService {
       };
       
       await AsyncStorage.setItem(ACTIVE_RIDE_KEY, JSON.stringify(activeRide));
-      console.log('✅ Active ride saved:', activeRide);
       return activeRide;
     } catch (error) {
       console.error('❌ Failed to save active ride:', error);

@@ -1,27 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  SafeAreaView,
-  TouchableOpacity,
-  ScrollView,
-  Alert,
-  Image,
-  ActivityIndicator
-} from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, ScrollView, Alert, Image, ActivityIndicator, StatusBar } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import Feather from 'react-native-vector-icons/Feather';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Animatable from 'react-native-animatable';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import ModernButton from '../../components/ModernButton.jsx';
-import authService from '../../services/authService';
 import verificationService from '../../services/verificationService';
-import { ApiError } from '../../services/api';
+import AppBackground from '../../components/layout/AppBackground.jsx';
+import CleanCard from '../../components/ui/CleanCard.jsx';
+import { colors, gradients } from '../../theme/designTokens';
 
 const DriverVerificationScreen = ({ navigation }) => {
+  const insets = useSafeAreaInsets();
+
   // State for each document type
   const [licenseFront, setLicenseFront] = useState(null);
   const [licenseBack, setLicenseBack] = useState(null);
@@ -409,298 +404,193 @@ const DriverVerificationScreen = ({ navigation }) => {
     }
   };
 
-  const renderDocumentSection = (documentType, title, description, frontImage, backImage, setFrontImage, setBackImage) => {
-    return (
-      <Animatable.View animation="fadeInUp" style={styles.documentSection}>
-        <Text style={styles.documentTitle}>{title}</Text>
-          <Text style={styles.documentDescription}>{description}</Text>
-        
-        <View style={styles.imageContainer}>
-          {/* Front Image */}
-          <View style={styles.imageWrapper}>
-            <Text style={styles.imageLabel}>Mặt trước</Text>
-            <TouchableOpacity 
-              style={styles.imageButton}
-              onPress={() => showImagePicker(documentType, 'front')}
-            >
-              {frontImage ? (
-                <Image source={{ uri: frontImage.uri }} style={styles.imagePreview} />
-              ) : (
-                <View style={styles.imagePlaceholder}>
-                  <Icon name="add-a-photo" size={40} color="#ccc" />
-                  <Text style={styles.placeholderText}>Chụp mặt trước</Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          </View>
+  const renderDocumentSection = () => null; // legacy kept to avoid accidental usage
 
-          {/* Back Image */}
-          <View style={styles.imageWrapper}>
-            <Text style={styles.imageLabel}>Mặt sau</Text>
+  const renderUploadSlot = (documentType, side, image, setImage, buttonText) => (
+    <View style={styles.uploadSlot}>
+      <Text style={styles.imageLabel}>{side === 'front' ? 'Mặt trước' : 'Mặt sau'}</Text>
+      {image ? (
+        <Animatable.View animation="fadeIn" style={styles.selectedImageContainer}>
+          <Image source={{ uri: image.uri }} style={styles.selectedImage} />
           <TouchableOpacity 
-              style={styles.imageButton}
-              onPress={() => showImagePicker(documentType, 'back')}
-            >
-              {backImage ? (
-                <Image source={{ uri: backImage.uri }} style={styles.imagePreview} />
-              ) : (
-                <View style={styles.imagePlaceholder}>
-                  <Icon name="add-a-photo" size={40} color="#ccc" />
-                  <Text style={styles.placeholderText}>Chụp mặt sau</Text>
-                </View>
-              )}
+            style={styles.changeImageButton}
+            onPress={() => showImagePicker(documentType, side)}
+          >
+            <Icon name="edit" size={18} color={colors.accent} />
+            <Text style={styles.changeImageText}>Đổi ảnh</Text>
           </TouchableOpacity>
-          </View>
-      </View>
-      </Animatable.View>
-    );
-  };
+        </Animatable.View>
+      ) : (
+        <TouchableOpacity 
+          style={styles.uploadButton}
+          onPress={() => showImagePicker(documentType, side)}
+        >
+          <LinearGradient colors={gradients.pillActive} style={styles.uploadButtonGradient}>
+            <Icon name="camera-alt" size={32} color="#fff" />
+            <Text style={styles.uploadButtonText}>{buttonText}</Text>
+            <Text style={styles.uploadButtonSubtext}>Chụp ảnh hoặc chọn từ thư viện</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <LinearGradient
-          colors={['#FF9800', '#F57C00']}
-          style={styles.header}
+    <AppBackground>
+      <StatusBar barStyle="dark-content" />
+      <SafeAreaView style={styles.safe}>
+        {/* Floating back button */}
+        <TouchableOpacity 
+          style={[styles.floatingBackButton, { top: insets.top + 12 }]}
+          onPress={() => {
+            if (navigation.canGoBack()) {
+              navigation.goBack();
+            } else {
+              navigation.replace('Main');
+            }
+          }}
         >
-          <View style={styles.headerContent}>
-            <TouchableOpacity 
-              style={styles.backButton}
-              onPress={() => navigation.goBack()}
-            >
-              <Icon name="arrow-back" size={24} color="#fff" />
-            </TouchableOpacity>
-            <Text style={styles.headerTitle}>Xác minh tài xế</Text>
-            <View style={styles.placeholder} />
-          </View>
-        </LinearGradient>
+          <Feather name="arrow-left" size={20} color={colors.textPrimary} />
+        </TouchableOpacity>
 
-        <View style={styles.content}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+        >
+          {/* Header text */}
+          <View style={styles.headerTextSection}>
+            <Text style={styles.headerSubtitle}>Gửi giấy tờ xác minh</Text>
+            <Text style={styles.headerTitle}>Xác minh tài xế</Text>
+          </View>
+
           {/* Instructions */}
-          <Animatable.View animation="fadeInUp" style={styles.instructionsCard}>
-            <Icon name="info" size={24} color="#FF9800" />
-            <View style={styles.instructionsContent}>
+          <Animatable.View animation="fadeInUp" style={styles.cardWrapper}>
+            <CleanCard contentStyle={styles.instructionsCard}>
+              <View style={styles.instructionsIconWrap}>
+                <Icon name="two-wheeler" size={40} color={colors.primary} />
+              </View>
               <Text style={styles.instructionsTitle}>Hướng dẫn gửi giấy tờ</Text>
-            <Text style={styles.instructionsText}>
-                Vui lòng chụp rõ nét các giấy tờ sau để xác minh tài khoản tài xế:
-              </Text>
-              <Text style={styles.instructionsList}>
-                • Bằng lái xe (2 mặt){'\n'}
-                • Giấy chứng nhận đăng ký xe (2 mặt){'\n'}
-                • Giấy ủy quyền phương tiện (2 mặt) - nếu có
-            </Text>
-            </View>
+              <Text style={styles.instructionsText}>Vui lòng chụp rõ nét các giấy tờ sau để xác minh tài khoản tài xế:</Text>
+              <View style={styles.requirementsList}>
+                <View style={styles.requirementItem}><Icon name="check-circle" size={20} color={colors.primary} /><Text style={styles.requirementText}>Bằng lái xe (2 mặt)</Text></View>
+                <View style={styles.requirementItem}><Icon name="check-circle" size={20} color={colors.primary} /><Text style={styles.requirementText}>Giấy chứng nhận đăng ký xe (2 mặt)</Text></View>
+                <View style={styles.requirementItem}><Icon name="check-circle" size={20} color={colors.primary} /><Text style={styles.requirementText}>Giấy ủy quyền phương tiện (nếu có)</Text></View>
+              </View>
+            </CleanCard>
           </Animatable.View>
 
           {/* License Section */}
-          {renderDocumentSection(
-            'license',
-            'Bằng lái xe',
-            'Chụp ảnh mặt trước và mặt sau của bằng lái xe',
-            licenseFront,
-            licenseBack,
-            setLicenseFront,
-            setLicenseBack
-          )}
+          <CleanCard style={styles.cardWrapper} contentStyle={styles.uploadSection}>
+            <Text style={styles.cardTitle}>Bằng lái xe</Text>
+            <Text style={styles.cardDescription}>Chụp ảnh mặt trước và mặt sau của bằng lái</Text>
+            <View style={styles.rowUploads}>
+              {renderUploadSlot('license', 'front', licenseFront, setLicenseFront, 'Chụp mặt trước')}
+              {renderUploadSlot('license', 'back', licenseBack, setLicenseBack, 'Chụp mặt sau')}
+            </View>
+          </CleanCard>
 
           {/* Vehicle Registration Section */}
-          {renderDocumentSection(
-            'vehicleRegistration',
-            'Giấy chứng nhận đăng ký xe',
-            'Chụp ảnh mặt trước và mặt sau của giấy chứng nhận đăng ký xe mô tô, xe gắn máy',
-            vehicleRegistrationFront,
-            vehicleRegistrationBack,
-            setVehicleRegistrationFront,
-            setVehicleRegistrationBack
-          )}
+          <CleanCard style={styles.cardWrapper} contentStyle={styles.uploadSection}>
+            <Text style={styles.cardTitle}>Giấy chứng nhận đăng ký xe</Text>
+            <Text style={styles.cardDescription}>Chụp ảnh 2 mặt giấy đăng ký mô tô/xe gắn máy</Text>
+            <View style={styles.rowUploads}>
+              {renderUploadSlot('vehicleRegistration', 'front', vehicleRegistrationFront, setVehicleRegistrationFront, 'Chụp mặt trước')}
+              {renderUploadSlot('vehicleRegistration', 'back', vehicleRegistrationBack, setVehicleRegistrationBack, 'Chụp mặt sau')}
+            </View>
+          </CleanCard>
 
           {/* Vehicle Authorization Section (Optional) */}
-          {renderDocumentSection(
-            'vehicleAuthorization',
-            'Giấy ủy quyền phương tiện (Tùy chọn)',
-            'Nếu bạn không phải chủ xe, vui lòng chụp giấy ủy quyền phương tiện',
-            vehicleAuthorizationFront,
-            vehicleAuthorizationBack,
-            setVehicleAuthorizationFront,
-            setVehicleAuthorizationBack
-          )}
+          <CleanCard style={styles.cardWrapper} contentStyle={styles.uploadSection}>
+            <Text style={styles.cardTitle}>Giấy ủy quyền phương tiện (Tùy chọn)</Text>
+            <Text style={styles.cardDescription}>Nếu bạn không phải chủ xe, vui lòng chụp ảnh 2 mặt giấy ủy quyền</Text>
+            <View style={styles.rowUploads}>
+              {renderUploadSlot('vehicleAuthorization', 'front', vehicleAuthorizationFront, setVehicleAuthorizationFront, 'Mặt trước')}
+              {renderUploadSlot('vehicleAuthorization', 'back', vehicleAuthorizationBack, setVehicleAuthorizationBack, 'Mặt sau')}
+            </View>
+          </CleanCard>
 
           {/* Submit Button */}
-          <Animatable.View animation="fadeInUp" style={styles.submitContainer}>
           <ModernButton
-              title="Gửi giấy tờ xác minh"
+            title={uploading ? 'Đang gửi...' : 'Gửi giấy tờ xác minh'}
             onPress={submitVerification}
-              disabled={uploading || !licenseFront || !licenseBack || !vehicleRegistrationFront || !vehicleRegistrationBack}
-              loading={uploading}
+            disabled={uploading || !licenseFront || !licenseBack || !vehicleRegistrationFront || !vehicleRegistrationBack}
+            style={styles.submitButton}
           />
-          </Animatable.View>
-        </View>
-      </ScrollView>
 
-      {/* Loading Overlay */}
           {uploading && (
-        <View style={styles.loadingOverlay}>
-          <View style={styles.loadingContent}>
-            <ActivityIndicator size="large" color="#FF9800" />
-            <Text style={styles.loadingText}>Đang gửi giấy tờ...</Text>
-          </View>
-        </View>
-      )}
-    </SafeAreaView>
+            <View style={styles.uploadingContainer}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={styles.uploadingText}>Đang tải lên và xử lý...</Text>
+            </View>
+          )}
+        </ScrollView>
+      </SafeAreaView>
+    </AppBackground>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  header: {
-    paddingTop: 10,
-    paddingBottom: 20,
-    paddingHorizontal: 20,
-  },
-  headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  backButton: {
-    padding: 8,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  placeholder: {
-    width: 40,
-  },
-  content: {
-    padding: 20,
-  },
-  instructionsCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  instructionsContent: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  instructionsTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 8,
-  },
-  instructionsText: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 8,
-  },
-  instructionsList: {
-    fontSize: 14,
-    color: '#666',
-    lineHeight: 20,
-  },
-  documentSection: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  documentTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 8,
-  },
-  documentDescription: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 16,
-  },
-  imageContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  imageWrapper: {
-    flex: 1,
-    marginHorizontal: 4,
-  },
-  imageLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  imageButton: {
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  imagePreview: {
-    width: '100%',
-    height: 120,
-    borderRadius: 8,
-  },
-  imagePlaceholder: {
-    width: '100%',
-    height: 120,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: '#e9ecef',
-    borderStyle: 'dashed',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  placeholderText: {
-    fontSize: 12,
-    color: '#999',
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  submitContainer: {
-    marginTop: 20,
-    marginBottom: 40,
-  },
-  loadingOverlay: {
+  safe: { flex: 1 },
+  floatingBackButton: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    left: 16,
+    top: 12,
+    zIndex: 10,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.25)',
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: 'rgba(15,23,42,0.12)',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  loadingContent: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 24,
+  scrollContent: { paddingTop: 24, paddingHorizontal: 24, paddingBottom: 140, gap: 24 },
+  headerTextSection: { alignItems: 'center', paddingTop: 12, paddingBottom: 12 },
+  headerSubtitle: { fontSize: 12, color: colors.textMuted, marginBottom: 4 },
+  headerTitle: { fontSize: 18, color: colors.textPrimary, fontWeight: '600' },
+
+  cardWrapper: { },
+  instructionsCard: { alignItems: 'flex-start', paddingHorizontal: 20, paddingVertical: 22 },
+  instructionsIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    backgroundColor: 'rgba(24,78,63,0.6)',
+    justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: 14,
   },
-  loadingText: {
-    fontSize: 16,
-    color: '#333',
-    marginTop: 12,
-  },
+  instructionsTitle: { fontSize: 18, fontWeight: '700', color: colors.textPrimary, marginBottom: 8 },
+  instructionsText: { fontSize: 14, color: colors.textSecondary, marginBottom: 10 },
+  requirementsList: { },
+  requirementItem: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  requirementText: { fontSize: 14, color: colors.textSecondary, marginLeft: 8 },
+
+  uploadSection: { paddingHorizontal: 20, paddingVertical: 22 },
+  cardTitle: { fontSize: 18, fontWeight: '700', color: colors.textPrimary, marginBottom: 8 },
+  cardDescription: { fontSize: 14, color: colors.textSecondary, marginBottom: 14 },
+  rowUploads: { flexDirection: 'row', gap: 12 },
+  uploadSlot: { flex: 1 },
+  imageLabel: { fontSize: 13, color: colors.textSecondary, marginBottom: 8, textAlign: 'center' },
+  uploadButton: { borderRadius: 16, overflow: 'hidden' },
+  uploadButtonGradient: { padding: 22, alignItems: 'center', borderWidth: 1.5, borderColor: colors.border, borderStyle: 'dashed', borderRadius: 16, height: 160, justifyContent: 'center' },
+  uploadButtonText: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginTop: 10 },
+  uploadButtonSubtext: { fontSize: 12, color: colors.textSecondary, marginTop: 4, textAlign: 'center' },
+
+  selectedImageContainer: { alignItems: 'center' },
+  selectedImage: { width: '100%', height: 160, borderRadius: 16, resizeMode: 'cover' },
+  changeImageButton: { flexDirection: 'row', alignItems: 'center', marginTop: 10, paddingVertical: 6, paddingHorizontal: 8 },
+  changeImageText: { fontSize: 14, color: colors.accent, marginLeft: 6, fontWeight: '600' },
+
+  submitButton: { marginTop: 4 },
+  uploadingContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  uploadingText: { fontSize: 14, color: colors.primary, marginLeft: 8 },
 });
 
 export default DriverVerificationScreen;

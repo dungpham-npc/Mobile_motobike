@@ -117,7 +117,7 @@ const ResetPasswordScreen = ({ navigation }) => {
 
     setLoading(true);
     try {
-      await authService.verifyOtp(formData.otpCode, 'password_reset');
+      await authService.verifyOtp(formData.otpCode, 'password_reset', formData.emailOrPhone);
       
       setStep(3);
       Alert.alert('Thành công', 'Mã OTP đã được xác minh. Vui lòng đặt mật khẩu mới');
@@ -126,7 +126,14 @@ const ResetPasswordScreen = ({ navigation }) => {
       
       let errorMessage = 'Mã OTP không chính xác hoặc đã hết hạn';
       if (error instanceof ApiError) {
-        errorMessage = error.message || errorMessage;
+        const errorId = error?.data?.error?.id;
+        if (errorId === 'otp.validation.invalid-otp') {
+          errorMessage = 'Mã OTP không hợp lệ hoặc đã hết hạn';
+        } else if (error.status === 429) {
+          errorMessage = 'Bạn thao tác quá nhanh. Vui lòng thử lại sau.';
+        } else {
+          errorMessage = error.message || errorMessage;
+        }
       }
       
       Alert.alert('Lỗi', errorMessage);
@@ -152,10 +159,7 @@ const ResetPasswordScreen = ({ navigation }) => {
 
     setLoading(true);
     try {
-      // Note: This would need a reset password API endpoint
-      // For now, we'll simulate success
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
+      await authService.resetPassword(formData.emailOrPhone, formData.otpCode, formData.newPassword);
       Alert.alert(
         'Thành công', 
         'Mật khẩu đã được đặt lại thành công. Vui lòng đăng nhập với mật khẩu mới.',
@@ -163,10 +167,19 @@ const ResetPasswordScreen = ({ navigation }) => {
       );
     } catch (error) {
       console.error('Reset password error:', error);
-      
       let errorMessage = 'Không thể đặt lại mật khẩu';
       if (error instanceof ApiError) {
-        errorMessage = error.message || errorMessage;
+        const errorId = error?.data?.error?.id;
+        switch (errorId) {
+          case 'otp.validation.invalid-otp':
+            errorMessage = 'Mã OTP không hợp lệ hoặc đã hết hạn';
+            break;
+          case 'user.validation.password-too-weak':
+            errorMessage = 'Mật khẩu phải có ít nhất 8 ký tự, bao gồm chữ hoa, chữ thường và số';
+            break;
+          default:
+            errorMessage = error.message || errorMessage;
+        }
       }
       
       Alert.alert('Lỗi', errorMessage);

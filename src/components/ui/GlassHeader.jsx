@@ -115,6 +115,7 @@ const styles = StyleSheet.create({
     color: colors.glassLighter,
     fontSize: typography.heading,
     fontFamily: 'Inter_700Bold',
+    fontWeight: '700',
     marginTop: 6,
   },
   bell: { padding: 8, position: 'relative' },

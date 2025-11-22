@@ -63,7 +63,7 @@
       }
     },
     "plugins": [
-      "expo-font", "expo-dev-client", "expo-notifications", ["expo-location", { "isAndroidBackgroundLocationEnabled": true }]
+      "expo-font", "expo-notifications", ["expo-location", { "isAndroidBackgroundLocationEnabled": true }]
     ]
   }
 }

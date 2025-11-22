@@ -15,24 +15,40 @@ import * as Animatable from 'react-native-animatable';
 import websocketService from '../../services/websocketService';
 import authService from '../../services/authService';
 import rideService from '../../services/rideService';
+import activeRideService from '../../services/activeRideService';
 
 const RiderMatchingScreen = ({ navigation, route }) => {
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
-  const [matchingStatus, setMatchingStatus] = useState('searching'); // searching, matched, accepted, cancelled
+  const [matchingStatus, setMatchingStatus] = useState('searching'); // searching, matched, accepted, cancelled, no_drivers
   const [currentMatch, setCurrentMatch] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [rideRequest, setRideRequest] = useState(null);
   const [user, setUser] = useState(null);
+  const [matchingTimer, setMatchingTimer] = useState(0); // Seconds elapsed
   
   const animationRef = useRef(null);
+  const timerInterval = useRef(null);
+  const matchingStartTime = useRef(Date.now());
+  const matchingStatusRef = useRef('searching');
+  const rideRequestRef = useRef(null);
 
   // Get ride request data from navigation params
   useEffect(() => {
     const requestData = route.params?.rideRequest;
     if (requestData) {
       setRideRequest(requestData);
+      rideRequestRef.current = requestData;
     }
   }, [route.params]);
+  
+  // Update refs when state changes
+  useEffect(() => {
+    matchingStatusRef.current = matchingStatus;
+  }, [matchingStatus]);
+  
+  useEffect(() => {
+    rideRequestRef.current = rideRequest;
+  }, [rideRequest]);
 
   // Initialize rider connection
   useEffect(() => {
@@ -65,20 +81,50 @@ const RiderMatchingScreen = ({ navigation, route }) => {
 
     initializeRider();
 
+    // Start matching timer (for display only, no timeout)
+    matchingStartTime.current = Date.now();
+    timerInterval.current = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - matchingStartTime.current) / 1000);
+      setMatchingTimer(elapsed);
+    }, 1000);
+
     // Cleanup on unmount
     return () => {
-      console.log('🧹 RiderMatchingScreen unmounting - cleaning up...');
-      websocketService.disconnect();
+      // DON'T disconnect WebSocket - let RideTrackingScreen reuse the connection
+      // websocketService.disconnect();
+      if (timerInterval.current) {
+        clearInterval(timerInterval.current);
+      }
+      
+      // Cancel pending request if user backs out during searching
+      // (Don't cancel if already matched/accepted)
+      if (matchingStatusRef.current === 'searching') {
+        const currentRequest = rideRequestRef.current;
+        const requestId = currentRequest?.shared_ride_request_id 
+          || currentRequest?.sharedRideRequestId
+          || currentRequest?.requestId 
+          || currentRequest?.ride_request_id;
+          
+        if (requestId) {
+          console.log('🚫 [RiderMatching] Auto-cancelling request on unmount:', requestId);
+          rideService.cancelRequest(requestId)
+            .then(() => {
+              console.log('✅ [RiderMatching] Request auto-cancelled successfully');
+              activeRideService.clearActiveRide();
+            })
+            .catch(err => {
+              console.error('❌ [RiderMatching] Auto-cancel error:', err);
+            });
+        }
+      }
     };
   }, []);
 
   const handleRideMatching = (matchingData) => {
-    console.log('📨 Received ride matching update:', matchingData);
     
     try {
       // Check both 'type' field and 'status' field for compatibility
       const updateType = matchingData.type || matchingData.status;
-      console.log('📨 Processing update type:', updateType);
       
       switch (updateType) {
         case 'DRIVER_MATCHED':
@@ -112,8 +158,20 @@ const RiderMatchingScreen = ({ navigation, route }) => {
           break;
           
         case 'NO_DRIVERS_AVAILABLE':
-          setMatchingStatus('cancelled');
-          addNotification('😔 Không tìm thấy tài xế. Vui lòng thử lại sau.', 'error');
+        case 'MATCHING_TIMEOUT':
+          setMatchingStatus('no_drivers');
+          addNotification('⏱️ Tất cả tài xế đang bận', 'warning');
+          // Show alert with option to go home or wait
+          Alert.alert(
+            'Không tìm thấy tài xế',
+            'Tất cả tài xế đang bận. Vui lòng thử lại sau.',
+            [
+              {
+                text: 'Về trang chủ',
+                onPress: () => navigation.navigate('Home')
+              }
+            ]
+          );
           break;
           
         case 'RIDE_CANCELLED':
@@ -122,7 +180,6 @@ const RiderMatchingScreen = ({ navigation, route }) => {
           break;
           
         default:
-          console.log('Unknown matching update type:', updateType);
           // Fallback: if we have rideId and status, treat as accepted
           if (matchingData.rideId && matchingData.status === 'ACCEPTED') {
             setMatchingStatus('accepted');
@@ -148,7 +205,6 @@ const RiderMatchingScreen = ({ navigation, route }) => {
   };
 
   const handleNotification = (notification) => {
-    console.log('🔔 Received notification:', notification);
     addNotification(notification.message || 'Thông báo mới', 'info');
   };
 
@@ -174,31 +230,43 @@ const RiderMatchingScreen = ({ navigation, route }) => {
           style: 'destructive',
           onPress: async () => {
             try {
-              const requestIdToCancel =
-                rideRequest?.sharedRideRequestId ||
-                rideRequest?.shared_ride_request_id ||
-                rideRequest?.requestId ||
-                rideRequest?.id ||
-                route.params?.rideRequestId ||
-                route.params?.requestId;
+              // Get requestId from various possible sources
+              const requestId = rideRequest?.shared_ride_request_id 
+                || rideRequest?.sharedRideRequestId
+                || rideRequest?.requestId 
+                || rideRequest?.ride_request_id
+                || route.params?.requestId;
 
-              if (!requestIdToCancel) {
-                Alert.alert('Lỗi', 'Không tìm thấy mã yêu cầu chuyến để hủy.');
-                return;
+              console.log('🚫 [RiderMatching] Cancelling request:', {
+                requestId,
+                rideRequest
+              });
+
+              if (requestId) {
+                // Call cancel API
+                await rideService.cancelRequest(requestId);
+                console.log('✅ [RiderMatching] Request cancelled successfully');
+                
+                // Clear active ride from storage
+                await activeRideService.clearActiveRide();
+              } else {
+                console.warn('⚠️ [RiderMatching] No requestId found, skipping API call');
               }
 
-              await rideService.cancelRequest(requestIdToCancel);
+              // Update UI
               setMatchingStatus('cancelled');
-              addNotification('Đã hủy chuyến đi', 'error');
-              websocketService.disconnect();
-              setTimeout(() => navigation.goBack(), 1200);
+              addNotification('🚫 Đã hủy chuyến đi', 'success');
+              
+              // Navigate back after a short delay
+              setTimeout(() => {
+                navigation.navigate('Home');
+              }, 1000);
             } catch (error) {
-              console.error('Cancel ride request failed:', error);
+              console.error('❌ [RiderMatching] Cancel error:', error);
               Alert.alert(
                 'Lỗi',
-                error?.response?.data?.message ||
-                  error?.message ||
-                  'Không thể hủy chuyến đi. Vui lòng thử lại.'
+                'Không thể hủy chuyến đi. Vui lòng thử lại.',
+                [{ text: 'OK' }]
               );
             }
           }
@@ -213,6 +281,7 @@ const RiderMatchingScreen = ({ navigation, route }) => {
       case 'matched': return '#2196F3';
       case 'accepted': return '#4CAF50';
       case 'cancelled': return '#F44336';
+      case 'no_drivers': return '#9C27B0';
       default: return '#9E9E9E';
     }
   };
@@ -223,8 +292,15 @@ const RiderMatchingScreen = ({ navigation, route }) => {
       case 'matched': return 'Đã tìm thấy tài xế!';
       case 'accepted': return 'Tài xế đã chấp nhận!';
       case 'cancelled': return 'Chuyến đi đã hủy';
+      case 'no_drivers': return 'Tất cả tài xế đang bận';
       default: return 'Đang xử lý...';
     }
+  };
+
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   const getStatusIcon = () => {
@@ -274,6 +350,21 @@ const RiderMatchingScreen = ({ navigation, route }) => {
               <Text style={styles.searchingText}>
                 Đang tìm kiếm tài xế gần bạn...
               </Text>
+              <Text style={styles.timerText}>
+                Thời gian chờ: {formatTime(matchingTimer)}
+              </Text>
+            </View>
+          )}
+          
+          {matchingStatus === 'no_drivers' && (
+            <View style={styles.noDriversIndicator}>
+              <Icon name="error-outline" size={48} color="#9C27B0" />
+              <Text style={styles.noDriversText}>
+                Tất cả tài xế đang bận
+              </Text>
+              <Text style={styles.noDriversSubtext}>
+                Vui lòng thử lại sau hoặc tìm kiếm thủ công
+              </Text>
             </View>
           )}
         </Animatable.View>
@@ -305,9 +396,11 @@ const RiderMatchingScreen = ({ navigation, route }) => {
 
             {/*rideRequest.fare && (
               <View style={styles.fareRow}>
+                {
+                }
                 <Icon name="attach-money" size={20} color="#FF9800" />
                 <Text style={styles.fareText}>
-                  {rideRequest.fare.total?.amount?.toLocaleString() || '0'} VNĐ
+                  {rideRequest.fare.total.toLocaleString() || '0'} VNĐ
                 </Text>
               </View>
             )*/}
@@ -451,6 +544,45 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
   },
+  timerText: {
+    marginTop: 8,
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FF9800',
+    textAlign: 'center',
+  },
+  manualModeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3E5F5',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginTop: 16,
+    gap: 8,
+  },
+  manualModeText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#9C27B0',
+  },
+  noDriversIndicator: {
+    alignItems: 'center',
+    paddingVertical: 16,
+  },
+  noDriversText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#9C27B0',
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  noDriversSubtext: {
+    marginTop: 8,
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+  },
   rideInfoCard: {
     backgroundColor: '#fff',
     borderRadius: 12,
@@ -581,3 +713,4 @@ const styles = StyleSheet.create({
 });
 
 export default RiderMatchingScreen;
+

@@ -340,25 +340,36 @@ const WalletScreen = ({ navigation }) => {
 
   return (
     <AppBackground>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : -40}
-      >
-        <SafeAreaView style={[styles.safe, { paddingBottom: Math.max(insets.bottom, 16) }]}>
-          <StatusBar barStyle="dark-content" />
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-            contentContainerStyle={[
-              styles.scrollContent,
-              { paddingBottom: 160 + Math.max(insets.bottom, 0) },
-            ]}
-          >
-            <View style={styles.headerSpacing}>
-              <GlassHeader title="Ví của tôi" subtitle="Quản lý giao dịch" />
-            </View>
+      <SafeAreaView style={styles.safe}>
+        <StatusBar barStyle="dark-content" />
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          contentContainerStyle={styles.scrollContent}
+        >
+          <View style={styles.headerSpacing}>
+            <GlassHeader title="Ví của tôi" subtitle="Quản lý giao dịch" />
+          </View>
+
+          <View style={styles.content}>
+            <Animatable.View animation="fadeInUp" duration={500}>
+              <CleanCard style={styles.card} contentStyle={styles.balanceCardContent}>
+              <LinearGradient
+                colors={['#F0F9FF', '#E6F7FF', '#E0F7FA', '#B2EBF2', '#E1BEE7']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                locations={[0, 0.3, 0.5, 0.7, 1]}
+                style={styles.balanceGradient}
+              >
+                <View style={styles.balanceHeader}>
+                  <Icon name="account-balance-wallet" size={30} color="#0F172A" />
+                  <View style={styles.balanceInfo}>
+                    <Text style={styles.balanceLabel}>Số dư khả dụng</Text>
+                    <Text style={styles.balanceAmount}>
+                      {paymentService.formatCurrency(walletData?.availableBalance)}
+                    </Text>
+                  </View>
+                </View>
 
             <Animatable.View animation="fadeInUp" duration={500}>
               <CleanCard style={styles.cardSpacing} contentStyle={styles.balanceCardContent}>
@@ -378,43 +389,74 @@ const WalletScreen = ({ navigation }) => {
                     </View>
                   </View>
 
-                  {walletData?.pendingBalance > 0 && (
-                    <View style={styles.pendingBalance}>
-                      <Icon name="hourglass-empty" size={16} color="#F97316" />
-                      <Text style={styles.pendingBalanceText}>
-                        Đang chờ: {paymentService.formatCurrency(walletData.pendingBalance || walletData.pending_balance)}
-                      </Text>
-                    </View>
-                  )}
+                <View style={styles.actionButtons}>
+                  <TouchableOpacity style={styles.actionButton} onPress={() => setShowTopUpModal(true)}>
+                    <Icon name="add" size={20} color="#0F172A" />
+                    <Text style={styles.actionButtonText}>Nạp tiền</Text>
+                  </TouchableOpacity>
 
-                  <View style={styles.actionButtons}>
-                    <TouchableOpacity style={styles.actionButton} onPress={() => setShowTopUpModal(true)}>
-                      <Icon name="add" size={20} color="#0F172A" />
-                      <Text style={styles.actionButtonText}>Nạp tiền</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={styles.actionButton} onPress={() => setShowWithdrawModal(true)}>
-                      <Icon name="send" size={20} color="#0F172A" />
-                      <Text style={styles.actionButtonText}>Rút tiền</Text>
-                    </TouchableOpacity>
-                  </View>
-                </LinearGradient>
+                  <TouchableOpacity style={styles.actionButton} onPress={() => setShowWithdrawModal(true)}>
+                    <Icon name="send" size={20} color="#0F172A" />
+                    <Text style={styles.actionButtonText}>Rút tiền</Text>
+                  </TouchableOpacity>
+                </View>
+              </LinearGradient>
               </CleanCard>
             </Animatable.View>
 
             <Animatable.View animation="fadeInUp" duration={500} delay={80}>
-              <CleanCard style={styles.cardSpacing} contentStyle={styles.quickCardContent}>
-                <Text style={styles.sectionTitle}>Nạp nhanh</Text>
-                <View style={styles.quickAmountsList}>
-                  {quickTopUpAmounts.map((amount) => (
-                    <TouchableOpacity
-                      key={amount}
-                      style={styles.quickAmountItem}
-                      onPress={() => handleQuickTopUp(amount)}
-                    >
-                      <Text style={styles.quickAmountText}>{paymentService.formatCurrency(amount)}</Text>
-                    </TouchableOpacity>
-                  ))}
+              <CleanCard style={styles.card} contentStyle={styles.quickCardContent}>
+              <Text style={styles.sectionTitle}>Nạp nhanh</Text>
+              <View style={styles.quickAmountsList}>
+                {quickTopUpAmounts.map((amount) => (
+                  <TouchableOpacity
+                    key={amount}
+                    style={styles.quickAmountItem}
+                    onPress={() => handleQuickTopUp(amount)}
+                  >
+                    <Text style={styles.quickAmountText}>{paymentService.formatCurrency(amount)}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              </CleanCard>
+            </Animatable.View>
+
+            {(walletData?.totalToppedUp > 0 || walletData?.totalSpent > 0) && (
+              <Animatable.View animation="fadeInUp" duration={500} delay={140}>
+                <CleanCard style={styles.card} contentStyle={styles.statsCardContent}>
+                <Text style={styles.sectionTitle}>Thống kê</Text>
+                <View style={styles.statsContainer}>
+                  <View style={styles.statItem}>
+                    <Icon name="trending-up" size={22} color="#22C55E" />
+                    <Text style={styles.statValue}>
+                      {paymentService.formatCurrency(walletData?.total_topped_up || 0)}
+                    </Text>
+                    <Text style={styles.statLabel}>Tổng nạp</Text>
+                  </View>
+                  <View style={styles.statDivider} />
+                  <View style={styles.statItem}>
+                    <Icon name="trending-down" size={22} color="#EF4444" />
+                    <Text style={styles.statValue}>
+                      {paymentService.formatCurrency(walletData?.totalSpent || walletData?.total_spent || 0)}
+                    </Text>
+                    <Text style={styles.statLabel}>Tổng chi</Text>
+                  </View>
+                </View>
+                </CleanCard>
+              </Animatable.View>
+            )}
+
+            <Animatable.View animation="fadeInUp" duration={500} delay={200}>
+              <CleanCard style={styles.card} contentStyle={styles.transactionCardContent}>
+              <View style={styles.transactionHeader}>
+                <Text style={styles.sectionTitle}>Lịch sử giao dịch</Text>
+                {loadingTransactions && <ActivityIndicator size="small" color={colors.accent} />}
+              </View>
+
+              {transactions.length === 0 ? (
+                <View style={styles.emptyTransactions}>
+                  <Icon name="receipt" size={44} color={colors.textMuted} />
+                  <Text style={styles.emptyTransactionsText}>Chưa có giao dịch nào</Text>
                 </View>
               </CleanCard>
             </Animatable.View>
@@ -492,7 +534,8 @@ const WalletScreen = ({ navigation }) => {
 
               </CleanCard>
             </Animatable.View>
-          </ScrollView>
+          </View>
+        </ScrollView>
 
           {renderTopUpModal()}
           {renderWithdrawModal()}
@@ -606,15 +649,19 @@ const WalletScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   scrollContent: {
-    paddingBottom: 140,
+    paddingBottom: 160,
     paddingTop: 24,
   },
   headerSpacing: {
     marginBottom: 24,
   },
-  cardSpacing: {
-    marginHorizontal: 20,
-    marginBottom: 20,
+  content: {
+    paddingTop: 12,
+    paddingHorizontal: 20,
+    gap: 20,
+  },
+  card: {
+    marginBottom: 12,
   },
   balanceCardContent: {
     padding: 0,

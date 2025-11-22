@@ -68,7 +68,6 @@ const SimpleAddressInput = ({
             };
           }
         } catch (error) {
-          console.warn('Could not load current location:', error);
         }
       }
 
@@ -111,7 +110,6 @@ const SimpleAddressInput = ({
 
   const searchPlacesWithPOI = async (query, poiLocations, currentLocationSuggestion) => {
     if (!goongService.isPlacesConfigured()) {
-      console.log('Goong Places API not configured');
       return;
     }
     
@@ -198,7 +196,6 @@ const SimpleAddressInput = ({
           address: displayText,
           isCurrentLocation: true,
         };
-        console.log('📍 Current location data:', locationData);
         onChangeText(displayText);
         onLocationSelect(locationData);
         setSuggestions([]);
@@ -222,10 +219,8 @@ const SimpleAddressInput = ({
           onChangeText(displayText);
           onLocationSelect(locationData);
         } else {
-          console.log('⚠️ Place details failed, trying geocode...');
           const displayText = suggestion.main_text || suggestion.description;
           const geocodeResults = await goongService.geocode(displayText);
-          console.log('📋 Geocode response:', geocodeResults);
           
           if (geocodeResults && geocodeResults.geometry && geocodeResults.geometry.location) {
             const location = geocodeResults.geometry.location;
@@ -234,7 +229,6 @@ const SimpleAddressInput = ({
               longitude: location.longitude,
               address: displayText,
             };
-            console.log('📍 Geocode data:', locationData);
             onChangeText(displayText);
             onLocationSelect(locationData);
           } else {

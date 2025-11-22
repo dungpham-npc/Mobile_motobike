@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,8 @@ import {
   Alert,
   Dimensions,
   ActivityIndicator,
-  Animated
+  Animated,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -18,9 +19,6 @@ import rideService from '../../services/rideService';
 import locationService from '../../services/LocationService';
 import websocketService from '../../services/websocketService';
 import goongService from '../../services/goongService';
-import sosService from '../../services/sosService';
-import SOSButton from '../../components/SOSButton.jsx';
-import { useFocusEffect } from '@react-navigation/native';
 import * as Animatable from 'react-native-animatable';
 
 const { width, height } = Dimensions.get('window');
@@ -35,100 +33,97 @@ const DriverRideTrackingScreen = ({ route, navigation }) => {
   const [error, setError] = useState(null);
   const [etaText, setEtaText] = useState(null);
   const [isSimulating, setIsSimulating] = useState(false);
-  const [simulationPhase, setSimulationPhase] = useState(null); // 'toPickup' | 'toDropoff' | null
   const [phase, setPhase] = useState('toPickup'); // 'toPickup' | 'toDropoff'
-const [mapPolyline, setMapPolyline] = useState([]);
-const [currentPolylineEncoded, setCurrentPolylineEncoded] = useState(null);
+  const [mapPolyline, setMapPolyline] = useState([]);
+  const [fullPolyline, setFullPolyline] = useState([]); // Store full polyline for trimming
+  const [pickupPolylineString, setPickupPolylineString] = useState(null);
+  const [ridePolylineString, setRidePolylineString] = useState(null);
   const [showBottomSheet, setShowBottomSheet] = useState(true);
-  const [isNearPickup, setIsNearPickup] = useState(false);
-const [isNearDropoff, setIsNearDropoff] = useState(false);
-const mapRef = useRef(null);
-const driverMarkerRef = useRef(null);
-const [markerUpdateKey, setMarkerUpdateKey] = useState(0);
-const trackingSubscriptionRef = useRef(null);
+  const mapRef = useRef(null);
+  const driverMarkerRef = useRef(null);
+  const [markerUpdateKey, setMarkerUpdateKey] = useState(0);
+  const trackingSubscriptionRef = useRef(null);
+  const [currentPolylineEncoded, setCurrentPolylineEncoded] = useState(null);
 
-  const getRideLocation = useCallback(
-    (type) => {
-      const data = rideData || initialRideData || {};
-      const location =
-        type === 'pickup'
-          ? data.start_location || data.pickup_location
-          : data.end_location || data.dropoff_location;
-      const fallbackLat =
-        type === 'pickup' ? data.pickup_lat : data.dropoff_lat;
-      const fallbackLng =
-        type === 'pickup' ? data.pickup_lng : data.dropoff_lng;
-
-      const lat = location?.lat ?? location?.latitude ?? fallbackLat;
-      const lng = location?.lng ?? location?.longitude ?? fallbackLng;
-
-      if (typeof lat === 'number' && typeof lng === 'number') {
-        return {
-          name: location?.name || location?.address || null,
-          latitude: lat,
-          longitude: lng,
-        };
-      }
-      return null;
-    },
-    [rideData, initialRideData]
-  );
-
-  const buildDriverSosSnapshot = useCallback(() => {
-    const data = rideData || initialRideData || {};
-    return {
-      role: 'driver',
-      rideId,
-      status: data.status || phase || status || null,
-      phase,
-      simulationPhase,
-      eta: etaText,
-      rider: {
-        name: data.rider_name || data.rider?.name || null,
-        phone: data.rider_phone || data.rider?.phone || null,
-      },
-      pickup: getRideLocation('pickup'),
-      dropoff: getRideLocation('dropoff'),
-      driverLocation: driverLocation
-        ? { latitude: driverLocation.latitude, longitude: driverLocation.longitude }
-        : null,
-      route: currentPolylineEncoded ? { polyline: currentPolylineEncoded } : null,
-      timestamp: new Date().toISOString(),
-      vehicle: data.vehicle || data.driver_vehicle || null,
-    };
-  }, [
-    rideData,
-    initialRideData,
-    rideId,
-    phase,
-    status,
-    simulationPhase,
-    etaText,
-    driverLocation,
-    currentPolylineEncoded,
-    getRideLocation,
-  ]);
-
-  const handleTriggerDriverSOS = useCallback(async () => {
-    try {
-      await sosService.triggerAlert({
-        rideId,
-        rideSnapshot: buildDriverSosSnapshot(),
-        role: 'driver',
-      });
-      Alert.alert(
-        'Đã gửi SOS',
-        'Hệ thống đã ghi nhận tình huống khẩn cấp và đang thông báo cho quản trị viên cùng liên hệ khẩn cấp.'
-      );
-    } catch (error) {
-      console.error('Driver SOS trigger failed:', error);
-      Alert.alert('Lỗi', error?.message || 'Không thể gửi SOS. Vui lòng thử lại.');
+  // Polyline decoder (Google Encoded Polyline)
+  const decodePolyline = (encoded) => {
+    if (!encoded || typeof encoded !== 'string') {
+      return [];
     }
-  }, [rideId, buildDriverSosSnapshot]);
+    
+    try {
+      // Handle escaped backslashes in polyline string (e.g., "\\Z" -> "\Z")
+      const cleanedPolyline = encoded.replace(/\\\\/g, '\\');
+      let index = 0, lat = 0, lng = 0, coordinates = [];
+      
+      while (index < cleanedPolyline.length) {
+        let b, shift = 0, result = 0;
+        do {
+          if (index >= cleanedPolyline.length) {
+            break;
+          }
+          b = cleanedPolyline.charCodeAt(index++) - 63;
+          result |= (b & 0x1f) << shift;
+          shift += 5;
+        } while (b >= 0x20);
+        const dlat = (result & 1) ? ~(result >> 1) : (result >> 1);
+        lat += dlat;
+        
+        shift = 0; result = 0;
+        do {
+          if (index >= cleanedPolyline.length) {
+            break;
+          }
+          b = cleanedPolyline.charCodeAt(index++) - 63;
+          result |= (b & 0x1f) << shift;
+          shift += 5;
+        } while (b >= 0x20);
+        const dlng = (result & 1) ? ~(result >> 1) : (result >> 1);
+        lng += dlng;
+        
+        coordinates.push({ latitude: lat / 1e5, longitude: lng / 1e5 });
+      }
+      
+      if (coordinates.length > 0) {
+      }
+      
+      return coordinates;
+    } catch (error) {
+      console.error('❌ Error decoding polyline:', error);
+      console.error('❌ Polyline string:', encoded.substring(0, 100));
+      return [];
+    }
+  };
 
-  const updateMapPolylineFromEncoded = useCallback(
-    (encoded, context = "tracking") => {
-      if (!encoded || typeof encoded !== "string") {
+  // Helper function to trim polyline from current location
+  const trimPolylineFromCurrentLocation = (fullPolyline, currentLocation, targetLocation) => {
+    if (!fullPolyline || fullPolyline.length === 0 || !currentLocation) return fullPolyline;
+    
+    // Find the closest point in polyline to current location
+    let closestIndex = 0;
+    let minDistance = Infinity;
+    
+    fullPolyline.forEach((point, index) => {
+      const distance = locationService.calculateDistance(
+        currentLocation.latitude,
+        currentLocation.longitude,
+        point.latitude || point.lat,
+        point.longitude || point.lng
+      );
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestIndex = index;
+      }
+    });
+    
+    // Return polyline from closest point to end
+    return fullPolyline.slice(closestIndex);
+  };
+
+  // Update map polyline from encoded string
+  const updateMapPolylineFromEncoded = React.useCallback(
+    (encoded, context = 'tracking') => {
+      if (!encoded || typeof encoded !== 'string') {
         return;
       }
       setCurrentPolylineEncoded((prevEncoded) => {
@@ -137,17 +132,14 @@ const trackingSubscriptionRef = useRef(null);
         }
         try {
           const decodedPolyline = goongService.decodePolyline(encoded);
-          const formattedPolyline = decodedPolyline.map((point) => [
-            point.longitude,
-            point.latitude,
-          ]);
+          const formattedPolyline = decodedPolyline.map((point) => ({
+            latitude: point.latitude,
+            longitude: point.longitude,
+          }));
           setMapPolyline(formattedPolyline);
-          console.log(
-            `✅ [DriverTracking] Updated map polyline (${context}) with ${formattedPolyline.length} points`
-          );
           return encoded;
         } catch (error) {
-          console.error("❌ [DriverTracking] Error decoding polyline:", error);
+          console.error('❌ [DriverTracking] Error decoding polyline:', error);
           return prevEncoded;
         }
       });
@@ -155,14 +147,15 @@ const trackingSubscriptionRef = useRef(null);
     []
   );
 
-  const applyTrackingSnapshot = useCallback(
+  // Apply tracking snapshot
+  const applyTrackingSnapshot = React.useCallback(
     (snapshot) => {
       if (!snapshot) {
         return;
       }
       if (snapshot.requestStatus) {
         const normalizedStatus = snapshot.requestStatus.toUpperCase();
-        setPhase(normalizedStatus === "ONGOING" ? "toDropoff" : "toPickup");
+        setPhase(normalizedStatus === 'ONGOING' ? 'toDropoff' : 'toPickup');
       }
       if (
         snapshot.driverLat !== undefined &&
@@ -177,7 +170,7 @@ const trackingSubscriptionRef = useRef(null);
         }
       }
       if (snapshot.polyline) {
-        updateMapPolylineFromEncoded(snapshot.polyline, "snapshot");
+        updateMapPolylineFromEncoded(snapshot.polyline, 'snapshot');
       }
       if (snapshot.estimatedArrival) {
         setEtaText(snapshot.estimatedArrival);
@@ -186,7 +179,8 @@ const trackingSubscriptionRef = useRef(null);
     [updateMapPolylineFromEncoded]
   );
 
-  const fetchTrackingSnapshot = useCallback(async (targetRideId) => {
+  // Fetch tracking snapshot
+  const fetchTrackingSnapshot = React.useCallback(async (targetRideId) => {
     if (!targetRideId) {
       return null;
     }
@@ -194,12 +188,13 @@ const trackingSubscriptionRef = useRef(null);
       const response = await rideService.getRideTrackingSnapshot(targetRideId);
       return response?.data ?? response;
     } catch (error) {
-      console.error("❌ [DriverTracking] Error fetching tracking snapshot:", error);
+      console.error('❌ [DriverTracking] Error fetching tracking snapshot:', error);
       return null;
     }
   }, []);
 
-  const syncTrackingSnapshot = useCallback(
+  // Sync tracking snapshot
+  const syncTrackingSnapshot = React.useCallback(
     async (targetRideId) => {
       const data = await fetchTrackingSnapshot(targetRideId);
       if (data) {
@@ -209,203 +204,102 @@ const trackingSubscriptionRef = useRef(null);
     [fetchTrackingSnapshot, applyTrackingSnapshot]
   );
 
-  // Calculate distance between two coordinates in meters
-  const calculateDistance = (lat1, lng1, lat2, lng2) => {
-    const R = 6371000; // Earth radius in meters
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLng = (lng2 - lng1) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-              Math.sin(dLng / 2) * Math.sin(dLng / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-  };
-
-  // Polyline decoder (Google Encoded Polyline) - precision 5
-  const decodePolyline = (encoded, precision = 5) => {
-    if (!encoded || typeof encoded !== 'string') return [];
-    let index = 0, lat = 0, lng = 0, coordinates = [];
-    const factor = Math.pow(10, precision);
-    
-    while (index < encoded.length) {
-      let b, shift = 0, result = 0;
-      // Decode latitude
-      do {
-        b = encoded.charCodeAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
-      const dlat = (result & 1) ? ~(result >> 1) : (result >> 1);
-      lat += dlat;
-      
-      // Decode longitude
-      shift = 0; result = 0;
-      do {
-        b = encoded.charCodeAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
-      const dlng = (result & 1) ? ~(result >> 1) : (result >> 1);
-      lng += dlng;
-      
-      coordinates.push({ latitude: lat / factor, longitude: lng / factor });
-    }
-    return coordinates;
-  };
-
-  // Track previous distance states to detect when constraint is met
-  const prevIsNearPickupRef = useRef(false);
-  const prevIsNearDropoffRef = useRef(false);
-
-  // Check distance to pickup/dropoff and update button states
-  useEffect(() => {
-    if (!driverLocation || !rideData) return;
-
-    const pickupLat = rideData?.start_location?.lat || rideData?.pickup_location?.lat || rideData?.pickup_lat;
-    const pickupLng = rideData?.start_location?.lng || rideData?.pickup_location?.lng || rideData?.pickup_lng;
-    const dropoffLat = rideData?.end_location?.lat || rideData?.dropoff_location?.lat || rideData?.dropoff_lat;
-    const dropoffLng = rideData?.end_location?.lng || rideData?.dropoff_location?.lng || rideData?.dropoff_lng;
-
-    if (phase === 'toPickup' && pickupLat && pickupLng) {
-      const distance = calculateDistance(
-        driverLocation.latitude,
-        driverLocation.longitude,
-        pickupLat,
-        pickupLng
-      );
-      const isNear = distance <= 100; // Within 100 meters
-      
-      // Show popup notification when constraint is met
-      if (isNear && !prevIsNearPickupRef.current) {
-        Alert.alert(
-          'Đã đến gần điểm đón',
-          `Bạn đã đến trong vòng 100m từ điểm đón. Bạn có thể nhận khách ngay bây giờ.`,
-          [{ text: 'OK' }]
-        );
-      }
-      
-      setIsNearPickup(isNear);
-      prevIsNearPickupRef.current = isNear;
-    } else {
-      setIsNearPickup(false);
-      prevIsNearPickupRef.current = false;
-    }
-
-    if (phase === 'toDropoff' && dropoffLat && dropoffLng) {
-      const distance = calculateDistance(
-        driverLocation.latitude,
-        driverLocation.longitude,
-        dropoffLat,
-        dropoffLng
-      );
-      const isNear = distance <= 100; // Within 100 meters
-      
-      // Show popup notification when constraint is met
-      if (isNear && !prevIsNearDropoffRef.current) {
-        Alert.alert(
-          'Đã đến gần điểm đến',
-          `Bạn đã đến trong vòng 100m từ điểm đến. Bạn có thể hoàn thành chuyến đi ngay bây giờ.`,
-          [{ text: 'OK' }]
-        );
-      }
-      
-      setIsNearDropoff(isNear);
-      prevIsNearDropoffRef.current = isNear;
-    } else {
-      setIsNearDropoff(false);
-      prevIsNearDropoffRef.current = false;
-    }
-  }, [driverLocation, rideData, phase]);
-
-  // Update polyline when phase changes
-  useEffect(() => {
-    if (!rideData) return;
-    
-    if (phase === 'toPickup') {
-      const toPickupPolyline = rideData.polyline_from_driver_to_pickup;
-      if (toPickupPolyline) {
-        updateMapPolylineFromEncoded(toPickupPolyline, 'phase-toPickup');
-      }
-    } else if (phase === 'toDropoff') {
-      const ridePolyline = rideData.polyline || rideData.route?.polyline;
-      if (ridePolyline) {
-        updateMapPolylineFromEncoded(ridePolyline, 'phase-toDropoff');
-      }
-    }
-  }, [phase, rideData, updateMapPolylineFromEncoded]);
-
   // Listen to simulation location updates
   useEffect(() => {
+    let lastPolylineUpdate = 0;
+    let lastLogTime = 0;
+    let lastRecenterTime = 0;
+    const polylineUpdateThrottle = 500; // Update polyline every 500ms max
+    const logThrottle = 1000; // Log every 1 second
+    const recenterThrottle = 2000; // Recenter every 2 seconds
+    
     const handleSimulationUpdate = (location) => {
       if (location) {
-        console.log('📍 Simulation update:', location, 'Phase:', simulationPhase);
+        const now = Date.now();
+        
+        // Get simulation state for progress and socket status
+        const simState = locationTrackingService.getSimulationState();
+        const progress = simState?.progress || 0;
+        
+        // Check socket connection status
+        const isSocketConnected = websocketService?.isConnected || false;
+        
+        // Throttle console logs
+        if (now - lastLogTime > logThrottle) {
+          lastLogTime = now;
+        }
+        
         setDriverLocation({ 
           latitude: location.latitude, 
           longitude: location.longitude 
         });
         
-        // Update map to follow driver location (recenter to current position)
-        if (mapRef.current) {
+        // Get pickup location (prioritize request-specific pickup over shared ride start)
+        const pickupLat = rideData?.pickup_location?.lat || rideData?.pickup_lat || rideData?.start_location?.lat;
+        const pickupLng = rideData?.pickup_location?.lng || rideData?.pickup_lng || rideData?.start_location?.lng;
+        
+        // When heading to pickup, detect arrival (~30m)
+        if (phase === 'toPickup' && pickupLat && pickupLng) {
+          try {
+            const d = locationService.calculateDistance(
+              location.latitude,
+              location.longitude,
+              pickupLat,
+              pickupLng
+            );
+            if (d <= 0.03) { // 30 meters
+              setIsSimulating(false);
+              Alert.alert(
+                'Đã tới điểm đón',
+                'Bạn có muốn nhận khách và bắt đầu chuyến đi?',
+                [
+                  { text: 'Hủy', style: 'cancel' },
+                  { text: 'Nhận khách', onPress: () => onStartRide() }
+                ]
+              );
+            }
+          } catch (e) {}
+        }
+        
+        // Update polyline to show only remaining route (trim from current location)
+        // Use fullPolyline as source if available, otherwise use mapPolyline
+        const sourcePolyline = fullPolyline.length > 0 ? fullPolyline : mapPolyline;
+        if (sourcePolyline && sourcePolyline.length > 0 && now - lastPolylineUpdate > polylineUpdateThrottle) {
+          const trimmedPolyline = trimPolylineFromCurrentLocation(
+            sourcePolyline,
+            location,
+            null // targetLocation not needed for trimming
+          );
+          
+          // Only update if polyline actually changed (to avoid unnecessary re-renders)
+          if (trimmedPolyline.length !== mapPolyline.length || 
+              (trimmedPolyline.length > 0 && mapPolyline.length > 0 && 
+               (trimmedPolyline[0].latitude !== mapPolyline[0].latitude || 
+                trimmedPolyline[0].longitude !== mapPolyline[0].longitude))) {
+            setMapPolyline(trimmedPolyline);
+            lastPolylineUpdate = now;
+          }
+        }
+        
+        // Update map to follow driver location (recenter to current position) - throttle this
+        if (mapRef.current && now - lastRecenterTime > recenterThrottle) {
           mapRef.current.animateToRegion({
             latitude: location.latitude,
             longitude: location.longitude,
             latitudeDelta: 0.005,
             longitudeDelta: 0.005,
           }, 1000);
+          lastRecenterTime = now;
         }
       }
-    };
-
-    const handleSimulationComplete = () => {
-      console.log('✅ [Simulation] Simulation completed, phase:', simulationPhase);
-      
-      // If simulation was to pickup, hardcode location to be near pickup (within 100m)
-      if (simulationPhase === 'toPickup' && rideData) {
-        const pickupLat = rideData?.start_location?.lat || rideData?.pickup_location?.lat || rideData?.pickup_lat;
-        const pickupLng = rideData?.start_location?.lng || rideData?.pickup_location?.lng || rideData?.pickup_lng;
-        
-        if (pickupLat && pickupLng) {
-          // Hardcode location to be ~50m away from pickup (within 100m threshold)
-          // Add a small offset (approximately 50 meters in degrees)
-          const offsetLat = 0.00045; // ~50 meters
-          const offsetLng = 0.00045; // ~50 meters
-          
-          const finalLocation = {
-            latitude: pickupLat + offsetLat,
-            longitude: pickupLng + offsetLng,
-          };
-          
-          console.log('📍 [Simulation] Hardcoding location near pickup:', finalLocation);
-          setDriverLocation(finalLocation);
-          
-          // Ensure phase stays as 'toPickup'
-          setPhase('toPickup');
-          
-          Alert.alert(
-            'Đã đến điểm đón',
-            'Giả lập đã hoàn thành. Bạn đã ở gần điểm đón và có thể nhận khách.',
-            [{ text: 'OK' }]
-          );
-        }
-      }
-      
-      setIsSimulating(false);
-      setSimulationPhase(null);
     };
 
     locationTrackingService.setSimulationListener(handleSimulationUpdate);
-    locationTrackingService.setSimulationCompleteListener(handleSimulationComplete);
 
     return () => {
       locationTrackingService.setSimulationListener(null);
-      locationTrackingService.setSimulationCompleteListener(null);
     };
-  }, [simulationPhase, rideData]);
-
-  // Log phase changes for debugging
-  useEffect(() => {
-    console.log('📍 [DriverTracking] Phase changed to:', phase);
-  }, [phase]);
+  }, [phase, rideData, fullPolyline, mapPolyline]);
 
   // Update markers when driver location changes (with throttling)
   useEffect(() => {
@@ -423,63 +317,11 @@ const trackingSubscriptionRef = useRef(null);
   useEffect(() => {
     if (rideId) {
       if (initialRideData) {
-        console.log('📦 RAW initialRideData from backend:', JSON.stringify(initialRideData, null, 2));
-        console.log('📍 Polyline in ride data:', initialRideData.polyline || initialRideData.route?.polyline);
         
         setRideData(initialRideData);
         setLoading(false);
-        if (rideId) {
-          syncTrackingSnapshot(rideId);
-        }
-        
-        // Load CONFIRMED ride requests if not in initialRideData
-        if (!initialRideData.shared_ride_request_id && !initialRideData.ride_requests) {
-          rideService.getRideRequests(rideId, 'CONFIRMED')
-            .then(response => {
-              const requests = response?.data || response?.content || response || [];
-              if (requests.length > 0) {
-                // Update rideData with ride requests
-                const updatedRideData = { ...initialRideData, ride_requests: requests };
-                setRideData(updatedRideData);
-                console.log('✅ [DriverTracking] Loaded CONFIRMED ride requests:', requests.length);
-              }
-            })
-            .catch(error => {
-              console.warn('⚠️ [DriverTracking] Failed to load ride requests:', error);
-            });
-        }
-        
-        // SIMPLE LOGIC: Phase is based ONLY on request status
-        // Get request status from various possible locations
-        let requestStatus = null;
-        
-        // Try to get from ride_requests array (first request)
-        if (initialRideData.ride_requests && initialRideData.ride_requests.length > 0) {
-          requestStatus = initialRideData.ride_requests[0].status || initialRideData.ride_requests[0].request_status;
-        }
-        
-        // Fallback to direct fields
-        if (!requestStatus) {
-          requestStatus = initialRideData.shared_ride_request_status || 
-                         initialRideData.request_status ||
-                         initialRideData.ride_request_status;
-        }
-        
-        // SIMPLE: CONFIRMED = toPickup, ONGOING = toDropoff
-        const phaseToSet = requestStatus === 'CONFIRMED' ? 'toPickup' : 
-                          requestStatus === 'ONGOING' ? 'toDropoff' : 
-                          'toPickup'; // Default to toPickup if status unknown
-        
-        setPhase(phaseToSet);
-        console.log('📍 [DriverTracking] Initial phase set (SIMPLE LOGIC):', {
-          requestStatus,
-          phase: phaseToSet,
-          rawData: {
-            ride_requests: initialRideData.ride_requests,
-            shared_ride_request_status: initialRideData.shared_ride_request_status,
-            request_status: initialRideData.request_status
-          }
-        });
+        // Set initial phase based on status
+        setPhase((initialRideData.status === 'CONFIRMED' || status === 'CONFIRMED' || status === 'SCHEDULED') ? 'toPickup' : 'toDropoff');
         
         // Handle both flat and nested location formats from backend
         const getPickupLat = () => {
@@ -515,6 +357,10 @@ const trackingSubscriptionRef = useRef(null);
           return 'Điểm đến';
         };
         
+        // Set rideData state first so startTrackingService can use it
+        setRideData(initialRideData);
+        setLoading(false); // Stop loading indicator immediately
+        
         activeRideService.saveActiveRide({
           rideId: rideId,
           requestId: initialRideData.shared_ride_request_id,
@@ -531,16 +377,43 @@ const trackingSubscriptionRef = useRef(null);
             name: getDropoffName()
           },
           totalFare: initialRideData.total_fare || initialRideData.totalFare,
-          riderName: initialRideData.rider_name,
+          riderName: initialRideData.rider_name || 
+                     initialRideData.riderName || 
+                     initialRideData.rider?.name ||
+                     initialRideData.rider?.full_name ||
+                     initialRideData.rider?.user?.full_name,
+          rider_name: initialRideData.rider_name || 
+                      initialRideData.riderName || 
+                      initialRideData.rider?.name ||
+                      initialRideData.rider?.full_name ||
+                      initialRideData.rider?.user?.full_name,
           ...initialRideData
         });
+        
+        console.log('👤 [DriverTracking] Rider name extracted:', {
+          riderName: initialRideData.rider_name,
+          fromRiderObject: initialRideData.rider?.name,
+          final: initialRideData.rider_name || initialRideData.riderName || initialRideData.rider?.name || 'N/A'
+        });
+        
         // Prepare polyline for current phase
         const toPickupPolyline = initialRideData.polyline_from_driver_to_pickup;
         const ridePolyline = initialRideData.polyline || initialRideData.route?.polyline;
+        
+        // Decode and set polyline based on current phase
         if (toPickupPolyline && (initialRideData.status === 'CONFIRMED' || status === 'CONFIRMED' || status === 'SCHEDULED')) {
-          updateMapPolylineFromEncoded(toPickupPolyline, 'initial-toPickup');
+          setPickupPolylineString(toPickupPolyline);
+          const decodedPolyline = decodePolyline(toPickupPolyline);
+          setFullPolyline(decodedPolyline); // Store full polyline
+          setMapPolyline(decodedPolyline);
         } else if (ridePolyline) {
-          updateMapPolylineFromEncoded(ridePolyline, 'initial-ride');
+          setRidePolylineString(ridePolyline);
+          const decodedPolyline = decodePolyline(ridePolyline);
+          setFullPolyline(decodedPolyline); // Store full polyline
+          setMapPolyline(decodedPolyline);
+        } else {
+          setFullPolyline([]);
+          setMapPolyline([]); // Clear polyline if none available
         }
         
         // Get current driver location
@@ -552,11 +425,6 @@ const trackingSubscriptionRef = useRef(null);
             });
           }
         }).catch(e => console.error('Failed to get location:', e));
-        
-        // Subscribe to real-time tracking updates
-        setupTrackingSubscription().catch(err =>
-          console.error('❌ [DriverTracking] Failed to initialize tracking subscription:', err)
-        );
       } else {
         loadRideData();
       }
@@ -565,120 +433,11 @@ const trackingSubscriptionRef = useRef(null);
     if (startTracking) {
       startTrackingService();
     }
-    
-    return () => {
-      // Cleanup tracking subscription
-      if (rideId && trackingSubscriptionRef.current) {
-        websocketService.unsubscribeFromRideTracking(rideId);
-        trackingSubscriptionRef.current = null;
-      }
-    };
-  }, [rideId, startTracking, initialRideData, setupTrackingSubscription]);
-
-  useFocusEffect(
-    useCallback(() => {
-      let cancelled = false;
-
-      const restoreSnapshot = async () => {
-        if (!rideId) {
-          return;
-        }
-        const data = await fetchTrackingSnapshot(rideId);
-        if (!cancelled && data) {
-          applyTrackingSnapshot(data);
-        }
-      };
-
-      restoreSnapshot();
-
-      return () => {
-        cancelled = true;
-      };
-    }, [rideId, fetchTrackingSnapshot, applyTrackingSnapshot])
-  );
-  
-  const setupTrackingSubscription = useCallback(async () => {
-    if (!rideId) {
-      console.warn('⚠️ [DriverTracking] Cannot subscribe - rideId missing');
-      return;
-    }
-
-    if (!websocketService.isConnected) {
-      try {
-        console.log('🔌 [DriverTracking] WebSocket not connected. Attempting to connect...');
-        await websocketService.connect();
-        console.log('✅ [DriverTracking] WebSocket reconnected for tracking subscription');
-      } catch (error) {
-        console.error('❌ [DriverTracking] Failed to connect WebSocket for tracking:', error);
-        Alert.alert('Lỗi', 'Không thể kết nối realtime tracking. Vui lòng thử lại.');
-        return;
-      }
-    }
-    
-    try {
-      if (trackingSubscriptionRef.current) {
-        websocketService.unsubscribeFromRideTracking(rideId);
-      }
-
-      const handleTrackingUpdate = (data) => {
-        console.log('📍 [DriverTracking] Real-time tracking update:', JSON.stringify(data, null, 2));
-        
-        if (data.polyline) {
-          updateMapPolylineFromEncoded(data.polyline, 'ws');
-        }
-
-        if (data.currentLat && data.currentLng) {
-          const latitude = parseFloat(data.currentLat);
-          const longitude = parseFloat(data.currentLng);
-          if (!Number.isNaN(latitude) && !Number.isNaN(longitude)) {
-            setDriverLocation({ latitude, longitude });
-          }
-        }
-      };
-      
-      trackingSubscriptionRef.current = websocketService.subscribeToRideTracking(rideId, handleTrackingUpdate);
-      console.log('✅ [DriverTracking] Subscribed to tracking topic for ride:', rideId);
-    } catch (error) {
-      console.error('❌ [DriverTracking] Error subscribing to tracking topic:', error);
-    }
-  }, [rideId, updateMapPolylineFromEncoded]);
-
-  // Update phase when rideData changes (especially request status)
-  useEffect(() => {
-    if (!rideData) return;
-    
-    // Get request status from various possible locations
-    let requestStatus = null;
-    
-    // Try to get from ride_requests array (first request)
-    if (rideData.ride_requests && rideData.ride_requests.length > 0) {
-      requestStatus = rideData.ride_requests[0].status || rideData.ride_requests[0].request_status;
-    }
-    
-    // Fallback to direct fields
-    if (!requestStatus) {
-      requestStatus = rideData.shared_ride_request_status || 
-                     rideData.request_status ||
-                     rideData.ride_request_status;
-    }
-    
-    // SIMPLE: CONFIRMED = toPickup, ONGOING = toDropoff
-    if (requestStatus === 'CONFIRMED') {
-      setPhase('toPickup');
-      console.log('📍 [DriverTracking] Phase updated to toPickup (request is CONFIRMED)');
-    } else if (requestStatus === 'ONGOING') {
-      setPhase('toDropoff');
-      console.log('📍 [DriverTracking] Phase updated to toDropoff (request is ONGOING)');
-    } else {
-      console.warn('⚠️ [DriverTracking] Unknown request status:', requestStatus, 'Defaulting to toPickup');
-      setPhase('toPickup');
-    }
-  }, [rideData]);
+  }, [rideId, startTracking, initialRideData]);
 
   // Auto start tracking when ride is CONFIRMED
   useEffect(() => {
     if (rideData?.status === 'CONFIRMED' && !isTracking) {
-      console.log('Ride confirmed, auto-starting GPS tracking...');
       setTimeout(() => {
         startTrackingService();
       }, 2000);
@@ -690,7 +449,22 @@ const trackingSubscriptionRef = useRef(null);
       setLoading(true);
       const ride = await rideService.getRideById(rideId);
       setRideData(ride);
-      syncTrackingSnapshot(rideId);
+      
+      // Update polyline when ride data is loaded
+      const toPickupPolyline = ride?.polyline_from_driver_to_pickup;
+      const ridePolyline = ride?.polyline || ride?.route?.polyline;
+      
+      if (phase === 'toPickup' && toPickupPolyline) {
+        setPickupPolylineString(toPickupPolyline);
+        const decoded = decodePolyline(toPickupPolyline);
+        setFullPolyline(decoded); // Store full polyline
+        setMapPolyline(decoded);
+      } else if (ridePolyline) {
+        setRidePolylineString(ridePolyline);
+        const decoded = decodePolyline(ridePolyline);
+        setFullPolyline(decoded); // Store full polyline
+        setMapPolyline(decoded);
+      }
     } catch (error) {
       console.error('Failed to load ride data:', error);
       setError('Không thể tải thông tin chuyến đi');
@@ -701,119 +475,128 @@ const trackingSubscriptionRef = useRef(null);
 
   const startTrackingService = async () => {
     try {
-      if (rideData?.status !== 'ONGOING' && rideData?.status !== 'CONFIRMED') {
-        console.warn('⚠️ [DriverTracking] Ride status is not CONFIRMED or ONGOING:', rideData?.status);
+      // Use rideData or fallback to initialRideData
+      const currentStatus = rideData?.status || initialRideData?.status;
+      
+      if (currentStatus !== 'ONGOING' && currentStatus !== 'CONFIRMED' && currentStatus !== 'SCHEDULED') {
         Alert.alert('Chưa thể theo dõi', 'Vui lòng bắt đầu chuyến đi trước khi theo dõi GPS.');
         return;
       }
 
-      console.log('🚀 [DriverTracking] Starting GPS tracking for ride:', rideId);
-      console.log('🚀 [DriverTracking] Ride status:', rideData?.status);
-      console.log('🚀 [DriverTracking] WebSocket connected:', websocketService.isConnected);
-      
       const success = await locationTrackingService.startTracking(rideId);
       if (success) {
         setIsTracking(true);
-        console.log('✅ [DriverTracking] GPS tracking started successfully');
-      } else {
-        console.error('❌ [DriverTracking] Failed to start GPS tracking');
-        Alert.alert('Lỗi', 'Không thể bắt đầu GPS tracking.');
       }
     } catch (error) {
-      console.error('❌ [DriverTracking] Failed to start tracking:', error);
-      Alert.alert('Lỗi', 'Không thể bắt đầu GPS tracking: ' + (error.message || error.toString()));
+      console.error('❌ Failed to start tracking:', error);
+      Alert.alert('Lỗi', 'Không thể bắt đầu GPS tracking: ' + (error?.message || error?.toString()));
     }
   };
 
   const onStartRide = async () => {
-    if (!isNearPickup) {
-      Alert.alert('Chưa đến điểm đón', 'Vui lòng đến gần điểm đón (trong vòng 100m) để nhận khách.');
-      return;
-    }
-
     try {
-      // Get rideRequestId from rideData or fetch from API
-      let rideRequestId = rideData?.shared_ride_request_id || 
-                         rideData?.ride_requests?.[0]?.shared_ride_request_id ||
-                         rideData?.ride_requests?.[0]?.id ||
-                         initialRideData?.shared_ride_request_id;
+      // Check current ride status
+      const currentStatus = rideData?.status || initialRideData?.status;
       
-      // If not found, fetch ride requests filtered by CONFIRMED status
-      if (!rideRequestId) {
-        console.log('📥 [DriverTracking] Fetching CONFIRMED ride requests...');
+      // Step 1: Start the ride ONLY if it's SCHEDULED
+      // When accept without scheduledDepartureTime, ride is already ONGOING
+      if (currentStatus === 'SCHEDULED') {
+        await rideService.startRide(rideId);
+      } else if (currentStatus === 'ONGOING') {
+      } else {
         try {
-          // Call /ride-requests/rides/{rideId}?status=CONFIRMED to get only CONFIRMED requests
-          const requestsResponse = await rideService.getRideRequests(rideId, 'CONFIRMED');
-          const requests = requestsResponse?.data || requestsResponse?.content || requestsResponse || [];
+          // Reload ride data to get latest status from backend
+          const latestRide = await rideService.getRideById(rideId);
           
-          console.log(`📥 [DriverTracking] Found ${requests.length} CONFIRMED requests`);
-          
-          if (requests.length > 0) {
-            // Get the first CONFIRMED request
-            const confirmedRequest = requests[0];
-            rideRequestId = confirmedRequest.shared_ride_request_id || 
-                           confirmedRequest.sharedRideRequestId ||
-                           confirmedRequest.id ||
-                           confirmedRequest.request_id;
-            console.log(`✅ [DriverTracking] Found CONFIRMED request: ${rideRequestId}`);
+          if (latestRide.status === 'ONGOING') {
+            setRideData(latestRide); // Update local state
+          } else if (latestRide.status === 'SCHEDULED') {
+            await rideService.startRide(rideId);
           } else {
-            console.warn('⚠️ [DriverTracking] No CONFIRMED request found');
-            Alert.alert('Lỗi', 'Không tìm thấy yêu cầu chuyến đi ở trạng thái CONFIRMED.');
-            return;
+            try {
+              await rideService.startRide(rideId);
+            } catch (startError) {
+              const errorMsg = startError?.message || startError?.toString() || '';
+              if (errorMsg.includes('ONGOING') || errorMsg.includes('invalid-state') || errorMsg.includes('không hợp lệ')) {
+              } else {
+                throw startError;
+              }
+            }
           }
-        } catch (fetchError) {
-          console.error('❌ [DriverTracking] Failed to fetch ride requests:', fetchError);
-          Alert.alert('Lỗi', 'Không thể tải thông tin yêu cầu chuyến đi: ' + (fetchError.message || fetchError.toString()));
-          return;
+        } catch (verifyError) {
+          const errorMsg = verifyError?.message || verifyError?.toString() || '';
+          if (errorMsg.includes('ONGOING') || errorMsg.includes('invalid-state') || errorMsg.includes('không hợp lệ')) {
+          } else {
+          }
         }
       }
       
-      if (!rideRequestId) {
-        Alert.alert('Lỗi', 'Không tìm thấy thông tin yêu cầu chuyến đi. Vui lòng thử lại.');
-        console.warn('⚠️ No rideRequestId found after fetching');
-        return;
+      // IMPORTANT: Ensure location tracking is sending to backend and flush latest point
+      if (driverLocation) {
+        locationTrackingService.setSimulationLocalOnly(false); // Ensure simulation sends to server
+        await locationTrackingService.sendLatestPointNow(); // Flush latest point
+        await new Promise(resolve => setTimeout(resolve, 3000)); // Increase to 3 seconds
       }
-
-      console.log(`🚀 [DriverTracking] Starting ride request ${rideRequestId} for ride ${rideId}`);
-      const response = await rideService.startRideRequestOfRide(rideId, rideRequestId);
-      console.log(`✅ Started ride request ${rideRequestId} for ride ${rideId}`, response);
       
-      // Update rideData with response if available
-      if (response) {
-        // Update the request status in rideData
-        const updatedRideData = { ...rideData };
-        if (updatedRideData.ride_requests && updatedRideData.ride_requests.length > 0) {
-          updatedRideData.ride_requests[0].status = 'ONGOING';
+      // Get rideRequestId from rideData or initialRideData
+      const rideRequestId = rideData?.shared_ride_request_id || 
+                           rideData?.ride_requests?.[0]?.shared_ride_request_id ||
+                           initialRideData?.shared_ride_request_id;
+      
+      if (rideRequestId) {
+        try {
+          await rideService.startRideRequestOfRide(rideId, rideRequestId);
+        } catch (startReqError) {
+          const errorMsg = startReqError?.message || startReqError?.toString() || '';
+          if (errorMsg.includes('too far') || errorMsg.includes('distance')) {
+            console.error('❌ Driver too far from pickup. Current location:', driverLocation);
+            Alert.alert(
+              'Quá xa điểm đón',
+              'Vị trí hiện tại của bạn quá xa điểm đón. Vui lòng đợi thêm vài giây để GPS cập nhật vị trí, hoặc thử lại sau.',
+              [{ text: 'OK' }]
+            );
+            throw startReqError;
+          }
+          throw startReqError;
         }
-        updatedRideData.shared_ride_request_status = 'ONGOING';
-        setRideData(updatedRideData);
+      } else {
       }
       
       // Switch to dropoff phase and update polyline
       setPhase('toDropoff');
-      
       const ridePolyline = rideData?.polyline || rideData?.route?.polyline;
       if (ridePolyline) {
-        updateMapPolylineFromEncoded(ridePolyline, 'start-request');
+        setRidePolylineString(ridePolyline);
+        const decodedPolyline = decodePolyline(ridePolyline);
+        setFullPolyline(decodedPolyline); // Store full polyline
+        setMapPolyline(decodedPolyline);
+      } else {
+        setFullPolyline([]);
+        setMapPolyline([]); // Clear polyline if none available
       }
       
-      // Update active ride service
-      await activeRideService.updateActiveRideStatus('ONGOING');
+      // Reload ride data to get latest polyline
+      try {
+        const updatedRide = await rideService.getRideById(rideId);
+        setRideData(updatedRide);
+        const updatedPolyline = updatedRide?.polyline || updatedRide?.route?.polyline;
+        if (updatedPolyline) {
+          setRidePolylineString(updatedPolyline);
+          const decoded = decodePolyline(updatedPolyline);
+          setFullPolyline(decoded); // Store full polyline
+          setMapPolyline(decoded);
+        }
+      } catch (e) {
+      }
       
       // Ensure tracking stays on
       if (!isTracking) await startTrackingService();
       
-      // Stop simulation if running
-      if (isSimulating) {
-        locationTrackingService.stopSimulation();
-        setIsSimulating(false);
-        setSimulationPhase(null);
-      }
-      
       Alert.alert('Đã nhận khách', 'Bắt đầu di chuyển đến điểm đến.');
     } catch (e) {
-      console.error('Start ride request error:', e);
-      Alert.alert('Lỗi', 'Không thể nhận khách: ' + (e.message || e.toString()));
+      console.error('Start ride error:', e);
+      const errorMsg = e?.message || e?.toString() || 'Không xác định';
+      Alert.alert('Lỗi', 'Không thể bắt đầu chuyến đi: ' + errorMsg);
     }
   };
 
@@ -827,16 +610,16 @@ const trackingSubscriptionRef = useRef(null);
         points.push({ latitude: driverLocation.latitude, longitude: driverLocation.longitude });
       }
       
-      // Add pickup location (handle both formats)
-      const pickupLat = rideData?.start_location?.lat || rideData?.pickup_location?.lat || rideData?.pickup_lat;
-      const pickupLng = rideData?.start_location?.lng || rideData?.pickup_location?.lng || rideData?.pickup_lng;
+      // Add pickup location (prioritize request-specific pickup over shared ride start)
+      const pickupLat = rideData?.pickup_location?.lat || rideData?.pickup_lat || rideData?.start_location?.lat;
+      const pickupLng = rideData?.pickup_location?.lng || rideData?.pickup_lng || rideData?.start_location?.lng;
       if (pickupLat && pickupLng) {
         points.push({ latitude: pickupLat, longitude: pickupLng });
       }
       
-      // Add dropoff location (handle both formats)
-      const dropoffLat = rideData?.end_location?.lat || rideData?.dropoff_location?.lat || rideData?.dropoff_lat;
-      const dropoffLng = rideData?.end_location?.lng || rideData?.dropoff_location?.lng || rideData?.dropoff_lng;
+      // Add dropoff location (prioritize request-specific dropoff over shared ride end)
+      const dropoffLat = rideData?.dropoff_location?.lat || rideData?.dropoff_lat || rideData?.end_location?.lat;
+      const dropoffLng = rideData?.dropoff_location?.lng || rideData?.dropoff_lng || rideData?.end_location?.lng;
       if (dropoffLat && dropoffLng) {
         points.push({ latitude: dropoffLat, longitude: dropoffLng });
       }
@@ -858,11 +641,6 @@ const trackingSubscriptionRef = useRef(null);
   };
 
   const completeRide = async () => {
-    if (!isNearDropoff) {
-      Alert.alert('Chưa đến điểm đến', 'Vui lòng đến gần điểm đến (trong vòng 100m) để hoàn thành chuyến đi.');
-      return;
-    }
-
     try {
       Alert.alert('Hoàn thành chuyến đi', 'Bạn có chắc chắn muốn hoàn thành?', [
         { text: 'Hủy', style: 'cancel' },
@@ -870,84 +648,86 @@ const trackingSubscriptionRef = useRef(null);
           text: 'Xác nhận',
           onPress: async () => {
             try {
-              // Get rideRequestId from rideData (should be ONGOING request)
-              let rideRequestId = rideData?.shared_ride_request_id || 
-                                 rideData?.ride_requests?.[0]?.shared_ride_request_id ||
-                                 rideData?.ride_requests?.[0]?.id ||
-                                 initialRideData?.shared_ride_request_id;
+              // Step 1: Complete all ride requests first (ONGOING -> COMPLETED)
+              // Get rideRequestId from rideData
+              const rideRequestId = rideData?.shared_ride_request_id || 
+                                   rideData?.ride_requests?.[0]?.shared_ride_request_id ||
+                                   initialRideData?.shared_ride_request_id;
               
-              // If not found, fetch ONGOING ride requests
-              if (!rideRequestId) {
-                console.log('📥 [DriverTracking] Fetching ONGOING ride requests...');
+              if (rideRequestId) {
                 try {
-                  const requestsResponse = await rideService.getRideRequests(rideId, 'ONGOING');
-                  const requests = requestsResponse?.data || requestsResponse?.content || requestsResponse || [];
-                  
-                  console.log(`📥 [DriverTracking] Found ${requests.length} ONGOING requests`);
-                  
-                  if (requests.length > 0) {
-                    // Get the first ONGOING request
-                    const ongoingRequest = requests[0];
-                    rideRequestId = ongoingRequest.shared_ride_request_id || 
-                                   ongoingRequest.sharedRideRequestId ||
-                                   ongoingRequest.id ||
-                                   ongoingRequest.request_id;
-                    console.log(`✅ [DriverTracking] Found ONGOING request: ${rideRequestId}`);
-                  } else {
-                    console.warn('⚠️ [DriverTracking] No ONGOING request found');
-                    Alert.alert('Lỗi', 'Không tìm thấy yêu cầu chuyến đi ở trạng thái ONGOING.');
-                    return;
-                  }
-                } catch (fetchError) {
-                  console.error('❌ [DriverTracking] Failed to fetch ride requests:', fetchError);
-                  Alert.alert('Lỗi', 'Không thể tải thông tin yêu cầu chuyến đi: ' + (fetchError.message || fetchError.toString()));
-                  return;
+                  await rideService.completeRideRequestOfRide(rideId, rideRequestId);
+                } catch (reqError) {
+                  // Continue anyway - request might already be completed
                 }
+              } else {
               }
               
-              if (!rideRequestId) {
-                Alert.alert('Lỗi', 'Không tìm thấy thông tin yêu cầu chuyến đi. Vui lòng thử lại.');
-                console.warn('⚠️ No rideRequestId found after fetching');
-                return;
-              }
-
-              // Complete the ride request (ONGOING -> COMPLETED)
-              console.log(`🚀 [DriverTracking] Completing ride request ${rideRequestId} for ride ${rideId}`);
-              const response = await rideService.completeRideRequestOfRide(rideId, rideRequestId);
-              console.log(`✅ Completed ride request ${rideRequestId} for ride ${rideId}`, response);
-              
-              // Update rideData with response if available
-              if (response) {
-                const updatedRideData = { ...rideData };
-                if (updatedRideData.ride_requests && updatedRideData.ride_requests.length > 0) {
-                  updatedRideData.ride_requests[0].status = 'COMPLETED';
-                }
-                updatedRideData.shared_ride_request_status = 'COMPLETED';
-                setRideData(updatedRideData);
+              // Đảm bảo backend có vị trí mới nhất trước khi complete
+              try {
+                locationTrackingService.setSimulationLocalOnly(false);
+                await locationTrackingService.sendLatestPointNow();
+                await new Promise(resolve => setTimeout(resolve, 2000));
+              } catch (flushError) {
               }
               
-              // Stop tracking
-              await locationTrackingService.stopTracking();
-              setIsTracking(false);
+              // Step 2: Complete the ride (only works if all requests are COMPLETED)
+              // completeRide will automatically:
+              // 1. Get all ride requests via getRideRequests(rideId)
+              // 2. Complete any ONGOING requests first
+              // 3. Then complete the ride
+              await rideService.completeRide(rideId);
               
-              // Stop simulation if running
-              if (isSimulating) {
+              // Stop simulation/tracking once ride is done
+              try {
                 locationTrackingService.stopSimulation();
                 setIsSimulating(false);
-                setSimulationPhase(null);
+              } catch (simErr) {
+              }
+              try {
+                await locationTrackingService.stopTracking();
+                setIsTracking(false);
+              } catch (stopErr) {
               }
               
-              // Clear active ride
+              // Disconnect WebSocket after ride completion
+              try {
+                if (websocketService.isConnected) {
+                  websocketService.disconnect();
+                }
+              } catch (wsErr) {
+              }
+              
               await activeRideService.clearActiveRide();
               
-              // Navigate to completion screen with response data
-              navigation.navigate('DriverCompletion', {
-                completionData: response,
-              });
+              Alert.alert('Thành công', 'Chuyến đi đã hoàn thành.', [
+                { text: 'OK', onPress: () => navigation.goBack() }
+              ]);
             } catch (completeError) {
-              console.error('Error completing ride request:', completeError);
-              const errorMsg = completeError?.message || completeError?.toString() || 'Không thể hoàn thành yêu cầu chuyến đi';
-              Alert.alert('Lỗi', errorMsg);
+              console.error('❌ Error completing ride:', completeError);
+              const backendId = completeError?.data?.error?.id || '';
+              const backendMsg = completeError?.data?.error?.message;
+              const errorMsg = backendMsg || completeError?.message || completeError?.toString() || 'Không thể hoàn thành chuyến đi';
+              
+              // Check if error is about active requests
+              if (backendId === 'ride.validation.active-requests' ||
+                  errorMsg.includes('awaiting pickup/dropoff') || 
+                  errorMsg.includes('active-requests') ||
+                  errorMsg.includes('still awaiting')) {
+                Alert.alert(
+                  'Chưa thể hoàn thành', 
+                  'Vui lòng hoàn thành tất cả các yêu cầu chuyến đi trước khi hoàn thành chuyến đi.',
+                  [{ text: 'OK' }]
+                );
+              } else if (backendId === 'ride.validation.driver-too-far' || errorMsg.includes('too far')) {
+                Alert.alert(
+                  'Chưa thể hoàn thành',
+                  'Vị trí hiện tại của bạn chưa ở gần điểm thả khách. Vui lòng di chuyển gần điểm trả và thử lại.',
+                  [{ text: 'OK' }]
+                );
+              } else {
+                Alert.alert('Lỗi', errorMsg);
+              }
             }
           }
         }
@@ -958,173 +738,59 @@ const trackingSubscriptionRef = useRef(null);
     }
   };
 
-  // Simulate to pickup - sends 2 coordinates (current location and pickup) to tracking endpoint
-  const simulateToPickup = async () => {
+  const handleStartSimulation = () => {
     try {
-      if (!driverLocation) {
-        Alert.alert('Lỗi', 'Không có vị trí hiện tại của tài xế.');
-        return;
-      }
-
-      const pickupLat = rideData?.start_location?.lat || rideData?.pickup_location?.lat || rideData?.pickup_lat;
-      const pickupLng = rideData?.start_location?.lng || rideData?.pickup_location?.lng || rideData?.pickup_lng;
-      
-      if (!pickupLat || !pickupLng) {
-        Alert.alert('Lỗi', 'Không có thông tin điểm đón.');
-        return;
-      }
-
-      console.log('🚀 [Simulation] Sending 2 coordinates to pickup');
-      console.log('🚀 [Simulation] Current location:', driverLocation);
-      console.log('🚀 [Simulation] Pickup location:', { lat: pickupLat, lng: pickupLng });
-
-      // Hardcode final location to be ~50m away from pickup (within 100m threshold)
-      const offsetLat = 0.00045; // ~50 meters
-      const offsetLng = 0.00045; // ~50 meters
-      const finalPickupLocation = {
-        latitude: pickupLat + offsetLat,
-        longitude: pickupLng + offsetLng,
-      };
-
-      // Prepare 2 coordinates: current location and pickup location
-      const coordinates = [
-        {
-          lat: driverLocation.latitude,
-          lng: driverLocation.longitude,
-          timestamp: new Date().toISOString()
-        },
-        {
-          lat: finalPickupLocation.latitude,
-          lng: finalPickupLocation.longitude,
-          timestamp: new Date().toISOString()
-        }
-      ];
-
-      const sendCoordinatesViaWebSocket = async () => {
-        const wsDestination = `/app/ride.track.${rideId}`;
-
-        if (!websocketService.isConnected || !websocketService.client) {
-          console.warn('🔌 [Simulation] WebSocket not connected. Attempting to reconnect before sending coordinates...');
-          await websocketService.connect();
-        }
-
-        if (!websocketService.isConnected || !websocketService.client) {
-          throw new Error('Không thể kết nối realtime tracking để gửi tọa độ.');
-        }
-
-        websocketService.client.publish({
-          destination: wsDestination,
-          body: JSON.stringify(coordinates),
-        });
-        console.log('✅ [Simulation] Sent 2 coordinates via WebSocket');
-      };
-
-      await sendCoordinatesViaWebSocket();
-
-      // Update driver location to final pickup location
-      setDriverLocation(finalPickupLocation);
-      
-      // Ensure phase stays as 'toPickup'
-      setPhase('toPickup');
-      
-      setIsSimulating(false);
-      setSimulationPhase(null);
-      setIsTracking(true);
-
-      Alert.alert(
-        'Đã đến điểm đón',
-        'Giả lập đã hoàn thành. Bạn đã ở gần điểm đón và có thể nhận khách.',
-        [{ text: 'OK' }]
-      );
-    } catch (e) {
-      console.error('Simulation to pickup error:', e);
-      Alert.alert('Lỗi', 'Không thể bắt đầu giả lập: ' + (e.message || e.toString()));
-    }
-  };
-
-  // Simulate pickup to dropoff - decodes polyline with precision=5 and sends GPS data every 1 second
-  const simulateToDropoff = async () => {
-    try {
-      if (!driverLocation) {
-        Alert.alert('Lỗi', 'Không có vị trí hiện tại của tài xế.');
-        return;
-      }
-
-      const pickupLat = rideData?.start_location?.lat || rideData?.pickup_location?.lat || rideData?.pickup_lat;
-      const pickupLng = rideData?.start_location?.lng || rideData?.pickup_location?.lng || rideData?.pickup_lng;
-      const dropoffLat = rideData?.end_location?.lat || rideData?.dropoff_location?.lat || rideData?.dropoff_lat;
-      const dropoffLng = rideData?.end_location?.lng || rideData?.dropoff_location?.lng || rideData?.dropoff_lng;
+      // Extract coordinates - PRIORITIZE pickup_location/dropoff_location (from accept request) over start_location/end_location (from ride)
+      // pickup_location = specific request pickup (e.g. 444 Lê Văn Việt)
+      // start_location = shared ride start (e.g. 123 Lê Văn Việt - driver's original pickup)
+      const pickupLat = rideData?.pickup_location?.lat || rideData?.pickup_lat || rideData?.start_location?.lat;
+      const pickupLng = rideData?.pickup_location?.lng || rideData?.pickup_lng || rideData?.start_location?.lng;
+      const dropoffLat = rideData?.dropoff_location?.lat || rideData?.dropoff_lat || rideData?.end_location?.lat;
+      const dropoffLng = rideData?.dropoff_location?.lng || rideData?.dropoff_lng || rideData?.end_location?.lng;
       
       if (!pickupLat || !pickupLng || !dropoffLat || !dropoffLng) {
-        Alert.alert('Lỗi', 'Không có thông tin địa điểm.');
+        Alert.alert('Lỗi', 'Không có thông tin địa điểm. Vui lòng thử lại sau.');
+        console.error('❌ Missing location data:', { pickupLat, pickupLng, dropoffLat, dropoffLng, rideData });
         return;
       }
-
-      // Check initial distance to dropoff
-      const initialDistance = calculateDistance(
-        driverLocation.latitude,
-        driverLocation.longitude,
-        dropoffLat,
-        dropoffLng
-      );
       
-      if (initialDistance < 100) {
-        Alert.alert('Đã gần điểm đến', 'Bạn đã ở trong vòng 100m từ điểm đến. Không cần giả lập.');
-        return;
-      }
-
-      // Get polyline from ride request
-      const rideRequestId = rideData?.shared_ride_request_id || 
-                           rideData?.ride_requests?.[0]?.shared_ride_request_id ||
-                           initialRideData?.shared_ride_request_id;
+      const polylineToPickup = pickupPolylineString || rideData?.polyline_from_driver_to_pickup;
+      const ridePolyline = ridePolylineString || rideData?.polyline || rideData?.route?.polyline;
+      const usePolyline = (phase === 'toPickup') ? polylineToPickup : ridePolyline;
       
-      let polyline = rideData?.polyline || rideData?.route?.polyline;
+      // Với phase toPickup: không gửi WS (localOnly=true) để tránh backend báo "Ride not ongoing"
+      // Chỉ bật gửi (localOnly=false) khi ride đã ONGOING hoặc sang phase toDropoff
+      const simulationConfig = {
+        start: (phase === 'toPickup')
+          ? (driverLocation ? { lat: driverLocation.latitude, lng: driverLocation.longitude } : { lat: pickupLat, lng: pickupLng })
+          : { lat: pickupLat, lng: pickupLng },
+        end: (phase === 'toPickup')
+          ? { lat: pickupLat, lng: pickupLng }
+          : { lat: dropoffLat, lng: dropoffLng },
+        speedMps: 80, // Use fast speed from service default
+        localOnly: (phase === 'toPickup'),
+        polyline: usePolyline || undefined, // Pass polyline if available, undefined if not
+      };
       
-      // If no polyline in rideData, try to get from request details
-      if (!polyline && rideRequestId) {
-        try {
-          const requestDetails = await rideService.getRequestDetails(rideRequestId);
-          polyline = requestDetails.polyline || requestDetails.route?.polyline;
-        } catch (e) {
-          console.warn('Failed to fetch request details for polyline:', e);
-        }
-      }
-
-      console.log('🚀 [Simulation] Starting simulation pickup to dropoff');
-      console.log('🚀 [Simulation] Pickup:', { lat: pickupLat, lng: pickupLng });
-      console.log('🚀 [Simulation] Dropoff:', { lat: dropoffLat, lng: dropoffLng });
-      console.log('🚀 [Simulation] Polyline:', polyline ? `Yes (${polyline.length} chars)` : 'No');
-
-      if (polyline) {
-        // Decode polyline with precision=5
-        const decodedPoints = decodePolyline(polyline, 5);
-        console.log(`✅ [Simulation] Decoded ${decodedPoints.length} points from polyline`);
-
-        // Start simulation that sends GPS data every 1 second
-        locationTrackingService.startSimulationWithPolyline({
-          points: decodedPoints,
-          rideId: rideId,
-          intervalMs: 1000, // 1 second interval
-          localOnly: false, // Send GPS data to backend
-        });
-      } else {
-        // Fallback to straight line simulation
-        const simulationConfig = {
-          start: { lat: pickupLat, lng: pickupLng },
-          end: { lat: dropoffLat, lng: dropoffLng },
-          speedMps: 20, // Faster speed for demo
-          localOnly: false,
-        };
-        locationTrackingService.startSimulation(simulationConfig);
-      }
-
+      locationTrackingService.startSimulation(simulationConfig);
       setIsSimulating(true);
-      setSimulationPhase('toDropoff');
       setIsTracking(true);
-
-      Alert.alert('Bắt đầu giả lập', 'Đang mô phỏng di chuyển đến điểm đến...');
+      
+      // Recenter map to driver location after starting simulation
+      setTimeout(() => {
+        if (driverLocation && mapRef.current) {
+          mapRef.current.animateToRegion({
+            latitude: driverLocation.latitude,
+            longitude: driverLocation.longitude,
+            latitudeDelta: 0.005,
+            longitudeDelta: 0.005,
+          }, 1000);
+        }
+      }, 500);
+      
+      Alert.alert('Bắt đầu giả lập', usePolyline ? 'Đang mô phỏng theo lộ trình...' : 'Đang mô phỏng di chuyển...');
     } catch (e) {
-      console.error('Simulation to dropoff error:', e);
+      console.error('Simulation error:', e);
       Alert.alert('Lỗi', 'Không thể bắt đầu giả lập');
     }
   };
@@ -1132,9 +798,34 @@ const trackingSubscriptionRef = useRef(null);
   const handleStopSimulation = () => {
     locationTrackingService.stopSimulation();
     setIsSimulating(false);
-    setSimulationPhase(null);
     setIsTracking(false);
     Alert.alert('Đã dừng', 'Đã dừng giả lập.');
+  };
+
+  const handleCallRider = () => {
+    // Try to get phone from multiple possible sources
+    const phoneNumber = 
+      rideData?.rider?.phone ||               // From rider object
+      rideData?.rider?.user?.phone ||         // Nested in user object
+      rideData?.rider_phone ||                // Flat field in ride
+      rideData?.rider_user?.phone ||          // Another possible structure
+      rideData?.phone ||                      // Direct phone field
+      rideData?.user?.phone ||                // From user object
+      rideData?.customer?.phone ||            // Alternative naming (customer)
+      rideData?.customer?.user?.phone;        // Nested customer.user
+    
+    if (phoneNumber) {
+      Linking.openURL(`tel:${phoneNumber}`);
+    } else {
+      // Debug: log available data structure
+      console.error('❌ Cannot find rider phone number');
+      console.error('rideData:', JSON.stringify(rideData, null, 2));
+      console.error('rideData.rider:', JSON.stringify(rideData?.rider, null, 2));
+      Alert.alert(
+        'Thông báo', 
+        'Không có số điện thoại hành khách. Vui lòng liên hệ qua tin nhắn hoặc thông báo cho admin.'
+      );
+    }
   };
 
   if (loading) {
@@ -1159,23 +850,23 @@ const trackingSubscriptionRef = useRef(null);
     );
   }
 
-  // Handle both start_location/end_location (from getRideById) and pickup_location/dropoff_location (from accept response)
+  // PRIORITIZE pickup_location (request-specific) over start_location (shared ride start)
   const getPickupLat = () => 
-    rideData?.start_location?.lat || 
     rideData?.pickup_location?.lat || 
-    rideData?.pickup_lat;
+    rideData?.pickup_lat || 
+    rideData?.start_location?.lat;
   const getPickupLng = () => 
-    rideData?.start_location?.lng || 
     rideData?.pickup_location?.lng || 
-    rideData?.pickup_lng;
+    rideData?.pickup_lng || 
+    rideData?.start_location?.lng;
   const getDropoffLat = () => 
-    rideData?.end_location?.lat || 
     rideData?.dropoff_location?.lat || 
-    rideData?.dropoff_lat;
+    rideData?.dropoff_lat || 
+    rideData?.end_location?.lat;
   const getDropoffLng = () => 
-    rideData?.end_location?.lng || 
     rideData?.dropoff_location?.lng || 
-    rideData?.dropoff_lng;
+    rideData?.dropoff_lng || 
+    rideData?.end_location?.lng;
 
   // Build markers array
   const markers = [];
@@ -1262,32 +953,12 @@ const trackingSubscriptionRef = useRef(null);
           <Icon name="my-location" size={22} color="#333" />
         </TouchableOpacity>
 
-        {/* Simulation + Action Controls - Above bottom sheet */}
+        {/* Simulation + Start Ride Controls - Above bottom sheet */}
         <View style={styles.simulationControls}>
-          {!isSimulating && phase === 'toPickup' && (
-            <>
-              <TouchableOpacity style={styles.simBtn} onPress={simulateToPickup}>
-                <Icon name="play-circle-outline" size={20} color="#4CAF50" />
-                <Text style={styles.simBtnText}>Giả lập tới điểm đón</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[
-                  styles.simBtn, 
-                  { marginTop: 8 },
-                  !isNearPickup && styles.simBtnDisabled
-                ]} 
-                onPress={onStartRide}
-                disabled={!isNearPickup}
-              >
-                <Icon name="hail" size={20} color={isNearPickup ? "#4CAF50" : "#999"} />
-                <Text style={[styles.simBtnText, !isNearPickup && { color: '#999' }]}>Đón khách</Text>
-              </TouchableOpacity>
-            </>
-          )}
-          {!isSimulating && phase === 'toDropoff' && (
-            <TouchableOpacity style={styles.simBtn} onPress={simulateToDropoff}>
+          {!isSimulating && (
+            <TouchableOpacity style={styles.simBtn} onPress={handleStartSimulation}>
               <Icon name="play-circle-outline" size={20} color="#4CAF50" />
-              <Text style={styles.simBtnText}>Giả lập tới điểm đến</Text>
+              <Text style={styles.simBtnText}>{phase === 'toPickup' ? 'Giả lập tới điểm đón' : 'Giả lập tới điểm đến'}</Text>
             </TouchableOpacity>
           )}
           {isSimulating && (
@@ -1296,15 +967,13 @@ const trackingSubscriptionRef = useRef(null);
               <Text style={[styles.simBtnText, { color: '#fff' }]}>Tắt giả lập</Text>
             </TouchableOpacity>
           )}
+          {phase === 'toPickup' && !isSimulating && (
+            <TouchableOpacity style={[styles.simBtn, { marginTop: 8 }]} onPress={onStartRide}>
+              <Icon name="hail" size={20} color="#4CAF50" />
+              <Text style={styles.simBtnText}>Nhận khách</Text>
+            </TouchableOpacity>
+          )}
         </View>
-
-        <SOSButton
-          onTrigger={handleTriggerDriverSOS}
-          disabled={loading}
-          size={60}
-          showCaption={false}
-          style={styles.sosButton}
-        />
       </View>
 
       {/* Bottom Sheet */}
@@ -1325,7 +994,17 @@ const trackingSubscriptionRef = useRef(null);
               
               <View style={styles.infoRow}>
                 <Icon name="person" size={20} color="#666" />
-                <Text style={styles.infoText}>{rideData?.rider_name || 'N/A'}</Text>
+                <Text style={styles.infoText}>
+                  {rideData?.rider_name || 
+                   rideData?.riderName || 
+                   rideData?.rider?.name ||
+                   rideData?.rider?.full_name ||
+                   rideData?.rider?.user?.full_name ||
+                   'Hành khách'}
+                </Text>
+                <TouchableOpacity style={styles.callBtn} onPress={handleCallRider}>
+                  <Icon name="phone" size={20} color="#4CAF50" />
+                </TouchableOpacity>
               </View>
 
               <View style={styles.infoRow}>
@@ -1352,44 +1031,10 @@ const trackingSubscriptionRef = useRef(null);
             </View>
 
             {/* Action Button */}
-            {(() => {
-              console.log('🔘 [DriverTracking] Rendering button, phase:', phase, 'isNearPickup:', isNearPickup, 'isNearDropoff:', isNearDropoff);
-              if (phase === 'toPickup') {
-                return (
-                  <TouchableOpacity 
-                    style={[
-                      styles.completeBtn, 
-                      !isNearPickup && styles.completeBtnDisabled
-                    ]} 
-                    onPress={onStartRide}
-                    disabled={!isNearPickup}
-                  >
-                    <Icon name="hail" size={24} color={isNearPickup ? "white" : "#999"} />
-                    <Text style={[
-                      styles.completeBtnText,
-                      !isNearPickup && { color: '#999' }
-                    ]}>Đón khách</Text>
-                  </TouchableOpacity>
-                );
-              } else {
-                return (
-                  <TouchableOpacity 
-                    style={[
-                      styles.completeBtn, 
-                      !isNearDropoff && styles.completeBtnDisabled
-                    ]} 
-                    onPress={completeRide}
-                    disabled={!isNearDropoff}
-                  >
-                    <Icon name="check-circle" size={24} color={isNearDropoff ? "white" : "#999"} />
-                    <Text style={[
-                      styles.completeBtnText,
-                      !isNearDropoff && { color: '#999' }
-                    ]}>Hoàn thành chuyến đi</Text>
-                  </TouchableOpacity>
-                );
-              }
-            })()}
+            <TouchableOpacity style={styles.completeBtn} onPress={completeRide}>
+              <Icon name="check-circle" size={24} color="white" />
+              <Text style={styles.completeBtnText}>Hoàn thành chuyến đi</Text>
+            </TouchableOpacity>
           </>
         )}
       </Animated.View>
@@ -1492,12 +1137,6 @@ const styles = StyleSheet.create({
     zIndex: 1000,
     elevation: 10,
   },
-  sosButton: {
-    position: 'absolute',
-    right: 16,
-    top: 110,
-    zIndex: 1200,
-  },
   simBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1519,10 +1158,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#4CAF50',
-  },
-  simBtnDisabled: {
-    backgroundColor: '#f5f5f5',
-    opacity: 0.6,
   },
   bottomSheet: {
     position: 'absolute',
@@ -1570,6 +1205,12 @@ const styles = StyleSheet.create({
     marginLeft: 12,
     flex: 1,
   },
+  callBtn: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: '#E8F5E9',
+    marginLeft: 8,
+  },
   completeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1590,10 +1231,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     marginLeft: 8,
-  },
-  completeBtnDisabled: {
-    backgroundColor: '#e0e0e0',
-    opacity: 0.6,
   },
 });
 

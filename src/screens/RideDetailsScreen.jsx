@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,876 +8,838 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
-  Modal,
-  TextInput,
+  StatusBar,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import ModernButton from '../components/ModernButton';
-import CleanCard from '../components/ui/CleanCard';
+import * as Animatable from 'react-native-animatable';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 import rideService from '../services/rideService';
-import websocketService from '../services/websocketService';
+import ratingService from '../services/ratingService';
+import { SoftBackHeader } from '../components/ui/GlassHeader.jsx';
+import CleanCard from '../components/ui/CleanCard.jsx';
+import AppBackground from '../components/layout/AppBackground.jsx';
 import { colors } from '../theme/designTokens';
 
 const RideDetailsScreen = ({ navigation, route }) => {
-  const { rideId } = route?.params || {};
-  const [ride, setRide] = useState(null);
+  const insets = useSafeAreaInsets();
+  const { ride: initialRide, rideId, requestId } = route.params || {};
+  const [ride, setRide] = useState(initialRide || null);
+  const [rideData, setRideData] = useState(null);
+  const [requestData, setRequestData] = useState(null);
   const [loading, setLoading] = useState(true);
-  
-  console.log('RideDetailsScreen mounted with rideId:', rideId);
-  const [showJoinModal, setShowJoinModal] = useState(false);
-  const [joining, setJoining] = useState(false);
-  const [quote, setQuote] = useState(null);
-  const [notes, setNotes] = useState('');
-
+  const [rating, setRating] = useState(null);
 
   useEffect(() => {
-    const init = async () => {
-      if (rideId) {
-        await loadRideDetails();
-      }
-    };
-    
-    init();
-    
-    // Setup WebSocket listener for join request status updates
-    setupWebSocketListener();
-    
-    return () => {
-      // Cleanup WebSocket subscription if needed
-    };
-  }, [rideId]);
-  
-  const setupWebSocketListener = () => {
-    // Only subscribe if WebSocket is not already connected (to avoid duplicate subscriptions)
-    // The HomeScreen already has a global subscription, but we can add a local one for this screen
-    try {
-      const handleJoinRequestUpdate = (data) => {
-        console.log('📨 [RideDetailsScreen] Join request status update:', JSON.stringify(data, null, 2));
-        console.log('📨 [RideDetailsScreen] Status:', data.status, 'RequestId:', data.requestId, 'RideId:', data.rideId);
-        
-        const currentRideId = ride?.shared_ride_id || ride?.sharedRideId || rideId;
-        
-        // Only handle updates for this ride
-        if (data.rideId && data.rideId.toString() !== currentRideId?.toString()) {
-          console.log('📨 [RideDetailsScreen] Update not for this ride, ignoring');
-          return;
-        }
-        
-        const requestId = data.requestId || data.sharedRideRequestId;
-        const driverName = data.driverName || 'N/A';
-        
-        switch (data.status) {
-          case 'JOIN_REQUEST_ACCEPTED':
-          case 'ACCEPTED':
-            console.log('✅ [RideDetailsScreen] Join request accepted!');
-            Alert.alert(
-              'Yêu cầu được chấp nhận!',
-              data.message || `Tài xế ${driverName} đã chấp nhận yêu cầu tham gia chuyến đi của bạn.`,
-              [
-                {
-                  text: 'Theo dõi chuyến đi',
-                  onPress: () => {
-                    navigation.navigate('RideTracking', {
-                      rideId: data.rideId || currentRideId,
-                      requestId: requestId,
-                      driverInfo: {
-                        driverName: driverName,
-                        driverRating: data.driverRating || 4.8,
-                        vehicleModel: data.vehicleModel || '',
-                        vehiclePlate: data.vehiclePlate || '',
-                        totalFare: data.totalFare || data.fareAmount || 0,
-                        pickupLat: data.pickupLat || data.pickupLocation?.lat,
-                        pickupLng: data.pickupLng || data.pickupLocation?.lng,
-                        dropoffLat: data.dropoffLat || data.dropoffLocation?.lat,
-                        dropoffLng: data.dropoffLng || data.dropoffLocation?.lng,
-                        pickup_location_name: data.pickupLocationName || data.pickupLocation?.name,
-                        dropoff_location_name: data.dropoffLocationName || data.dropoffLocation?.name,
-                      },
-                      status: 'CONFIRMED',
-                    });
-                  },
-                },
-                {
-                  text: 'OK',
-                  style: 'cancel',
-                },
-              ],
-              { cancelable: false }
-            );
-            break;
-          case 'JOIN_REQUEST_FAILED':
-          case 'REJECTED':
-            console.log('❌ [RideDetailsScreen] Join request rejected');
-            Alert.alert(
-              'Yêu cầu bị từ chối',
-              data.message || data.reason || 'Tài xế đã từ chối yêu cầu tham gia chuyến đi của bạn.',
-              [{ text: 'OK' }],
-            );
-            // Close the join modal if it's open
-            setShowJoinModal(false);
-            break;
-          case 'CANCELLED':
-            console.log('❌ [RideDetailsScreen] Join request cancelled');
-            Alert.alert(
-              'Yêu cầu đã bị hủy',
-              data.message || 'Yêu cầu tham gia chuyến đi của bạn đã bị hủy.',
-              [{ text: 'OK' }],
-            );
-            setShowJoinModal(false);
-            break;
-          default:
-            console.log('📨 [RideDetailsScreen] Unknown status:', data.status);
-        }
-      };
-      
-      // Subscribe to rider matching updates if WebSocket is connected
-      if (websocketService.isConnected) {
-        websocketService.subscribeToRiderMatching(handleJoinRequestUpdate);
-        console.log('✅ [RideDetailsScreen] WebSocket listener set up for join request updates');
-      } else {
-        console.warn('⚠️ [RideDetailsScreen] WebSocket not connected, cannot set up listener');
-      }
-    } catch (error) {
-      console.error('❌ [RideDetailsScreen] Error setting up WebSocket listener:', error);
-    }
-  };
-
+    loadRideDetails();
+  }, [rideId, requestId]);
 
   const loadRideDetails = async () => {
     try {
       setLoading(true);
-      console.log('Loading ride details for rideId:', rideId);
-      const response = await rideService.getRideDetails(rideId);
-      console.log('Ride details loaded:', response);
-      setRide(response);
+
+      // Load full ride data
+      if (rideId) {
+        try {
+          const rideResponse = await rideService.getRideById(rideId);
+          const rideDataObj = rideResponse?.data || rideResponse;
+          setRideData(rideDataObj);
+
+          // Load request data if available
+          if (requestId) {
+            let request = null;
+            
+            // First, check if ride data has ride_requests
+            if (rideDataObj?.ride_requests && Array.isArray(rideDataObj.ride_requests)) {
+              request = rideDataObj.ride_requests.find(
+                req => req.shared_ride_request_id === requestId || 
+                       req.shared_ride_request_id === parseInt(requestId)
+              );
+            }
+            
+            // If not found, try to load request data separately
+            if (!request) {
+              try {
+                const requestsResponse = await rideService.getRideRequests(rideId);
+                const requestList = Array.isArray(requestsResponse) 
+                  ? requestsResponse 
+                  : (requestsResponse?.data || requestsResponse?.content || requestsResponse?.items || []);
+                request = requestList.find(
+                  req => req.shared_ride_request_id === requestId || 
+                         req.shared_ride_request_id === parseInt(requestId)
+                );
+              } catch (reqError) {
+              }
+            }
+            
+            if (request) {
+              setRequestData(request);
+            } else {
+            }
+          }
+        } catch (error) {
+          console.error('❌ Error loading ride data:', error);
+        }
+      }
+
+      // Load rating if ride is completed (check rideData status if ride status is not available)
+      const rideStatus = ride?.status || rideData?.status;
+      if (requestId && rideStatus === 'COMPLETED') {
+        try {
+          const ratingsResponse = await ratingService.getRiderRatingsHistory(0, 100);
+          const ratings = ratingsResponse?.data || [];
+          const rideRating = ratings.find(r => 
+            r.shared_ride_request_id === requestId || 
+            r.request_id === requestId ||
+            r.shared_ride_request_id === parseInt(requestId)
+          );
+          if (rideRating) {
+            setRating(rideRating);
+          }
+        } catch (ratingError) {
+        }
+      }
     } catch (error) {
-      console.error('Error loading ride details:', error);
-      Alert.alert('Lỗi', 'Không thể tải thông tin chuyến xe. Vui lòng thử lại.');
-      navigation.goBack();
+      console.error('❌ Error loading ride details:', error);
+      Alert.alert('Lỗi', 'Không thể tải thông tin chuyến đi. Vui lòng thử lại.');
     } finally {
       setLoading(false);
     }
   };
 
-
-  const handleJoinRide = async () => {
-    if (!ride) {
-      Alert.alert('Lỗi', 'Không tìm thấy thông tin chuyến xe');
-      return;
-    }
-
-    // Extract routeId from ride
-    const routeId = ride.route?.route_id || ride.route?.routeId || ride.routeId;
+  // Merge data from multiple sources
+  const getMergedData = useCallback(() => {
+    const request = requestData || ride?.raw || {};
+    const rideInfo = rideData || {};
     
-    if (!routeId) {
-      Alert.alert(
-        'Lỗi',
-        'Chuyến xe này không có tuyến đường được định nghĩa. Không thể tham gia chuyến xe.'
-      );
-      return;
-    }
-
-    try {
-      setJoining(true);
-
-      console.log('Getting quote with routeId:', routeId);
-      
-      // Get quote using routeId (pickup/dropoff are not needed when routeId is provided)
-      const normalizedQuote = await rideService.getQuote(
-        null, // pickup not needed when routeId is provided
-        null, // dropoff not needed when routeId is provided
-        null, // desiredPickupTime
-        notes || null, // notes
-        routeId // routeId
-      );
-
-      console.log('Normalized quote:', JSON.stringify(normalizedQuote, null, 2));
-      console.log('Quote ID:', normalizedQuote?.quoteId);
-      
-      if (!normalizedQuote || !normalizedQuote.quoteId) {
-        Alert.alert('Lỗi', 'Không thể lấy mã báo giá. Vui lòng thử lại.');
-        return;
+    // Get pickup location - check multiple sources with priority
+    let pickupLocation = null;
+    let pickupAddress = 'N/A';
+    
+      // Priority 1: request.pickup_location (from requestData)
+      if (request?.pickup_location && 
+          typeof request.pickup_location.lat === 'number' && 
+          typeof request.pickup_location.lng === 'number') {
+        pickupLocation = {
+          lat: request.pickup_location.lat,
+          lng: request.pickup_location.lng,
+        };
+        // Prioritize name if address is "N/A"
+        if (request.pickup_location.address && request.pickup_location.address !== 'N/A') {
+          pickupAddress = request.pickup_location.address;
+        } else if (request.pickup_location.name) {
+          pickupAddress = request.pickup_location.name;
+        } else {
+          pickupAddress = 'N/A';
+        }
       }
-      
-      setQuote(normalizedQuote);
-      setShowJoinModal(true);
-    } catch (error) {
-      console.error('Error getting quote:', error);
-      Alert.alert(
-        'Lỗi',
-        error.message || 'Không thể lấy báo giá. Vui lòng thử lại.'
-      );
-    } finally {
-      setJoining(false);
+      // Priority 2: rideInfo.start_location (from rideData)
+      else if (rideInfo?.start_location && 
+               typeof rideInfo.start_location.lat === 'number' && 
+               typeof rideInfo.start_location.lng === 'number') {
+        pickupLocation = {
+          lat: rideInfo.start_location.lat,
+          lng: rideInfo.start_location.lng,
+        };
+        // Prioritize name if address is "N/A"
+        if (rideInfo.start_location.address && rideInfo.start_location.address !== 'N/A') {
+          pickupAddress = rideInfo.start_location.address;
+        } else if (rideInfo.start_location.name) {
+          pickupAddress = rideInfo.start_location.name;
+        } else if (ride?.pickupAddress) {
+          pickupAddress = ride.pickupAddress;
+        } else {
+          pickupAddress = 'N/A';
+        }
+      }
+      // Priority 3: ride.raw.pickup_location (from initial ride data)
+      else if (ride?.raw?.pickup_location && 
+               typeof ride.raw.pickup_location.lat === 'number' && 
+               typeof ride.raw.pickup_location.lng === 'number') {
+        pickupLocation = {
+          lat: ride.raw.pickup_location.lat,
+          lng: ride.raw.pickup_location.lng,
+        };
+        // Prioritize name if address is "N/A"
+        if (ride.raw.pickup_location.address && ride.raw.pickup_location.address !== 'N/A') {
+          pickupAddress = ride.raw.pickup_location.address;
+        } else if (ride.raw.pickup_location.name) {
+          pickupAddress = ride.raw.pickup_location.name;
+        } else if (ride?.pickupAddress) {
+          pickupAddress = ride.pickupAddress;
+        } else {
+          pickupAddress = 'N/A';
+        }
+      }
+    // Fallback: just address
+    else if (ride?.pickupAddress) {
+      pickupAddress = ride.pickupAddress;
     }
-  };
-
-  const confirmJoinRide = async () => {
-    if (!quote || !ride) {
-      Alert.alert('Lỗi', 'Thiếu thông tin báo giá hoặc chuyến xe');
-      return;
+    
+    // Get dropoff location - check multiple sources with priority
+    let dropoffLocation = null;
+    let dropoffAddress = 'N/A';
+    
+    // Priority 1: request.dropoff_location (from requestData)
+    if (request?.dropoff_location && 
+        typeof request.dropoff_location.lat === 'number' && 
+        typeof request.dropoff_location.lng === 'number') {
+      dropoffLocation = {
+        lat: request.dropoff_location.lat,
+        lng: request.dropoff_location.lng,
+      };
+      dropoffAddress = request.dropoff_location.name || 
+                      request.dropoff_location.address || 
+                      'N/A';
+    } 
+    // Priority 2: rideInfo.end_location (from rideData)
+    else if (rideInfo?.end_location && 
+             typeof rideInfo.end_location.lat === 'number' && 
+             typeof rideInfo.end_location.lng === 'number') {
+      dropoffLocation = {
+        lat: rideInfo.end_location.lat,
+        lng: rideInfo.end_location.lng,
+      };
+      dropoffAddress = rideInfo.end_location.name || 
+                      rideInfo.end_location.address || 
+                      ride?.dropoffAddress || 
+                      'N/A';
+    } 
+    // Priority 3: ride.raw.dropoff_location (from initial ride data)
+    else if (ride?.raw?.dropoff_location && 
+             typeof ride.raw.dropoff_location.lat === 'number' && 
+             typeof ride.raw.dropoff_location.lng === 'number') {
+      dropoffLocation = {
+        lat: ride.raw.dropoff_location.lat,
+        lng: ride.raw.dropoff_location.lng,
+      };
+      dropoffAddress = ride.raw.dropoff_location.name || 
+                      ride.raw.dropoff_location.address || 
+                      ride?.dropoffAddress || 
+                      'N/A';
     }
-
-    if (!quote.quoteId) {
-      Alert.alert('Lỗi', 'Mã báo giá không hợp lệ. Vui lòng thử lại.');
-      console.error('Quote missing quoteId:', quote);
-      return;
+    // Fallback: just address
+    else if (ride?.dropoffAddress) {
+      dropoffAddress = ride.dropoffAddress;
     }
-
-    try {
-      setJoining(true);
-      const rideIdValue = ride.shared_ride_id || ride.sharedRideId || rideId;
-
-      console.log('Joining ride with:', { rideId: rideIdValue, quoteId: quote.quoteId, notes });
-
-      const response = await rideService.joinRide(
-        rideIdValue,
-        quote.quoteId,
-        null,
-        notes || null
-      );
-
-      const requestId = response.shared_ride_request_id || response.sharedRideRequestId;
-
-      Alert.alert(
-        'Thành công',
-        'Yêu cầu tham gia chuyến xe đã được gửi. Vui lòng chờ tài xế xác nhận.',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              setShowJoinModal(false);
-              navigation.goBack();
-            },
-          },
-        ]
-      );
-    } catch (error) {
-      console.error('Error joining ride:', error);
-      Alert.alert(
-        'Lỗi',
-        error.message || 'Không thể tham gia chuyến xe. Vui lòng thử lại.'
-      );
-    } finally {
-      setJoining(false);
-    }
-  };
+    
+    return {
+      rideId: rideId || ride?.rideId || request.shared_ride_id || rideInfo.shared_ride_id,
+      requestId: requestId || ride?.requestId || request.shared_ride_request_id,
+      status: ride?.status || request.status || rideInfo.status,
+      driverName: rideInfo.driver_name || request.driver_name || ride?.driverInfo?.driverName,
+      driverId: rideInfo.driver_id || request.driver_id || ride?.driverInfo?.driverId,
+      vehicleModel: rideInfo.vehicle_model || null,
+      vehiclePlate: rideInfo.vehicle_plate || null,
+      pickupAddress: pickupAddress,
+      pickupLocation: pickupLocation,
+      dropoffAddress: dropoffAddress,
+      dropoffLocation: dropoffLocation,
+      totalFare: request.fare_amount || 
+                request.total_fare || 
+                ride?.totalFare || 
+                null,
+      distance: rideInfo.actual_distance || 
+               request.actual_distance || 
+               request.distance_km || 
+               ride?.distance || 
+               null,
+      duration: rideInfo.actual_duration || 
+               request.actual_duration || 
+               request.duration_minutes || 
+               null,
+      polyline: request.polyline || null,
+      createdAt: request.created_at || ride?.createdAt || rideInfo.created_at,
+      actualPickupTime: request.actual_pickup_time || ride?.actualPickupTime,
+      actualDropoffTime: request.actual_dropoff_time || ride?.actualDropoffTime,
+      estimatedPickupTime: request.estimated_pickup_time,
+      estimatedDropoffTime: request.estimated_dropoff_time,
+      rating: rating,
+    };
+  }, [rideData, requestData, ride, rating, rideId, requestId]);
 
   const formatDate = (dateString) => {
-    if (!dateString) return 'Ngay lập tức';
+    if (!dateString) return 'N/A';
     try {
       const date = new Date(dateString);
-      return date.toLocaleDateString('vi-VN') + ' lúc ' + date.toLocaleTimeString('vi-VN', {
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    } catch (error) {
+      const day = String(date.getUTCDate()).padStart(2, '0');
+      const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+      const year = date.getUTCFullYear();
+      const hours = String(date.getUTCHours()).padStart(2, '0');
+      const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+      return `${day}/${month}/${year} ${hours}:${minutes}`;
+    } catch (e) {
       return dateString;
     }
   };
 
+  const formatTime = (dateString) => {
+    if (!dateString) return 'N/A';
+    try {
+      const date = new Date(dateString);
+      const hours = String(date.getUTCHours()).padStart(2, '0');
+      const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+      const period = date.getUTCHours() >= 12 ? 'PM' : 'AM';
+      const displayHours = date.getUTCHours() % 12 || 12;
+      return `${displayHours}:${minutes} ${period}`;
+    } catch (e) {
+      return dateString;
+    }
+  };
+
+  const formatCurrency = (amount) => {
+    if (amount === null || amount === undefined) return 'Chưa có';
+    if (amount === 0) return 'Miễn phí';
+    return `${Number(amount).toLocaleString('vi-VN')} ₫`;
+  };
+
   const getStatusColor = (status) => {
     switch (status?.toUpperCase()) {
-      case 'COMPLETED':
-        return '#4CAF50';
-      case 'CANCELLED':
-        return '#F44336';
       case 'ONGOING':
-        return '#FF9800';
+        return '#F97316';
+      case 'CONFIRMED':
+        return '#3B82F6';
+      case 'COMPLETED':
+        return '#22C55E';
+      case 'CANCELLED':
+        return '#EF4444';
       case 'SCHEDULED':
-        return '#2196F3';
+        return '#3B82F6';
       default:
-        return '#666';
+        return '#6B7280';
     }
   };
 
   const getStatusText = (status) => {
     switch (status?.toUpperCase()) {
+      case 'ONGOING':
+        return 'Đang diễn ra';
+      case 'CONFIRMED':
+        return 'Đã xác nhận';
       case 'COMPLETED':
         return 'Hoàn thành';
       case 'CANCELLED':
         return 'Đã hủy';
-      case 'ONGOING':
-        return 'Đang diễn ra';
       case 'SCHEDULED':
         return 'Đã lên lịch';
       default:
-        return 'Không xác định';
+        return status || 'Không xác định';
     }
   };
 
-  if (loading) {
+  const handleRateRide = () => {
+    const data = getMergedData();
+    navigation.navigate('RatingScreen', {
+      rideId: data.rideId,
+      requestId: data.requestId,
+      driverId: data.driverId,
+      driverName: data.driverName,
+      totalFare: data.totalFare,
+      actualDistance: data.distance,
+      actualDuration: data.duration,
+    });
+  };
+
+  const handleResumeRide = () => {
+    const data = getMergedData();
+    if (data.status === 'ONGOING' || data.status === 'CONFIRMED') {
+      navigation.navigate('RideTracking', {
+        rideId: data.rideId,
+        requestId: data.requestId,
+      });
+    }
+  };
+
+
+  // Get merged data - but only if we have some data
+  const data = useMemo(() => {
+    if (loading) {
+      return null;
+    }
+    
+    // At least one data source should be available
+    if (!rideData && !requestData && !ride) {
+      return null;
+    }
+    
+    try {
+      return getMergedData();
+    } catch (error) {
+      console.error('❌ Error getting merged data:', error);
+      return null;
+    }
+  }, [loading, rideData, requestData, ride, rating, getMergedData]);
+
+
+  // Early return AFTER all hooks are called
+  if (loading || !data) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.loadingText}>Đang tải thông tin...</Text>
-        </View>
-      </SafeAreaView>
+      <AppBackground>
+        <StatusBar barStyle="dark-content" />
+        <SafeAreaView style={styles.safe}>
+          <SoftBackHeader
+            floating
+            topOffset={insets.top + 12}
+            onBackPress={() => navigation.goBack()}
+          />
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.loadingText}>Đang tải...</Text>
+          </View>
+        </SafeAreaView>
+      </AppBackground>
     );
   }
 
-  if (!ride) {
-    console.log('No ride data, showing error screen');
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-            <Icon name="arrow-back" size={24} color="#000" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Chi tiết chuyến đi</Text>
-          <View style={styles.placeholder} />
-        </View>
-        <View style={styles.errorContainer}>
-          <Icon name="error-outline" size={64} color={colors.textMuted} />
-          <Text style={styles.errorText}>Không tìm thấy chuyến xe</Text>
-          <ModernButton title="Quay lại" onPress={() => navigation.goBack()} />
-        </View>
-      </SafeAreaView>
-    );
-  }
-  
-  console.log('Rendering ride details for:', ride);
-
-  const rideStatus = ride?.status ? ride.status.toUpperCase() : 'UNKNOWN';
-  const rideIdValue = ride?.shared_ride_id || ride?.sharedRideId || rideId || 'N/A';
-  const driverName = ride?.driver_name || ride?.driverName || 'Tài xế';
-  const driverRating = ride?.driver_rating || ride?.driverRating || 4.8;
-  const startLocation = ride?.start_location || ride?.startLocation || {};
-  const endLocation = ride?.end_location || ride?.endLocation || {};
-  const startLocationName = startLocation?.name || 'Điểm đi';
-  const endLocationName = endLocation?.name || 'Điểm đến';
-  const startLocationAddress = startLocation?.address || 'N/A';
-  const endLocationAddress = endLocation?.address || 'N/A';
-  const scheduledTime = ride?.scheduled_time || ride?.scheduledTime;
-  const estimatedDistance = ride?.estimated_distance || ride?.estimatedDistance || 0;
-  const estimatedDuration = ride?.estimated_duration || ride?.estimatedDuration || 0;
-
-  // Allow joining SCHEDULED and ONGOING rides
-  const canJoin = rideStatus === 'SCHEDULED' || rideStatus === 'ONGOING';
-  
-  console.log('Ride status:', rideStatus, 'canJoin:', canJoin);
-  console.log('Start location:', startLocation);
-  console.log('End location:', endLocation);
+  const isOngoing = data.status === 'ONGOING' || data.status === 'CONFIRMED';
+  const isCompleted = data.status === 'COMPLETED';
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <Icon name="arrow-back" size={24} color="#000" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Chi tiết chuyến đi</Text>
-        <View style={styles.placeholder} />
-      </View>
+    <AppBackground>
+      <StatusBar barStyle="dark-content" />
+      <SafeAreaView style={styles.safe}>
+        <SoftBackHeader
+          floating
+          topOffset={insets.top + 12}
+          onBackPress={() => navigation.goBack()}
+        />
 
-      <ScrollView 
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        scrollEnabled={true}
-      >
-        {/* Status Card */}
-        <View style={styles.statusCard}>
-          <View style={styles.statusHeader}>
-            <View style={styles.statusInfo}>
-              <View style={[styles.statusDot, { backgroundColor: getStatusColor(rideStatus) }]} />
-              <Text style={[styles.statusText, { color: getStatusColor(rideStatus) }]}>
-                {getStatusText(rideStatus)}
-              </Text>
-            </View>
-            <Text style={styles.rideId}>#{rideIdValue}</Text>
-          </View>
-          <Text style={styles.dateText}>{formatDate(scheduledTime)}</Text>
-        </View>
-
-        {/* Driver Info Card */}
-        <View style={styles.driverInfoCard}>
-          <Text style={styles.cardTitle}>Thông tin tài xế</Text>
-          <View style={styles.driverDetails}>
-            <View style={styles.driverAvatar}>
-              <Icon name="person" size={30} color={colors.primary} />
-            </View>
-            <View style={styles.driverTextInfo}>
-              <Text style={styles.driverName}>{driverName}</Text>
-              <View style={styles.driverRatingContainer}>
-                <Icon name="star" size={16} color="#FFD700" />
-                <Text style={styles.driverRatingText}>{driverRating.toFixed(1)}</Text>
-              </View>
-            </View>
-          </View>
-        </View>
-
-        {/* Route Card */}
-        <View style={styles.routeCard}>
-          <Text style={styles.cardTitle}>Lộ trình</Text>
-
-          <View style={styles.routeContainer}>
-            <View style={styles.routePoint}>
-              <View style={styles.pickupDot} />
-              <View style={styles.locationInfo}>
-                <Text style={styles.locationName}>{startLocationName}</Text>
-                {startLocationAddress && startLocationAddress !== 'N/A' ? (
-                  <Text style={styles.locationAddress}>{startLocationAddress}</Text>
-                ) : null}
-              </View>
-            </View>
-
-            <View style={styles.routeLine} />
-
-            <View style={styles.routePoint}>
-              <View style={styles.dropoffDot} />
-              <View style={styles.locationInfo}>
-                <Text style={styles.locationName}>{endLocationName}</Text>
-                {endLocationAddress && endLocationAddress !== 'N/A' ? (
-                  <Text style={styles.locationAddress}>{endLocationAddress}</Text>
-                ) : null}
-              </View>
-            </View>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+        >
+          {/* Header text section */}
+          <View style={styles.headerTextSection}>
+            <Text style={styles.headerTitle}>Chi tiết chuyến đi</Text>
+            <Text style={styles.headerSubtitle}>Thông tin chi tiết về chuyến đi của bạn</Text>
           </View>
 
-          <View style={styles.routeStats}>
-            {estimatedDistance > 0 && (
-              <View style={styles.statItem}>
-                <Icon name="straighten" size={16} color="#666" />
-                <Text style={styles.statText}>{estimatedDistance.toFixed(1)} km</Text>
-              </View>
-            )}
-            {estimatedDuration > 0 && (
-              <View style={styles.statItem}>
-                <Icon name="access-time" size={16} color="#666" />
-                <Text style={styles.statText}>{estimatedDuration} phút</Text>
-              </View>
-            )}
-            <View style={styles.statItem}>
-              <Icon name="schedule" size={16} color="#666" />
-              <Text style={styles.statText}>{formatDate(scheduledTime)}</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Route Information for Joining */}
-        {canJoin && ride.route && (
-          <CleanCard style={styles.card} contentStyle={styles.routeInfoCard}>
-            <Text style={styles.cardTitle}>Thông tin tuyến đường</Text>
-            <View style={styles.routeInfoContainer}>
-              <View style={styles.routeInfoRow}>
-                <Icon name="route" size={20} color={colors.primary} />
-                <View style={styles.routeInfoText}>
-                  <Text style={styles.routeInfoLabel}>Tuyến đường:</Text>
-                  <Text style={styles.routeInfoValue}>
-                    {ride.route.name || ride.route.code || 'Tuyến đường được định nghĩa'}
+          {/* Status Card */}
+          <Animatable.View animation="fadeInUp" duration={480} delay={60}>
+            <CleanCard style={styles.card} contentStyle={styles.cardContent}>
+              <View style={styles.statusHeader}>
+                <View style={styles.statusInfo}>
+                  <View style={[styles.statusDot, { backgroundColor: getStatusColor(data.status) }]} />
+                  <Text style={[styles.statusText, { color: getStatusColor(data.status) }]}>
+                    {getStatusText(data.status)}
                   </Text>
                 </View>
+                {data.rideId && (
+                  <Text style={styles.rideId}>ID: #{data.rideId}</Text>
+                )}
               </View>
-              {ride.route.default_price && (
-                <View style={styles.routeInfoRow}>
-                  <Icon name="attach-money" size={20} color={colors.primary} />
-                  <View style={styles.routeInfoText}>
-                    <Text style={styles.routeInfoLabel}>Giá mặc định:</Text>
-                    <Text style={styles.routeInfoValue}>
-                      {rideService.formatCurrency(ride.route.default_price)}
-                    </Text>
+              {data.createdAt && (
+                <Text style={styles.dateText}>{formatDate(data.createdAt)}</Text>
+              )}
+            </CleanCard>
+          </Animatable.View>
+
+          {/* Route Info */}
+          <Animatable.View animation="fadeInUp" duration={480} delay={120}>
+            <CleanCard style={styles.card} contentStyle={styles.cardContent}>
+              <Text style={styles.cardTitle}>Lộ trình</Text>
+              
+              <View style={styles.routeContainer}>
+                <View style={styles.routePoint}>
+                  <View style={styles.pickupDot} />
+                  <View style={styles.locationInfo}>
+                    <Text style={styles.locationName}>Điểm đón</Text>
+                    <Text style={styles.locationAddress}>{data.pickupAddress}</Text>
+                    {data.actualPickupTime && (
+                      <View style={styles.timeRow}>
+                        <Icon name="access-time" size={14} color={colors.textSecondary} />
+                        <Text style={styles.timeText}> {formatTime(data.actualPickupTime)}</Text>
+                      </View>
+                    )}
                   </View>
                 </View>
+                
+                <View style={styles.routeLine} />
+                
+                <View style={styles.routePoint}>
+                  <View style={styles.dropoffDot} />
+                  <View style={styles.locationInfo}>
+                    <Text style={styles.locationName}>Điểm đến</Text>
+                    <Text style={styles.locationAddress}>{data.dropoffAddress}</Text>
+                    {data.actualDropoffTime && (
+                      <View style={styles.timeRow}>
+                        <Icon name="access-time" size={14} color={colors.textSecondary} />
+                        <Text style={styles.timeText}> {formatTime(data.actualDropoffTime)}</Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              </View>
+
+              {(data.distance || data.duration) && (
+                <View style={styles.routeStats}>
+                  {data.distance && (
+                    <View style={styles.statItem}>
+                      <Icon name="straighten" size={16} color={colors.textSecondary} />
+                      <Text style={styles.statText}>
+                        {typeof data.distance === 'number' 
+                          ? `${data.distance.toFixed(2)} km` 
+                          : `${data.distance} km`}
+                      </Text>
+                    </View>
+                  )}
+                  {data.duration && (
+                    <View style={styles.statItem}>
+                      <Icon name="schedule" size={16} color={colors.textSecondary} />
+                      <Text style={styles.statText}>
+                        {typeof data.duration === 'number' 
+                          ? `${data.duration} phút` 
+                          : `${data.duration} phút`}
+                      </Text>
+                    </View>
+                  )}
+                </View>
               )}
-            </View>
-            <View style={styles.infoContainer}>
-              <Icon name="info-outline" size={16} color="#2196F3" />
-              <Text style={styles.infoText}>
-                Khi tham gia chuyến xe này, bạn sẽ đi theo tuyến đường mà tài xế đã định nghĩa.
-              </Text>
-            </View>
-          </CleanCard>
-        )}
+            </CleanCard>
+          </Animatable.View>
 
-        {/* Join Ride Button */}
-        {canJoin && (
-          <View style={styles.joinButtonContainer}>
-            <ModernButton
-              title="Tham gia chuyến xe"
-              icon="directions-car"
-              onPress={handleJoinRide}
-              loading={joining}
-              disabled={joining || !(ride?.route?.route_id || ride?.route?.routeId || ride?.routeId)}
-            />
-          </View>
-        )}
-      </ScrollView>
-
-      {/* Join Confirmation Modal */}
-      <Modal
-        visible={showJoinModal}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowJoinModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Xác nhận tham gia</Text>
-              <TouchableOpacity onPress={() => setShowJoinModal(false)}>
-                <Icon name="close" size={24} color={colors.textPrimary} />
-              </TouchableOpacity>
-            </View>
-
-            {quote && (
-              <>
-                <View style={styles.quoteInfo}>
-                  <Text style={styles.quoteLabel}>Cước phí:</Text>
-                  <Text style={styles.quoteAmount}>
-                    {rideService.formatCurrency(quote.fare?.total || 0)}
-                  </Text>
+          {/* Driver Info */}
+          {data.driverName && (
+            <Animatable.View animation="fadeInUp" duration={480} delay={180}>
+              <CleanCard style={styles.card} contentStyle={styles.cardContent}>
+                <Text style={styles.cardTitle}>Tài xế</Text>
+                <View style={styles.driverInfo}>
+                  <View style={styles.driverAvatar}>
+                    <Icon name="person" size={24} color={colors.textSecondary} />
+                  </View>
+                  <View style={styles.driverDetails}>
+                    <Text style={styles.driverName}>{data.driverName}</Text>
+                    {data.vehiclePlate && (
+                      <Text style={styles.vehicleInfo}>
+                        {data.vehicleModel ? `${data.vehicleModel} • ` : ''}
+                        {data.vehiclePlate}
+                      </Text>
+                    )}
+                  </View>
                 </View>
+              </CleanCard>
+            </Animatable.View>
+          )}
 
-                <View style={styles.notesContainer}>
-                  <Text style={styles.notesLabel}>Ghi chú (tùy chọn):</Text>
-                  <TextInput
-                    style={styles.notesInput}
-                    placeholder="Nhập ghi chú cho tài xế..."
-                    value={notes}
-                    onChangeText={setNotes}
-                    multiline
-                    numberOfLines={3}
-                    textAlignVertical="top"
-                  />
+          {/* Payment Card */}
+          {data.totalFare !== null && (
+            <Animatable.View animation="fadeInUp" duration={480} delay={240}>
+              <CleanCard style={styles.card} contentStyle={styles.cardContent}>
+                <Text style={styles.cardTitle}>Thanh toán</Text>
+                <View style={styles.fareRow}>
+                  <Text style={styles.fareLabel}>Tổng cộng:</Text>
+                  <Text style={styles.fareValue}>{formatCurrency(data.totalFare)}</Text>
                 </View>
+              </CleanCard>
+            </Animatable.View>
+          )}
 
-                <View style={styles.modalActions}>
-                  <ModernButton
-                    title="Hủy"
-                    variant="outline"
-                    onPress={() => setShowJoinModal(false)}
-                    style={styles.modalButton}
-                  />
-                  <ModernButton
-                    title="Xác nhận"
-                    icon="check"
-                    onPress={confirmJoinRide}
-                    loading={joining}
-                    disabled={joining}
-                    style={styles.modalButton}
-                  />
+          {/* Rating Card */}
+          {isCompleted && data.rating && (
+            <Animatable.View animation="fadeInUp" duration={480} delay={300}>
+              <CleanCard style={styles.card} contentStyle={styles.cardContent}>
+                <Text style={styles.cardTitle}>Đánh giá của bạn</Text>
+                <View style={styles.ratingInfo}>
+                  <View style={styles.ratingStars}>
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <Icon
+                        key={star}
+                        name={star <= data.rating.rating_score ? 'star' : 'star-border'}
+                        size={24}
+                        color="#FFA500"
+                      />
+                    ))}
+                  </View>
+                  {data.rating.comment && (
+                    <Text style={styles.ratingComment}>{data.rating.comment}</Text>
+                  )}
                 </View>
-              </>
-            )}
-          </View>
-        </View>
-      </Modal>
-    </SafeAreaView>
+              </CleanCard>
+            </Animatable.View>
+          )}
+
+          {/* Action Buttons */}
+          {(isOngoing || (isCompleted && !data.rating)) && (
+            <Animatable.View animation="fadeInUp" duration={480} delay={360}>
+              <CleanCard style={styles.card} contentStyle={styles.actionCardContent}>
+                {isOngoing && (
+                  <TouchableOpacity 
+                    style={styles.actionButton} 
+                    onPress={handleResumeRide}
+                    activeOpacity={0.7}
+                  >
+                    <Icon name="play-arrow" size={20} color={colors.primary} />
+                    <Text style={[styles.actionButtonText, { color: colors.primary }]}>
+                      Tiếp tục theo dõi
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                
+                {isCompleted && !data.rating && (
+                  <TouchableOpacity 
+                    style={styles.actionButton} 
+                    onPress={handleRateRide}
+                    activeOpacity={0.7}
+                  >
+                    <Icon name="star-rate" size={20} color="#FFA500" />
+                    <Text style={[styles.actionButtonText, { color: '#FFA500' }]}>
+                      Đánh giá chuyến đi
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </CleanCard>
+            </Animatable.View>
+          )}
+        </ScrollView>
+      </SafeAreaView>
+    </AppBackground>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  safe: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
   },
   scrollContent: {
-    paddingBottom: 20,
+    paddingTop: 80,
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+    gap: 16,
+  },
+  headerTextSection: {
+    alignItems: 'center',
+    marginBottom: 24,
+    paddingTop: 12,
+    gap: 6,
+  },
+  headerTitle: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 24,
+    color: colors.textPrimary,
+  },
+  headerSubtitle: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 14,
+    color: colors.textSecondary,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 12,
+    paddingTop: 100,
   },
   loadingText: {
-    fontSize: 15,
-    color: colors.textSecondary,
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
-    gap: 20,
-  },
-  errorText: {
+    marginTop: 12,
     fontSize: 16,
+    fontFamily: 'Inter_400Regular',
     color: colors.textSecondary,
-    textAlign: 'center',
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  card: {
+    marginBottom: 12,
+  },
+  cardContent: {
+    paddingVertical: 20,
     paddingHorizontal: 20,
-    paddingVertical: 15,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  backButton: {
-    padding: 5,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#000',
-  },
-  placeholder: {
-    width: 34,
-  },
-  statusCard: {
-    backgroundColor: '#fff',
-    margin: 20,
-    padding: 20,
-    borderRadius: 12,
+    gap: 16,
   },
   statusHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
   },
   statusInfo: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
   },
   statusDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
-    marginRight: 8,
   },
   statusText: {
     fontSize: 16,
-    fontWeight: '500',
+    fontFamily: 'Inter_600SemiBold',
   },
   rideId: {
     fontSize: 14,
-    color: '#666',
-    fontWeight: '500',
+    fontFamily: 'Inter_500Medium',
+    color: colors.textSecondary,
   },
   dateText: {
     fontSize: 14,
-    color: '#666',
-  },
-  driverInfoCard: {
-    backgroundColor: '#fff',
-    marginHorizontal: 20,
-    marginBottom: 20,
-    padding: 20,
-    borderRadius: 12,
-  },
-  driverDetails: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  driverAvatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#E8F5E8',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 15,
-  },
-  driverTextInfo: {
-    flex: 1,
-  },
-  driverName: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#000',
-  },
-  driverRatingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 5,
-  },
-  driverRatingText: {
-    fontSize: 14,
-    color: '#666',
-    marginLeft: 5,
-  },
-  routeCard: {
-    backgroundColor: '#fff',
-    marginHorizontal: 20,
-    marginBottom: 20,
-    padding: 20,
-    borderRadius: 12,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textSecondary,
+    marginTop: 4,
   },
   card: {
     marginHorizontal: 20,
     marginBottom: 20,
   },
   cardTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#000',
-    marginBottom: 15,
+    fontSize: 18,
+    fontFamily: 'Inter_700Bold',
+    color: colors.textPrimary,
+    marginBottom: 4,
   },
   routeContainer: {
-    marginBottom: 15,
+    marginBottom: 12,
   },
   routePoint: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginVertical: 8,
+    marginVertical: 10,
   },
   pickupDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#4CAF50',
-    marginRight: 12,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: colors.primary,
+    marginRight: 14,
     marginTop: 4,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
   dropoffDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#F44336',
-    marginRight: 12,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#EF4444',
+    marginRight: 14,
     marginTop: 4,
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
   routeLine: {
     width: 2,
     height: 30,
-    backgroundColor: '#ddd',
-    marginLeft: 5,
+    backgroundColor: 'rgba(148,163,184,0.3)',
+    marginLeft: 6,
     marginVertical: 4,
   },
   locationInfo: {
     flex: 1,
   },
   locationName: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#000',
-    marginBottom: 4,
+    fontSize: 12,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textMuted,
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   locationAddress: {
-    fontSize: 14,
-    color: '#666',
-    lineHeight: 18,
+    fontSize: 15,
+    fontFamily: 'Inter_500Medium',
+    color: colors.textPrimary,
+    lineHeight: 22,
+  },
+  timeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+  },
+  timeText: {
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textSecondary,
   },
   routeStats: {
     flexDirection: 'row',
-    paddingTop: 15,
+    paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
+    borderTopColor: 'rgba(148,163,184,0.18)',
+    gap: 20,
   },
   statItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginRight: 20,
+    gap: 6,
   },
   statText: {
     fontSize: 14,
-    color: '#666',
-    marginLeft: 4,
-  },
-  routeInfoCard: {
-    padding: 16,
-    gap: 12,
+    fontFamily: 'Inter_500Medium',
+    color: colors.textSecondary,
   },
   routeInfoContainer: {
     gap: 12,
   },
-  routeInfoRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
+  driverAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(148,163,184,0.12)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
   },
   routeInfoText: {
     flex: 1,
   },
-  routeInfoLabel: {
-    fontSize: 14,
-    color: colors.textSecondary,
+  driverName: {
+    fontSize: 17,
+    fontFamily: 'Inter_700Bold',
+    color: colors.textPrimary,
     marginBottom: 4,
   },
-  routeInfoValue: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: colors.textPrimary,
+  vehicleInfo: {
+    fontSize: 14,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textSecondary,
   },
-  infoContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginTop: 12,
-    padding: 12,
-    backgroundColor: '#E3F2FD',
-    borderRadius: 8,
-    gap: 8,
-  },
-  infoText: {
-    flex: 1,
-    fontSize: 12,
-    color: '#1976D2',
-    lineHeight: 18,
-  },
-  joinButtonContainer: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    paddingBottom: 40,
-  },
-  modalHeader: {
+  fareRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(148,163,184,0.18)',
   },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
+  fareLabel: {
+    fontSize: 16,
+    fontFamily: 'Inter_600SemiBold',
     color: colors.textPrimary,
   },
-  quoteInfo: {
-    backgroundColor: colors.background,
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 20,
-  },
-  quoteLabel: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginBottom: 8,
-  },
-  quoteAmount: {
-    fontSize: 24,
-    fontWeight: 'bold',
+  fareValue: {
+    fontSize: 20,
+    fontFamily: 'Inter_700Bold',
     color: colors.primary,
   },
-  notesContainer: {
-    marginBottom: 20,
+  ratingInfo: {
+    marginTop: 8,
   },
-  notesLabel: {
-    fontSize: 14,
-    color: colors.textPrimary,
-    marginBottom: 8,
-    fontWeight: '500',
-  },
-  notesInput: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    padding: 12,
-    fontSize: 14,
-    color: colors.textPrimary,
-    minHeight: 80,
-  },
-  modalActions: {
+  ratingStars: {
     flexDirection: 'row',
-    gap: 12,
+    marginBottom: 12,
+    gap: 4,
   },
-  modalButton: {
-    flex: 1,
+  ratingComment: {
+    fontSize: 14,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textSecondary,
+    lineHeight: 20,
+  },
+  actionCardContent: {
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    gap: 10,
+  },
+  actionButtonText: {
+    fontSize: 16,
+    fontFamily: 'Inter_600SemiBold',
   },
 });
 

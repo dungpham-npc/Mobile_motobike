@@ -31,7 +31,6 @@ const RideTrackingScreen = ({ route, navigation }) => {
     if (rideId) {
       if (initialRideData) {
         // Use data from accept response
-        console.log('Using initial ride data:', initialRideData);
         setRideData(initialRideData);
         setLoading(false);
         
@@ -86,7 +85,6 @@ const RideTrackingScreen = ({ route, navigation }) => {
 
   const startTrackingService = async () => {
     try {
-      console.log('Starting tracking service for ride:', rideId);
       const success = await locationTrackingService.startTracking(rideId);
       
       if (success) {

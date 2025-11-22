@@ -41,8 +41,6 @@ const HomeScreen = ({ navigation }) => {
   const [user, setUser] = useState(null);
   const [isWebSocketConnected, setIsWebSocketConnected] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [nearbyRides, setNearbyRides] = useState([]);
-  const [loadingRides, setLoadingRides] = useState(false);
   const [currentUserName, setCurrentUserName] = useState('');
   const [activeTab, setActiveTab] = useState('book'); // 'book' | 'share'
   const [walletBalance, setWalletBalance] = useState(0);
@@ -424,32 +422,6 @@ const HomeScreen = ({ navigation }) => {
     }
   };
 
-  const loadWalletBalance = async () => {
-    try {
-      setLoadingWallet(true);
-      const walletInfo = await paymentService.getWalletInfo();
-      setWalletBalance(walletInfo?.balance || walletInfo?.availableBalance || 0);
-    } catch (error) {
-      console.error('Error loading wallet balance:', error);
-      setWalletBalance(0);
-    } finally {
-      setLoadingWallet(false);
-    }
-  };
-
-
-  const loadNearbyRides = async () => {
-    try {
-      setLoadingRides(true);
-      const rides = await rideService.getAvailableRides();
-      setNearbyRides(rides?.data || rides?.content || []);
-    } catch (error) {
-      console.error('Error loading nearby rides:', error);
-      setNearbyRides([]);
-    } finally {
-      setLoadingRides(false);
-    }
-  };
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -463,21 +435,7 @@ const HomeScreen = ({ navigation }) => {
     }
   };
 
-  // No longer needed - navigation happens directly to RideBookingScreen
 
-  const formatCurrency = (amount) => {
-    if (!amount) return '0 ₫';
-    return new Intl.NumberFormat('vi-VN').format(amount) + ' ₫';
-  };
-
-  const getInitials = (name) => {
-    if (!name) return 'T';
-    const parts = name.split(' ');
-    if (parts.length >= 2) {
-      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-    }
-    return name.charAt(0).toUpperCase();
-  };
 
   const formatScheduledTime = (scheduledTime) => {
     if (!scheduledTime) return 'Ngay lập tức';
@@ -522,89 +480,40 @@ const HomeScreen = ({ navigation }) => {
     <AppBackground>
       <StatusBar barStyle="light-content" />
       <SafeAreaView style={styles.safe}>
-        <ScrollView 
-          showsVerticalScrollIndicator={false} 
-          contentContainerStyle={styles.scrollContent}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#4CAF50" />
-        }
-      >
-          <Animatable.View animation="fadeInDown" duration={380} useNativeDriver>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          <View style={styles.headerSpacing}>
             <GlassHeader
-              title={`Xin chào, ${greetingName}`}
-              subtitle="Sẵn sàng cho chuyến đi tiếp theo"
-              onBellPress={handleNotificationPress}
-              badgeCount={unreadCount}
+              title={currentUserName || 'Người dùng'}
+              subtitle="Xin chào,"
+              onBellPress={() => {}}
+              statusChip={{
+                label: isWebSocketConnected ? 'Đã kết nối máy chủ' : 'Đang ngoại tuyến',
+                color: isWebSocketConnected ? 'success' : 'warning',
+              }}
             />
-          </Animatable.View>
+          </View>
 
-          {/* Wallet Card */}
-          <Animatable.View animation="fadeInDown" duration={400} useNativeDriver>
-            <LinearGradient colors={['#4CAF50', '#2196F3']} style={styles.walletCard}>
-              <View style={styles.walletContent}>
-                <View style={styles.walletInfo}>
-                  <Text style={styles.walletLabel}>Số dư ví</Text>
-                  {loadingWallet ? (
-                    <ActivityIndicator size="small" color="#fff" style={styles.walletLoading} />
-                  ) : (
-                    <Text style={styles.walletAmount}>{formatCurrency(walletBalance)}</Text>
-                  )}
-                </View>
-                <TouchableOpacity
-                  style={styles.topUpButton}
-                  onPress={() => navigation.navigate('Wallet')}
-                >
-                  <Text style={styles.topUpButtonText}>Nạp tiền</Text>
-                </TouchableOpacity>
-              </View>
-            </LinearGradient>
-          </Animatable.View>
-
-          {/* Tab Switcher */}
-          <Animatable.View animation="fadeInUp" duration={420} delay={50} useNativeDriver>
-            <View style={styles.tabSwitcher}>
-              <TouchableOpacity
-                style={[styles.tabButton, activeTab === 'book' && styles.tabButtonActive]}
-                onPress={() => setActiveTab('book')}
-              >
-                <Text style={[styles.tabButtonText, activeTab === 'book' && styles.tabButtonTextActive]}>
-                  Đặt xe
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.tabButton, activeTab === 'share' && styles.tabButtonActive]}
-                onPress={() => setActiveTab('share')}
-              >
-                <Text style={[styles.tabButtonText, activeTab === 'share' && styles.tabButtonTextActive]}>
-                  Chuyến đi đang được chia sẻ
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </Animatable.View>
-
-          {/* Main Content */}
           <View style={styles.content}>
-            {activeTab === 'book' ? (
-              <Animatable.View animation="fadeInUp" duration={480} delay={100} useNativeDriver>
-                <View style={styles.bookTabContent}>
-                  {/* Single Location Selection Button */}
-                  <CleanCard style={styles.card} contentStyle={styles.locationCard}>
-                    <TouchableOpacity
-                      style={styles.locationField}
-                      onPress={() => navigation.navigate('RideBooking', {
-                        pickup: pickupLocation,
-                        pickupAddress: pickupAddress,
-                        dropoff: dropoffLocation,
-                        dropoffAddress: dropoffAddress,
-                      })}
-                    >
-                      <View style={styles.locationFieldContent}>
-                        <Icon name="location-on" size={24} color="#4CAF50" />
-                        <Text style={styles.locationFieldText}>Chọn địa điểm</Text>
-                        <Icon name="chevron-right" size={24} color="#999" />
-                      </View>
-                    </TouchableOpacity>
-                  </CleanCard>
+            {/* CTA đặt xe đơn giản */}
+            <Animatable.View animation="fadeInUp" duration={420} useNativeDriver>
+              <CleanCard style={styles.card} contentStyle={[styles.cardBody, styles.ctaCard]}>
+                <View style={styles.ctaTextContainer}>
+                  <Text style={styles.cardTitle}>Đặt xe</Text>
+                  <Text style={styles.cardSubtitle}>Chọn hình thức đặt xe phù hợp</Text>
+                </View>
+                <View style={styles.buttonRow}>
+                  <ModernButton 
+                    title="Đặt xe ngay" 
+                    icon="directions-car" 
+                    onPress={handleBookRide} 
+                    style={styles.primaryButton}
+                  />
+                  <ModernButton 
+                    title="Tìm chuyến đi" 
+                    icon="search" 
+                    onPress={() => navigation.navigate('AvailableRides')} 
+                    style={styles.secondaryButton}
+                  />
                 </View>
               </Animatable.View>
             ) : (
@@ -699,36 +608,7 @@ const HomeScreen = ({ navigation }) => {
                               </View>
                             </View>
 
-                            <View style={styles.rideCardFooter}>
-                              <View style={styles.rideMeta}>
-                                <View style={styles.rideMetaItem}>
-                                  <Icon name="access-time" size={14} color="#666" />
-                                  <Text style={styles.rideMetaText}>
-                                    {formatScheduledTime(scheduledTime)}
-                                  </Text>
-                                </View>
-                                <View style={styles.rideMetaItem}>
-                                  <Icon name="people" size={14} color="#666" />
-                                  <Text style={styles.rideMetaText}>
-                                    {availableSeats} chỗ trống
-                                  </Text>
-                                </View>
-                              </View>
-                              <TouchableOpacity
-                                style={styles.joinButton}
-                                onPress={() => navigation.navigate('RideDetails', { rideId })}
-                              >
-                                <Text style={styles.joinButtonText}>Tham gia</Text>
-                              </TouchableOpacity>
-                            </View>
-                          </CleanCard>
-                        );
-                      })
-                    )}
-                  </View>
-                </View>
-              </Animatable.View>
-            )}
+            {renderUserStats()}
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -738,30 +618,41 @@ const HomeScreen = ({ navigation }) => {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  scrollContent: {
-    paddingBottom: 100,
-    paddingTop: 8,
+  scrollContent: { 
+    paddingBottom: 160,
+    paddingTop: 24,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+  headerSpacing: {
+    marginBottom: 24,
+  },
+  content: {
+    paddingTop: 12,
+    paddingHorizontal: 20,
+    gap: 20,
+  },
+  card: { marginBottom: 12 },
+  cardBody: { padding: 20, gap: 18 },
+  ctaCard: { 
+    flexDirection: 'column', 
+    alignItems: 'stretch', 
+    gap: 16,
+  },
+  ctaTextContainer: { 
+    gap: 6,
+  },
+  ctaButtonContainer: {
+    flexDirection: 'row',
     gap: 12,
   },
-  loadingText: {
-    fontSize: 15,
-    color: colors.textSecondary,
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 12,
   },
-  walletCard: {
-    marginHorizontal: 16,
-    marginTop: 16,
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+  primaryButton: {
+    flex: 1,
+  },
+  secondaryButton: {
+    flex: 1,
   },
   walletContent: {
     flexDirection: 'row',
