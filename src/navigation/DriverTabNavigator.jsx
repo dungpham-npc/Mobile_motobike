@@ -21,7 +21,7 @@ const DriverTabNavigator = () => {
       screenOptions={({ route }) => ({
         tabBarIcon: ({ focused, color, size }) => {
           let iconName;
-          
+
           if (route.name === 'DriverHome') {
             iconName = 'home';
           } else if (route.name === 'DriverRideHistory') {
@@ -31,7 +31,7 @@ const DriverTabNavigator = () => {
           } else if (route.name === 'DriverProfile') {
             iconName = 'person';
           }
-          
+
           return <Icon name={iconName} size={size} color={color} />;
         },
         tabBarActiveTintColor: '#4CAF50',
@@ -52,23 +52,23 @@ const DriverTabNavigator = () => {
         },
       })}
     >
-      <Tab.Screen 
-        name="DriverHome" 
+      <Tab.Screen
+        name="DriverHome"
         component={DriverHomeScreen}
         options={{ tabBarLabel: 'Trang chủ' }}
       />
-      <Tab.Screen 
-        name="DriverRideHistory" 
+      <Tab.Screen
+        name="DriverRideHistory"
         component={DriverRideHistoryScreen}
         options={{ tabBarLabel: 'Lịch sử' }}
       />
-      <Tab.Screen 
-        name="Ratings" 
+      <Tab.Screen
+        name="Ratings"
         component={DriverRatingsScreen}
         options={{ tabBarLabel: 'Đánh giá' }}
       />
-      <Tab.Screen 
-        name="DriverProfile" 
+      <Tab.Screen
+        name="DriverProfile"
         component={DriverProfileScreen}
         options={{ tabBarLabel: 'Hồ sơ' }}
       />
