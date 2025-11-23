@@ -3,6 +3,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import { colors } from '../theme/designTokens';
 
 import DriverHomeScreen from '../screens/driver/DriverHomeScreen.jsx';
 import DriverRideHistoryScreen from '../screens/driver/DriverRideHistoryScreen.jsx';
@@ -29,7 +30,7 @@ const DriverTabNavigator = () => {
           } else if (route.name === 'Ratings') {
             iconName = 'star';
           } else if (route.name === 'DriverProfile') {
-            iconName = 'person';
+            iconName = 'person'; // Profile icon
           }
 
           return <Icon name={iconName} size={size} color={color} />;

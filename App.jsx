@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { navigationRef } from './src/utils/navigationRef';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -6,7 +6,7 @@ import { createBottomTabNavigator, useBottomTabBarHeight } from '@react-navigati
 import { PaperProvider } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts, Inter_400Regular, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
-import { View, ActivityIndicator, Platform, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, ActivityIndicator, Platform, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { BlurView } from 'expo-blur';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from './src/theme/designTokens';
@@ -86,7 +86,80 @@ function DriverMainStack() {
   );
 }
 
-// Custom Tab Bar Component để kiểm soát chính xác background
+// Tab Icon Component với outline icons và animation
+const TabIcon = ({ iconName, isFocused, onPress }) => {
+  const scaleAnim = React.useRef(new Animated.Value(isFocused ? 1.1 : 1)).current;
+
+  React.useEffect(() => {
+    Animated.spring(scaleAnim, {
+      toValue: isFocused ? 1.2 : 1,
+      tension: 300,
+      friction: 10,
+      useNativeDriver: true,
+    }).start();
+  }, [isFocused, scaleAnim]);
+
+  // Icon mapping: some icons don't have outline versions
+  const iconMap = {
+    'two-wheeler': {
+      active: 'two-wheeler',
+      inactive: 'two-wheeler', // No outline version, will use opacity
+    },
+    'account-balance-wallet': {
+      active: 'account-balance-wallet',
+      inactive: 'account-balance-wallet', // Use same icon with opacity
+    },
+    'history': {
+      active: 'history',
+      inactive: 'history', // No outline version, will use opacity
+    },
+    'person': {
+      active: 'person',
+      inactive: 'person-outline',
+    },
+  };
+
+  const iconConfig = iconMap[iconName] || {
+    active: iconName,
+    inactive: iconName.includes('-outline') ? iconName : `${iconName}-outline`,
+  };
+
+  const finalIconName = isFocused ? iconConfig.active : iconConfig.inactive;
+  const iconOpacity = isFocused ? 1 : 0.6; // Lower opacity for inactive icons without outline
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      style={{
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 8,
+        paddingHorizontal: 0,
+      }}
+      activeOpacity={0.7}
+    >
+      <Animated.View
+        style={{
+          transform: [{ scale: scaleAnim }],
+          alignItems: 'center',
+          justifyContent: 'center',
+          opacity: iconOpacity,
+          width: 44,
+          height: 44,
+        }}
+      >
+        <Icon
+          name={finalIconName}
+          size={28}
+          color={isFocused ? '#FFFFFF' : '#9CA3AF'}
+        />
+      </Animated.View>
+    </TouchableOpacity>
+  );
+};
+
+// Custom Tab Bar Component với icon design được cải thiện
 const CustomTabBar = ({ state, descriptors, navigation, insets }) => {
   const bottomSafe = Math.max(insets.bottom, Platform.OS === 'android' ? 12 : 6);
   const baseHeight = Platform.OS === 'ios' ? 64 : 56;
@@ -98,12 +171,12 @@ const CustomTabBar = ({ state, descriptors, navigation, insets }) => {
         position: 'absolute',
         bottom: bottomOffset + bottomSafe,
         left: '50%',
-        marginLeft: -120, // Giảm chiều dài menu bar (từ full width xuống ~240px)
+        marginLeft: -120,
         width: 240,
         height: baseHeight,
         borderRadius: 24,
         backgroundColor: 'transparent',
-        // Shadow depth (neumorphism style - giống CleanCard) - đặt ở View ngoài để shadow hiển thị
+        // Shadow depth (neumorphism style - giống CleanCard)
         shadowColor: 'rgba(163, 177, 198, 0.65)',
         shadowOpacity: 0.32,
         shadowRadius: 18,
@@ -141,8 +214,8 @@ const CustomTabBar = ({ state, descriptors, navigation, insets }) => {
           flex: 1,
           flexDirection: 'row',
           alignItems: 'center',
-          justifyContent: 'space-around',
-          paddingHorizontal: 12, // Giảm padding để icon gần nhau hơn
+          justifyContent: 'center',
+          paddingHorizontal: 0,
         }}
       >
         {state.routes.map((route, index) => {
@@ -161,43 +234,22 @@ const CustomTabBar = ({ state, descriptors, navigation, insets }) => {
             }
           };
 
-          let iconName = 'home';
+          let iconName = 'two-wheeler'; // Scooter icon for Home
           if (route.name === 'Wallet') {
-            iconName = 'account-balance-wallet';
+            iconName = 'account-balance-wallet'; // Wallet icon
           } else if (route.name === 'History') {
-            iconName = 'history';
+            iconName = 'history'; // History icon
           } else if (route.name === 'Profile') {
-            iconName = 'person';
+            iconName = 'person'; // Profile icon
           }
 
           return (
-            <TouchableOpacity
+            <TabIcon
               key={route.key}
+              iconName={iconName}
+              isFocused={isFocused}
               onPress={onPress}
-              style={{
-                alignItems: 'center',
-                justifyContent: 'center',
-                paddingHorizontal: 8, // Giảm khoảng cách giữa các icon
-              }}
-              activeOpacity={0.7}
-            >
-              <Icon
-                name={iconName}
-                size={24}
-                color={isFocused ? '#FFFFFF' : '#9CA3AF'}
-              />
-              {isFocused && (
-                <View
-                  style={{
-                    width: 4,
-                    height: 4,
-                    borderRadius: 2,
-                    backgroundColor: '#FFFFFF',
-                    marginTop: 4,
-                  }}
-                />
-              )}
-            </TouchableOpacity>
+            />
           );
         })}
       </View>
