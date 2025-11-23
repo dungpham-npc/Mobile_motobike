@@ -226,10 +226,21 @@ class AuthService {
   }
 
   // Get current user profile
-  async getCurrentUserProfile() {
+  async getCurrentUserProfile(forceRefresh = false) {
     try {
-      const response = await apiService.get('/me');
+      // Add timestamp to force fresh request (bypass cache if needed)
+      const url = forceRefresh ? `/me?t=${Date.now()}` : '/me';
+      const response = await apiService.get(url);
+      
+      // Always save to storage to ensure we have latest data
       await this.saveUserToStorage(response);
+      
+      console.log('📋 Profile loaded:', {
+        active_profile: response?.active_profile || response?.activeProfile,
+        user_type: response?.user?.user_type,
+        has_driver_profile: response?.driver_profile !== null,
+      });
+      
       return response;
     } catch (error) {
       console.error('Get profile error:', error);
@@ -290,22 +301,83 @@ class AuthService {
   //   }
   // }
 
-  // // Switch profile (rider/driver)
-  // async switchProfile(targetRole) {
-  //   try {
-  //     const response = await apiService.post('/me/switch-profile', {
-  //       targetRole,
-  //     });
+  // Switch profile (rider/driver)
+  async switchProfile(targetRole) {
+    try {
+      console.log('🔄 Switching profile to:', targetRole);
+      const response = await apiService.post(ENDPOINTS.PROFILE.SWITCH_PROFILE, {
+        targetProfile: targetRole, // Backend expects 'targetProfile' not 'targetRole'
+      });
       
-  //     // Refresh user profile
-  //     await this.getCurrentUserProfile();
+      console.log('✅ Switch profile response:', JSON.stringify(response, null, 2));
       
-  //     return response;
-  //   } catch (error) {
-  //     console.error('Switch profile error:', error);
-  //     throw error;
-  //   }
-  // }
+      // Extract active_profile and access_token (handle both snake_case and camelCase)
+      const activeProfile = response.active_profile || response.activeProfile;
+      const accessToken = response.access_token || response.access_token;
+      
+      console.log('📋 Extracted values:', {
+        activeProfile,
+        hasAccessToken: !!accessToken,
+      });
+      
+      // Update access token if provided (CRITICAL: must update token before refreshing profile)
+      if (accessToken) {
+        console.log('💾 Saving new access token...');
+        await this.saveTokens(accessToken, null);
+        console.log('✅ Access token saved');
+      } else {
+        console.warn('⚠️ No access token in switch response');
+      }
+      
+      // Wait a moment to ensure backend has processed the switch
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // Force refresh user profile to get updated role and activeProfile
+      console.log('🔄 Refreshing user profile...');
+      const updatedProfile = await this.getCurrentUserProfile(true);
+      
+      // Ensure activeProfile is set from switch response (highest priority)
+      if (activeProfile) {
+        // Set active_profile in the updated profile
+        updatedProfile.active_profile = activeProfile;
+        updatedProfile.activeProfile = activeProfile; // Also set camelCase for compatibility
+        await this.saveUserToStorage(updatedProfile);
+        console.log('💾 Saved activeProfile to user data:', activeProfile);
+      } else {
+        // Fallback: use activeProfile from /me response
+        const profileActiveProfile = updatedProfile?.active_profile || updatedProfile?.activeProfile;
+        if (profileActiveProfile) {
+          console.log('📋 Using activeProfile from /me:', profileActiveProfile);
+          updatedProfile.active_profile = profileActiveProfile;
+          updatedProfile.activeProfile = profileActiveProfile;
+          await this.saveUserToStorage(updatedProfile);
+        } else {
+          console.warn('⚠️ No activeProfile found in switch response or /me');
+        }
+      }
+      
+      // Final verification
+      const finalProfile = await this.getCurrentUserProfile(true);
+      console.log('✅ Final profile after switch:', {
+        active_profile: finalProfile?.active_profile || finalProfile?.activeProfile,
+        user_type: finalProfile?.user?.user_type,
+        has_driver_profile: finalProfile?.driver_profile !== null,
+        has_rider_profile: finalProfile?.rider_profile !== null,
+      });
+      
+      return {
+        ...response,
+        active_profile: activeProfile || finalProfile?.active_profile || finalProfile?.activeProfile,
+        access_token: accessToken,
+      };
+    } catch (error) {
+      console.error('❌ Switch profile error:', error);
+      if (error instanceof ApiError) {
+        throw error;
+      }
+      throw new ApiError(error.message || 'Không thể chuyển đổi chế độ', error.status || 500);
+    }
+  }
 
   // // Submit student verification - Delegate to verificationService
   // async submitStudentVerification(documentFile) {
@@ -404,8 +476,16 @@ class AuthService {
 
   // Check if user is driver
   isDriver() {
-    return this.currentUser?.user?.user_type === 'driver' || 
-           this.currentUser?.driver_profile !== null;
+    // Priority 1: Check activeProfile from backend (most accurate after switch)
+    if (this.currentUser?.active_profile) {
+      return this.currentUser.active_profile === 'driver';
+    }
+    // Priority 2: Check user_type
+    if (this.currentUser?.user?.user_type === 'driver') {
+      return true;
+    }
+    // Priority 3: Check if driver_profile exists (fallback)
+    return this.currentUser?.driver_profile !== null;
   }
 
   // Check if user is rider

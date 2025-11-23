@@ -1,574 +1,453 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
-  TouchableOpacity,
   ScrollView,
-  TextInput
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/MaterialIcons';
-import { LinearGradient } from 'expo-linear-gradient';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
+import Feather from 'react-native-vector-icons/Feather';
 import * as Animatable from 'react-native-animatable';
 
-const DriverRatingsScreen = () => {
-  const [selectedFilter, setSelectedFilter] = useState('all');
+import AppBackground from '../../components/layout/AppBackground.jsx';
+import CleanCard from '../../components/ui/CleanCard.jsx';
+import { SoftBackHeader } from '../../components/ui/GlassHeader.jsx';
+import { colors, typography, spacing } from '../../theme/designTokens';
+import ratingService from '../../services/ratingService';
+import useSoftHeaderSpacing from '../../hooks/useSoftHeaderSpacing.js';
 
-  const ratingStats = {
-    overall: 4.8,
-    total: 156,
-    breakdown: {
-      5: 98,
-      4: 32,
-      3: 18,
-      2: 6,
-      1: 2
+const DriverRatingsScreen = ({ navigation }) => {
+  const { headerOffset, contentPaddingTop } = useSoftHeaderSpacing({ contentExtra: 28 });
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [ratings, setRatings] = useState([]);
+  const [stats, setStats] = useState({
+    overall: 0,
+    total: 0,
+    breakdown: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
+  });
+
+  const loadRatings = async (showRefreshing = false) => {
+    try {
+      if (showRefreshing) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+
+      const response = await ratingService.getDriverRatingsHistory(0, 50);
+      const ratingsData = response?.content || response?.data || [];
+      
+      setRatings(ratingsData);
+
+      // Calculate stats
+      if (ratingsData.length > 0) {
+        const total = ratingsData.length;
+        const breakdown = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+        let sum = 0;
+
+        ratingsData.forEach((rating) => {
+          const score = rating.score || rating.rating || 0;
+          if (score >= 1 && score <= 5) {
+            breakdown[score]++;
+            sum += score;
+          }
+        });
+
+        setStats({
+          overall: total > 0 ? (sum / total).toFixed(1) : 0,
+          total,
+          breakdown,
+        });
+      } else {
+        setStats({
+          overall: 0,
+          total: 0,
+          breakdown: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
+        });
+      }
+    } catch (error) {
+      console.error('Error loading ratings:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  const recentReviews = [
-    {
-      id: 1,
-      riderName: 'Nguyen Van A',
-      rating: 5,
-      comment: 'Tài xế lái xe rất an toàn, đúng giờ và thái độ thân thiện. Sẽ chọn lại lần sau!',
-      date: '2024-01-16T14:30:00Z',
-      route: 'Ký túc xá A → Trường FPT'
-    },
-    {
-      id: 2,
-      riderName: 'Le Thi B',
-      rating: 4,
-      comment: 'Xe sạch sẽ, tài xế lịch sự. Chỉ có điều hơi nhanh một chút.',
-      date: '2024-01-15T16:20:00Z',
-      route: 'Nhà văn hóa → Chợ Bến Thành'
-    },
-    {
-      id: 3,
-      riderName: 'Pham Van C',
-      rating: 5,
-      comment: 'Tuyệt vời! Tài xế rất am hiểu đường và tránh được kẹt xe.',
-      date: '2024-01-15T12:45:00Z',
-      route: 'Trọ sinh viên → Trường FPT'
-    },
-    {
-      id: 4,
-      riderName: 'Hoang Thi D',
-      rating: 3,
-      comment: 'Bình thường, không có gì đặc biệt.',
-      date: '2024-01-14T18:15:00Z',
-      route: 'Vincom → Ký túc xá B'
-    },
-    {
-      id: 5,
-      riderName: 'Tran Van E',
-      rating: 5,
-      comment: 'Tài xế rất chuyên nghiệp, có mũ bảo hiểm dự phòng và lái xe cẩn thận.',
-      date: '2024-01-14T10:30:00Z',
-      route: 'Trường FPT → Chợ Bến Thành'
-    }
-  ];
+  useEffect(() => {
+    loadRatings();
+  }, []);
 
-  const filterOptions = [
-    { key: 'all', label: 'Tất cả', count: ratingStats.total },
-    { key: '5', label: '5 sao', count: ratingStats.breakdown[5] },
-    { key: '4', label: '4 sao', count: ratingStats.breakdown[4] },
-    { key: '3', label: '3 sao', count: ratingStats.breakdown[3] },
-    { key: '2-1', label: '≤2 sao', count: ratingStats.breakdown[2] + ratingStats.breakdown[1] }
-  ];
-
-  const filteredReviews = selectedFilter === 'all' 
-    ? recentReviews 
-    : selectedFilter === '2-1'
-    ? recentReviews.filter(review => review.rating <= 2)
-    : recentReviews.filter(review => review.rating.toString() === selectedFilter);
+  useFocusEffect(
+    React.useCallback(() => {
+      loadRatings();
+    }, [])
+  );
 
   const renderStars = (rating) => {
     return Array.from({ length: 5 }, (_, index) => (
-      <Icon
+      <Feather
         key={index}
         name="star"
-        size={16}
-        color={index < rating ? '#FF9800' : '#E0E0E0'}
+        size={14}
+        color={index < rating ? '#FBBF24' : '#E5E7EB'}
+        style={styles.starIcon}
       />
     ));
   };
 
   const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('vi-VN');
+    if (!dateString) return '';
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('vi-VN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      });
+    } catch {
+      return '';
+    }
   };
 
   const getProgressWidth = (count) => {
-    return (count / ratingStats.total) * 100;
+    if (stats.total === 0) return 0;
+    return (count / stats.total) * 100;
   };
 
+  if (loading) {
+    return (
+      <AppBackground>
+        <SafeAreaView style={styles.safe}>
+          <SoftBackHeader
+            floating
+            topOffset={headerOffset}
+            title="Đánh giá của tôi"
+            onBackPress={() => navigation.goBack()}
+          />
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.loadingText}>Đang tải đánh giá...</Text>
+          </View>
+        </SafeAreaView>
+      </AppBackground>
+    );
+  }
+
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <LinearGradient
-          colors={['#FF9800', '#F57C00']}
-          style={styles.header}
+    <AppBackground>
+      <SafeAreaView style={styles.safe}>
+        <SoftBackHeader
+          floating
+          topOffset={headerOffset}
+          title="Đánh giá của tôi"
+          onBackPress={() => navigation.goBack()}
+        />
+
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.scrollContent, { paddingTop: contentPaddingTop }]}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => loadRatings(true)}
+              tintColor={colors.primary}
+            />
+          }
         >
-          <View style={styles.headerContent}>
-            <Text style={styles.headerTitle}>Đánh giá của tôi</Text>
-            <Text style={styles.headerSubtitle}>Xem phản hồi từ khách hàng</Text>
-          </View>
-        </LinearGradient>
-
-        <View style={styles.content}>
-          {/* Overall Rating */}
-          <Animatable.View animation="fadeInUp" style={styles.overallCard}>
-            <View style={styles.overallHeader}>
-              <View style={styles.ratingDisplay}>
-                <Text style={styles.overallRating}>{ratingStats.overall}</Text>
-                <View style={styles.starsContainer}>
-                  {renderStars(Math.floor(ratingStats.overall))}
-                  <Text style={styles.totalReviews}>({ratingStats.total} đánh giá)</Text>
-                </View>
-              </View>
-              <LinearGradient
-                colors={['#FF9800', '#F57C00']}
-                style={styles.ratingIcon}
-              >
-                <Icon name="star" size={32} color="#fff" />
-              </LinearGradient>
-            </View>
-
-            {/* Rating Breakdown */}
-            <View style={styles.breakdownContainer}>
-              {[5, 4, 3, 2, 1].map((star) => (
-                <View key={star} style={styles.breakdownRow}>
-                  <Text style={styles.starLabel}>{star} sao</Text>
-                  <View style={styles.progressBar}>
-                    <View 
-                      style={[
-                        styles.progressFill, 
-                        { width: `${getProgressWidth(ratingStats.breakdown[star])}%` }
-                      ]} 
-                    />
+          {/* Overall Rating Card */}
+          <Animatable.View animation="fadeInUp" duration={400} delay={60}>
+            <CleanCard contentStyle={styles.overallCard}>
+              <View style={styles.overallHeader}>
+                <View style={styles.ratingMain}>
+                  <Text style={styles.overallRating}>{stats.overall || '0.0'}</Text>
+                  <View style={styles.starsRow}>
+                    {renderStars(Math.round(parseFloat(stats.overall) || 0))}
                   </View>
-                  <Text style={styles.countLabel}>{ratingStats.breakdown[star]}</Text>
-                </View>
-              ))}
-            </View>
-          </Animatable.View>
-
-          {/* Performance Metrics */}
-          <View style={styles.metricsCard}>
-            <Text style={styles.cardTitle}>Chỉ số hiệu suất</Text>
-            <View style={styles.metricsGrid}>
-              <View style={styles.metricItem}>
-                <LinearGradient
-                  colors={['#4CAF50', '#2E7D32']}
-                  style={styles.metricIcon}
-                >
-                  <Icon name="check-circle" size={20} color="#fff" />
-                </LinearGradient>
-                <Text style={styles.metricValue}>96%</Text>
-                <Text style={styles.metricLabel}>Tỷ lệ hoàn thành</Text>
-              </View>
-
-              <View style={styles.metricItem}>
-                <LinearGradient
-                  colors={['#2196F3', '#1976D2']}
-                  style={styles.metricIcon}
-                >
-                  <Icon name="schedule" size={20} color="#fff" />
-                </LinearGradient>
-                <Text style={styles.metricValue}>92%</Text>
-                <Text style={styles.metricLabel}>Đúng giờ</Text>
-              </View>
-
-              <View style={styles.metricItem}>
-                <LinearGradient
-                  colors={['#9C27B0', '#7B1FA2']}
-                  style={styles.metricIcon}
-                >
-                  <Icon name="thumb-up" size={20} color="#fff" />
-                </LinearGradient>
-                <Text style={styles.metricValue}>89%</Text>
-                <Text style={styles.metricLabel}>Hài lòng</Text>
-              </View>
-
-              <View style={styles.metricItem}>
-                <LinearGradient
-                  colors={['#FF5722', '#D84315']}
-                  style={styles.metricIcon}
-                >
-                  <Icon name="security" size={20} color="#fff" />
-                </LinearGradient>
-                <Text style={styles.metricValue}>98%</Text>
-                <Text style={styles.metricLabel}>An toàn</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Filter Tabs */}
-          <View style={styles.filterContainer}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {filterOptions.map((option) => (
-                <TouchableOpacity
-                  key={option.key}
-                  style={[
-                    styles.filterTab,
-                    selectedFilter === option.key && styles.filterTabActive
-                  ]}
-                  onPress={() => setSelectedFilter(option.key)}
-                >
-                  <Text style={[
-                    styles.filterTabText,
-                    selectedFilter === option.key && styles.filterTabTextActive
-                  ]}>
-                    {option.label} ({option.count})
+                  <Text style={styles.totalText}>
+                    {stats.total} {stats.total === 1 ? 'đánh giá' : 'đánh giá'}
                   </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
+                </View>
+                <View style={styles.ratingIconContainer}>
+                  <Feather name="star" size={32} color={colors.primary} />
+                </View>
+              </View>
+
+              {/* Rating Breakdown */}
+              {stats.total > 0 && (
+                <View style={styles.breakdownContainer}>
+                  {[5, 4, 3, 2, 1].map((star) => (
+                    <View key={star} style={styles.breakdownRow}>
+                      <Text style={styles.starLabel}>{star}</Text>
+                      <Feather name="star" size={12} color="#FBBF24" />
+                      <View style={styles.progressBar}>
+                        <View
+                          style={[
+                            styles.progressFill,
+                            { width: `${getProgressWidth(stats.breakdown[star])}%` },
+                          ]}
+                        />
+                      </View>
+                      <Text style={styles.countLabel}>{stats.breakdown[star]}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </CleanCard>
+          </Animatable.View>
 
           {/* Reviews List */}
           <View style={styles.reviewsSection}>
-            <Text style={styles.sectionTitle}>Nhận xét từ khách hàng</Text>
-            {filteredReviews.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Icon name="rate-review" size={48} color="#ccc" />
-                <Text style={styles.emptyText}>Chưa có đánh giá nào</Text>
-              </View>
-            ) : (
-              filteredReviews.map((review) => (
-                <Animatable.View 
-                  key={review.id} 
-                  animation="fadeInUp" 
-                  style={styles.reviewCard}
-                >
-                  <View style={styles.reviewHeader}>
-                    <View style={styles.reviewerInfo}>
-                      <View style={styles.reviewerAvatar}>
-                        <Icon name="person" size={20} color="#666" />
-                      </View>
-                      <View style={styles.reviewerDetails}>
-                        <Text style={styles.reviewerName}>{review.riderName}</Text>
-                        <Text style={styles.reviewDate}>{formatDate(review.date)}</Text>
-                      </View>
-                    </View>
-                    <View style={styles.reviewRating}>
-                      {renderStars(review.rating)}
-                    </View>
+            <Text style={styles.sectionTitle}>
+              Nhận xét từ khách hàng ({stats.total})
+            </Text>
+
+            {ratings.length === 0 ? (
+              <Animatable.View animation="fadeInUp" duration={400} delay={120}>
+                <CleanCard contentStyle={styles.emptyCard}>
+                  <View style={styles.emptyState}>
+                    <Feather name="message-circle" size={48} color={colors.textMuted} />
+                    <Text style={styles.emptyText}>Chưa có đánh giá nào</Text>
+                    <Text style={styles.emptySubtext}>
+                      Đánh giá sẽ xuất hiện sau khi khách hàng hoàn thành chuyến đi
+                    </Text>
                   </View>
-                  
-                  <Text style={styles.reviewRoute}>{review.route}</Text>
-                  
-                  <Text style={styles.reviewComment}>{review.comment}</Text>
-                </Animatable.View>
-              ))
+                </CleanCard>
+              </Animatable.View>
+            ) : (
+              ratings.map((rating, index) => {
+                const score = rating.score || rating.rating || 0;
+                const riderName = rating.rider_name || rating.riderName || 'Khách hàng';
+                const comment = rating.comment || '';
+                const createdAt = rating.created_at || rating.createdAt;
+
+                return (
+                  <Animatable.View
+                    key={rating.rating_id || rating.ratingId || index}
+                    animation="fadeInUp"
+                    duration={400}
+                    delay={120 + index * 50}
+                  >
+                    <CleanCard contentStyle={styles.reviewCard}>
+                      <View style={styles.reviewHeader}>
+                        <View style={styles.reviewerInfo}>
+                          <View style={styles.reviewerAvatar}>
+                            <Feather name="user" size={18} color={colors.primary} />
+                          </View>
+                          <View style={styles.reviewerDetails}>
+                            <Text style={styles.reviewerName}>{riderName}</Text>
+                            {createdAt && (
+                              <Text style={styles.reviewDate}>{formatDate(createdAt)}</Text>
+                            )}
+                          </View>
+                        </View>
+                        <View style={styles.reviewRating}>
+                          {renderStars(score)}
+                        </View>
+                      </View>
+
+                      {comment ? (
+                        <Text style={styles.reviewComment}>{comment}</Text>
+                      ) : (
+                        <Text style={styles.reviewCommentEmpty}>
+                          Khách hàng chưa để lại nhận xét
+                        </Text>
+                      )}
+                    </CleanCard>
+                  </Animatable.View>
+                );
+              })
             )}
           </View>
-
-          {/* Tips for Improvement */}
-          <View style={styles.tipsCard}>
-            <Text style={styles.cardTitle}>Gợi ý cải thiện</Text>
-            <View style={styles.tip}>
-              <Icon name="lightbulb" size={20} color="#FF9800" />
-              <Text style={styles.tipText}>
-                Luôn đeo khẩu trang và cung cấp nước sát khuẩn cho khách hàng
-              </Text>
-            </View>
-            <View style={styles.tip}>
-              <Icon name="lightbulb" size={20} color="#FF9800" />
-              <Text style={styles.tipText}>
-                Giao tiếp thân thiện và hỏi thăm về nhiệt độ điều hòa
-              </Text>
-            </View>
-            <View style={styles.tip}>
-              <Icon name="lightbulb" size={20} color="#FF9800" />
-              <Text style={styles.tipText}>
-                Chọn đường đi tối ưu và thông báo khi có thay đổi lộ trình
-              </Text>
-            </View>
-          </View>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+        </ScrollView>
+      </SafeAreaView>
+    </AppBackground>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  safe: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
   },
-  header: {
-    paddingTop: 20,
-    paddingBottom: 24,
-    paddingHorizontal: 20,
-  },
-  headerContent: {
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
+    gap: spacing.md,
   },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 4,
+  loadingText: {
+    fontSize: typography.body,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textSecondary,
   },
-  headerSubtitle: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.8)',
-  },
-  content: {
-    flex: 1,
-    padding: 20,
+  scrollContent: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.xl * 2,
+    gap: spacing.lg,
   },
   overallCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 20,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+    padding: spacing.lg,
   },
   overallHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: spacing.md,
   },
-  ratingDisplay: {
+  ratingMain: {
     flex: 1,
   },
   overallRating: {
     fontSize: 48,
-    fontWeight: 'bold',
-    color: '#FF9800',
-    marginBottom: 8,
+    fontFamily: 'Inter_700Bold',
+    color: colors.primary,
+    marginBottom: spacing.xs,
   },
-  starsContainer: {
+  starsRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
+    marginBottom: spacing.xs,
   },
-  totalReviews: {
-    fontSize: 14,
-    color: '#666',
-    marginLeft: 8,
+  starIcon: {
+    marginHorizontal: 1,
   },
-  ratingIcon: {
+  totalText: {
+    fontSize: typography.body,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textSecondary,
+  },
+  ratingIconContainer: {
     width: 64,
     height: 64,
-    borderRadius: 16,
+    borderRadius: 20,
+    backgroundColor: colors.primary + '15',
     justifyContent: 'center',
     alignItems: 'center',
   },
   breakdownContainer: {
-    marginTop: 16,
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
   breakdownRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: spacing.sm,
+    gap: spacing.xs,
   },
   starLabel: {
-    width: 40,
-    fontSize: 14,
-    color: '#666',
+    width: 20,
+    fontSize: typography.small,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
   },
   progressBar: {
     flex: 1,
     height: 6,
-    backgroundColor: '#E0E0E0',
+    backgroundColor: '#E5E7EB',
     borderRadius: 3,
-    marginHorizontal: 12,
+    marginHorizontal: spacing.sm,
+    overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#FF9800',
+    backgroundColor: colors.primary,
     borderRadius: 3,
   },
   countLabel: {
     width: 30,
-    fontSize: 14,
-    color: '#666',
+    fontSize: typography.small,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textSecondary,
     textAlign: 'right',
   },
-  metricsCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 20,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    marginBottom: 16,
-  },
-  metricsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  metricItem: {
-    width: '48%',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  metricIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  metricValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
-    marginBottom: 4,
-  },
-  metricLabel: {
-    fontSize: 12,
-    color: '#666',
-    textAlign: 'center',
-  },
-  filterContainer: {
-    marginBottom: 20,
-  },
-  filterTab: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    marginRight: 12,
-    borderRadius: 20,
-    backgroundColor: '#fff',
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-  },
-  filterTabActive: {
-    backgroundColor: '#FF9800',
-  },
-  filterTabText: {
-    fontSize: 14,
-    color: '#666',
-    fontWeight: '500',
-  },
-  filterTabTextActive: {
-    color: '#fff',
-  },
   reviewsSection: {
-    marginBottom: 20,
+    gap: spacing.md,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    marginBottom: 16,
+    fontSize: typography.subheading,
+    fontFamily: 'Inter_700Bold',
+    color: colors.textPrimary,
+    paddingHorizontal: spacing.xs,
+  },
+  emptyCard: {
+    padding: spacing.xl * 2,
   },
   emptyState: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 40,
     alignItems: 'center',
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    gap: spacing.md,
   },
   emptyText: {
-    fontSize: 16,
-    color: '#666',
-    marginTop: 12,
+    fontSize: typography.subheading,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
+  },
+  emptySubtext: {
+    fontSize: typography.body,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
   },
   reviewCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    padding: spacing.md,
   },
   reviewHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
+    alignItems: 'flex-start',
+    marginBottom: spacing.sm,
   },
   reviewerInfo: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
+    gap: spacing.sm,
   },
   reviewerAvatar: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: colors.primary + '15',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
   },
   reviewerDetails: {
     flex: 1,
   },
   reviewerName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1a1a1a',
+    fontSize: typography.body,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
+    marginBottom: 2,
   },
   reviewDate: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: typography.small,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textMuted,
   },
   reviewRating: {
     flexDirection: 'row',
-  },
-  reviewRoute: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 8,
+    gap: 2,
   },
   reviewComment: {
-    fontSize: 14,
-    color: '#1a1a1a',
+    fontSize: typography.body,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textPrimary,
     lineHeight: 20,
+    marginTop: spacing.xs,
   },
-  tipsCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-  },
-  tip: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  tipText: {
-    flex: 1,
-    fontSize: 14,
-    color: '#666',
-    marginLeft: 12,
-    lineHeight: 20,
+  reviewCommentEmpty: {
+    fontSize: typography.body,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textMuted,
+    fontStyle: 'italic',
+    marginTop: spacing.xs,
   },
 });
 
