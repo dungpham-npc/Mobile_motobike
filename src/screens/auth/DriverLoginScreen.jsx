@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, Alert, Image, StatusBar } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import { FontAwesome } from '@expo/vector-icons'; // icon cho Google/Facebook
 import * as Animatable from 'react-native-animatable';
 import authService from '../../services/authService';
 import { ApiError } from '../../services/api';
@@ -11,14 +10,13 @@ import AppBackground from '../../components/layout/AppBackground.jsx';
 import CleanCard from '../../components/ui/CleanCard.jsx';
 import { colors } from '../../theme/designTokens';
 
-const LoginScreen = ({ navigation, route }) => {
+const DriverLoginScreen = ({ navigation, route }) => {
   // Pre-fill email if coming from registration
   const prefillEmail = route?.params?.prefillEmail || '';
   const [email, setEmail] = useState(prefillEmail);
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [targetProfile, setTargetProfile] = useState('rider'); // Default to rider
   
   // Update email when route params change
   useEffect(() => {
@@ -43,11 +41,11 @@ const LoginScreen = ({ navigation, route }) => {
 
     setLoading(true);
     try {
-      const result = await authService.login(email, password, targetProfile);
+      const result = await authService.login(email, password, 'driver');
       if (result.success) {
         // After email verification, user should have profile and can login
         // Phone verification is separate and not required for login
-        navigation.replace(targetProfile === 'driver' ? 'DriverMain' : 'Main');
+        navigation.replace('DriverMain');
       }
     } catch (error) {
       console.error('Login error:', error);
@@ -93,10 +91,6 @@ const LoginScreen = ({ navigation, route }) => {
     }
   };
 
-  // Stub – chỉ UI
-  const handleLoginGoogle = () => Alert.alert('Google', 'Login with Google (UI only)');
-  const handleLoginFacebook = () => Alert.alert('Facebook', 'Login with Facebook (UI only)');
-
   return (
     <AppBackground>
       <StatusBar barStyle="dark-content" />
@@ -113,7 +107,8 @@ const LoginScreen = ({ navigation, route }) => {
                   style={styles.illustration}
                   resizeMode="contain"
                 />
-                <Text style={styles.welcome}>Chào mừng trở lại</Text>
+                <Text style={styles.welcome}>Chào mừng tài xế</Text>
+                <Text style={styles.subtitle}>Đăng nhập để bắt đầu nhận chuyến</Text>
               </View>
             </Animatable.View>
 
@@ -142,69 +137,35 @@ const LoginScreen = ({ navigation, route }) => {
                   onChangeText={setPassword}
                   secureTextEntry={!showPassword}
                   returnKeyType="done"
+                  onSubmitEditing={handleLogin}
                 />
                 <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eye}>
                   <Icon name={showPassword ? 'visibility' : 'visibility-off'} size={20} color={colors.textSecondary} />
                 </TouchableOpacity>
               </View>
 
-              <View style={styles.profileSelector}>
-                <Text style={styles.profileLabel}>Đăng nhập với tư cách</Text>
-                <View style={styles.profileButtons}>
-                  <TouchableOpacity
-                    style={[
-                      styles.profileButton,
-                      targetProfile === 'rider' && styles.profileButtonActive
-                    ]}
-                    onPress={() => setTargetProfile('rider')}
-                  >
-                    <Icon 
-                      name="person" 
-                      size={18} 
-                      color={targetProfile === 'rider' ? '#FFFFFF' : colors.textSecondary} 
-                    />
-                    <Text style={[
-                      styles.profileButtonText,
-                      targetProfile === 'rider' && styles.profileButtonTextActive
-                    ]}>
-                      Rider
-                    </Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity
-                    style={[
-                      styles.profileButton,
-                      styles.profileButtonLast,
-                      targetProfile === 'driver' && styles.profileButtonActive
-                    ]}
-                    onPress={() => setTargetProfile('driver')}
-                  >
-                    <Icon 
-                      name="directions-car" 
-                      size={18} 
-                      color={targetProfile === 'driver' ? '#FFFFFF' : colors.textSecondary} 
-                    />
-                    <Text style={[
-                      styles.profileButtonText,
-                      targetProfile === 'driver' && styles.profileButtonTextActive
-                    ]}>
-                      Driver
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
               <TouchableOpacity style={styles.forgotPassword} onPress={() => navigation.navigate('ResetPassword')}>
                 <Text style={styles.forgotPasswordText}>Quên mật khẩu?</Text>
               </TouchableOpacity>
 
-              <GlassButton title={loading ? '...' : 'Đăng nhập'} onPress={handleLogin} style={styles.signInButton} />
+              <GlassButton 
+                title={loading ? 'Đang đăng nhập...' : 'Đăng nhập'} 
+                onPress={handleLogin} 
+                style={styles.signInButton}
+              />
             </CleanCard>
 
-          <View style={styles.footer}>
+            <View style={styles.footer}>
               <Text style={styles.footerText}>Chưa có tài khoản?</Text>
-              <TouchableOpacity onPress={() => navigation.navigate('Register')}>
+              <TouchableOpacity onPress={() => navigation.navigate('Register', { defaultProfile: 'driver' })}>
                 <Text style={styles.registerLink}>Đăng ký</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.switchProfile}>
+              <Text style={styles.switchProfileText}>Bạn là hành khách?</Text>
+              <TouchableOpacity onPress={() => navigation.replace('Login')}>
+                <Text style={styles.switchProfileLink}>Đăng nhập với tư cách Rider</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -236,9 +197,10 @@ const styles = StyleSheet.create({
     fontSize: 30,
     fontFamily: 'Inter_700Bold',
     color: colors.textPrimary,
+    marginBottom: 8,
   },
   subtitle: {
-    marginTop: 8,
+    marginTop: 4,
     fontSize: 14,
     fontFamily: 'Inter_400Regular',
     color: colors.textSecondary,
@@ -271,50 +233,10 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_600SemiBold',
   },
   eye: { padding: 6 },
-  profileSelector: {
-    marginTop: 6,
-    marginBottom: 18,
-  },
-  profileLabel: {
-    fontSize: 13,
-    fontFamily: 'Inter_600SemiBold',
-    color: colors.textSecondary,
-    marginBottom: 12,
-  },
-  profileButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  profileButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 46,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.glassLight,
-    marginRight: 12,
-    gap: 8,
-  },
-  profileButtonLast: {
-    marginRight: 0,
-  },
-  profileButtonActive: {
-    backgroundColor: colors.accent,
-    borderColor: 'rgba(14,165,233,0.45)',
-  },
-  profileButtonText: {
-    fontSize: 14,
-    fontFamily: 'Inter_600SemiBold',
-    color: colors.textSecondary,
-  },
-  profileButtonTextActive: {
-    color: '#FFFFFF',
-  },
   forgotPassword: {
     alignSelf: 'flex-end',
+    marginTop: 4,
+    marginBottom: 18,
   },
   forgotPasswordText: {
     color: colors.accent,
@@ -322,48 +244,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_600SemiBold',
   },
   signInButton: {
-    marginTop: 16,
-  },
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 18,
-  },
-  divider: {
-    flex: 1,
-    height: 1,
-    backgroundColor: colors.border,
-  },
-  dividerText: {
-    marginHorizontal: 12,
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontFamily: 'Inter_600SemiBold',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  socialRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     marginTop: 8,
-  },
-  socialBtn: {
-    width: '48%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 48,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.glassLight,
-  },
-  socialIcon: { marginRight: 8 },
-  socialText: { fontSize: 14, color: colors.textPrimary, fontWeight: '600' },
-  socialText: {
-    fontSize: 14,
-    color: colors.textPrimary,
-    fontFamily: 'Inter_600SemiBold',
   },
   footer: {
     marginTop: 32,
@@ -371,8 +252,34 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  footerText: { color: colors.textSecondary, fontSize: 14, fontFamily: 'Inter_400Regular' },
-  registerLink: { color: colors.accent, fontSize: 14, fontFamily: 'Inter_700Bold', marginLeft: 6 },
+  footerText: { 
+    color: colors.textSecondary, 
+    fontSize: 14, 
+    fontFamily: 'Inter_400Regular' 
+  },
+  registerLink: { 
+    color: colors.accent, 
+    fontSize: 14, 
+    fontFamily: 'Inter_700Bold', 
+    marginLeft: 6 
+  },
+  switchProfile: {
+    marginTop: 24,
+    alignItems: 'center',
+    gap: 8,
+  },
+  switchProfileText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+  },
+  switchProfileLink: {
+    color: colors.accent,
+    fontSize: 14,
+    fontFamily: 'Inter_600SemiBold',
+    textDecorationLine: 'underline',
+  },
 });
 
-export default LoginScreen;
+export default DriverLoginScreen;
+

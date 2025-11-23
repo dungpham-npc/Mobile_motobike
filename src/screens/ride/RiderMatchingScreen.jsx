@@ -189,7 +189,7 @@ const RiderMatchingScreen = ({ navigation, route }) => {
 
               await rideService.cancelRequest(requestIdToCancel);
               setMatchingStatus('cancelled');
-              addNotification('🚫 Đã hủy chuyến đi', 'error');
+              addNotification('Đã hủy chuyến đi', 'error');
               websocketService.disconnect();
               setTimeout(() => navigation.goBack(), 1200);
             } catch (error) {
@@ -303,14 +303,14 @@ const RiderMatchingScreen = ({ navigation, route }) => {
               </View>
             </View>
 
-            {rideRequest.fare && (
+            {/*rideRequest.fare && (
               <View style={styles.fareRow}>
                 <Icon name="attach-money" size={20} color="#FF9800" />
                 <Text style={styles.fareText}>
                   {rideRequest.fare.total?.amount?.toLocaleString() || '0'} VNĐ
                 </Text>
               </View>
-            )}
+            )*/}
           </View>
         )}
 

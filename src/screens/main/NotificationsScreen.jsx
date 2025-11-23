@@ -1,6 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import {
-  SafeAreaView,
   View,
   Text,
   StyleSheet,
@@ -10,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useFocusEffect } from '@react-navigation/native';
 import notificationService from '../../services/notificationService';

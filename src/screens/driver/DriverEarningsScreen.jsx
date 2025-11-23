@@ -3,21 +3,28 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   TouchableOpacity,
   ScrollView,
-  Alert
+  Alert,
+  Platform,
+  RefreshControl,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Animatable from 'react-native-animatable';
 
 import ModernButton from '../../components/ModernButton.jsx';
 import mockData from '../../data/mockData.json';
+import GlassHeader from '../../components/ui/GlassHeader.jsx';
+import CleanCard from '../../components/ui/CleanCard.jsx';
+import AppBackground from '../../components/layout/AppBackground.jsx';
+import { StatusBar } from 'react-native';
+import { colors, typography, spacing } from '../../theme/designTokens';
 
 const DriverEarningsScreen = ({ navigation }) => {
   const [selectedPeriod, setSelectedPeriod] = useState('today');
   const [showWithdrawal, setShowWithdrawal] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const driver = mockData.users[1];
   const earnings = driver.earnings;
@@ -105,480 +112,532 @@ const DriverEarningsScreen = ({ navigation }) => {
     });
   };
 
+  const formatCurrency = (amount) => {
+    if (amount >= 1000000) {
+      return `${(amount / 1000000).toFixed(1)}M`;
+    } else if (amount >= 1000) {
+      return `${(amount / 1000).toFixed(0)}k`;
+    }
+    return amount.toString();
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    setTimeout(() => {
+      setRefreshing(false);
+    }, 1000);
+  };
+
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <LinearGradient
-          colors={['#10412F', '#000000']}
-          style={styles.header}
+    <AppBackground>
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <StatusBar barStyle="light-content" />
+        <ScrollView 
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.accent]} />
+          }
         >
-          <View style={styles.headerContent}>
-            <Text style={styles.headerTitle}>Thu nhập của tôi</Text>
-            <Text style={styles.headerSubtitle}>Theo dõi thu nhập và rút tiền</Text>
-          </View>
-        </LinearGradient>
-
-        <View style={styles.content}>
-          {/* Period Selector */}
-          <View style={styles.periodSelector}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {periods.map((period) => (
-                <TouchableOpacity
-                  key={period.key}
-                  style={[
-                    styles.periodTab,
-                    selectedPeriod === period.key && styles.periodTabActive
-                  ]}
-                  onPress={() => setSelectedPeriod(period.key)}
-                >
-                  <Text style={[
-                    styles.periodTabText,
-                    selectedPeriod === period.key && styles.periodTabTextActive
-                  ]}>
-                    {period.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-
-          {/* Earnings Summary */}
-          <Animatable.View animation="fadeInUp" style={styles.summaryCard}>
-            <Text style={styles.summaryTitle}>Tổng quan thu nhập</Text>
-            
-            <View style={styles.summaryStats}>
-              <View style={styles.summaryItem}>
-                <LinearGradient
-                  colors={['#2196F3', '#1976D2']}
-                  style={styles.summaryIcon}
-                >
-                  <Icon name="trending-up" size={24} color="#fff" />
-                </LinearGradient>
-                <Text style={styles.summaryValue}>
-                  {currentData.gross.toLocaleString()}đ
-                </Text>
-                <Text style={styles.summaryLabel}>Tổng doanh thu</Text>
-              </View>
-
-              <View style={styles.summaryItem}>
-                <LinearGradient
-                  colors={['#FF9800', '#F57C00']}
-                  style={styles.summaryIcon}
-                >
-                  <Icon name="remove" size={24} color="#fff" />
-                </LinearGradient>
-                <Text style={styles.summaryValue}>
-                  {currentData.commission.toLocaleString()}đ
-                </Text>
-                <Text style={styles.summaryLabel}>Hoa hồng ({(commissionRate * 100)}%)</Text>
-              </View>
-
-              <View style={styles.summaryItem}>
-                <LinearGradient
-                  colors={['#10412F', '#000000']}
-                  style={styles.summaryIcon}
-                >
-                  <Icon name="attach-money" size={24} color="#fff" />
-                </LinearGradient>
-                <Text style={[styles.summaryValue, { color: '#4CAF50' }]}>
-                  {currentData.net.toLocaleString()}đ
-                </Text>
-                <Text style={styles.summaryLabel}>Thu nhập ròng</Text>
-              </View>
-            </View>
-
-            <View style={styles.ridesInfo}>
-              <Icon name="directions-car" size={20} color="#666" />
-              <Text style={styles.ridesText}>
-                {currentData.rides} chuyến đi • Trung bình {Math.round(currentData.net / currentData.rides).toLocaleString()}đ/chuyến
-              </Text>
-            </View>
-          </Animatable.View>
-
-          {/* Available Balance */}
-          <View style={styles.balanceCard}>
-            <View style={styles.balanceHeader}>
-              <Text style={styles.balanceTitle}>Số dư khả dụng</Text>
-              <TouchableOpacity onPress={() => Alert.alert('Thông tin', 'Số tiền bạn có thể rút về tài khoản ngân hàng')}>
-                <Icon name="info" size={20} color="#666" />
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.balanceAmount}>
-              {earnings.thisMonth.toLocaleString()} VNĐ
-            </Text>
-            <ModernButton
-              title="Rút tiền"
-              icon="account-balance"
-              onPress={handleWithdrawal}
-              style={styles.withdrawButton}
+          <View style={styles.headerSpacing}>
+            <GlassHeader
+              title="Thu nhập của tôi"
+              subtitle="Theo dõi thu nhập và rút tiền"
             />
           </View>
 
-          {/* Recent Earnings */}
-          <View style={styles.recentSection}>
-            <Text style={styles.sectionTitle}>Thu nhập gần đây</Text>
-            {recentEarnings.map((earning) => (
-              <View key={earning.id} style={styles.earningItem}>
-                <View style={styles.earningHeader}>
-                  <Text style={styles.earningTime}>{formatDate(earning.date)}</Text>
-                  <Text style={styles.earningAmount}>+{earning.net.toLocaleString()}đ</Text>
+          <View style={styles.content}>
+            {/* Period Selector */}
+            <Animatable.View animation="fadeInUp" duration={400}>
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.periodContainer}
+              >
+                {periods.map((period) => (
+                  <TouchableOpacity
+                    key={period.key}
+                    style={[
+                      styles.periodTab,
+                      selectedPeriod === period.key && styles.periodTabActive
+                    ]}
+                    onPress={() => setSelectedPeriod(period.key)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[
+                      styles.periodTabText,
+                      selectedPeriod === period.key && styles.periodTabTextActive
+                    ]}>
+                      {period.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </Animatable.View>
+
+            {/* Net Earnings Hero */}
+            <Animatable.View animation="fadeInUp" duration={400} delay={60}>
+              <CleanCard style={styles.heroCard} contentStyle={styles.heroCardContent}>
+                <Text style={styles.heroLabel}>Thu nhập ròng</Text>
+                <Text style={styles.heroAmount}>
+                  {currentData.net.toLocaleString()}đ
+                </Text>
+                <View style={styles.heroMeta}>
+                  <View style={styles.heroMetaItem}>
+                    <Icon name="directions-car" size={16} color={colors.textSecondary} />
+                    <Text style={styles.heroMetaText}>{currentData.rides} chuyến</Text>
+                  </View>
+                  <View style={styles.heroMetaDivider} />
+                  <View style={styles.heroMetaItem}>
+                    <Icon name="trending-up" size={16} color={colors.textSecondary} />
+                    <Text style={styles.heroMetaText}>
+                      {Math.round(currentData.net / currentData.rides).toLocaleString()}đ/chuyến
+                    </Text>
+                  </View>
                 </View>
-                <Text style={styles.earningRider}>{earning.riderName}</Text>
-                <Text style={styles.earningRoute}>{earning.route}</Text>
-                <View style={styles.earningBreakdown}>
-                  <Text style={styles.breakdownText}>
-                    Cước phí: {earning.fare.toLocaleString()}đ
-                  </Text>
-                  <Text style={styles.breakdownText}>
-                    Hoa hồng: -{earning.commission.toLocaleString()}đ
-                  </Text>
+              </CleanCard>
+            </Animatable.View>
+
+            {/* Earnings Breakdown */}
+            <Animatable.View animation="fadeInUp" duration={400} delay={120}>
+              <CleanCard style={styles.breakdownCard} contentStyle={styles.breakdownCardContent}>
+                <Text style={styles.cardTitle}>Chi tiết thu nhập</Text>
+                <View style={styles.breakdownList}>
+                  <View style={styles.breakdownItem}>
+                    <View style={[styles.breakdownIcon, { backgroundColor: '#E3F2FD' }]}>
+                      <Icon name="trending-up" size={18} color="#2196F3" />
+                    </View>
+                    <View style={styles.breakdownContent}>
+                      <Text style={styles.breakdownLabel}>Tổng doanh thu</Text>
+                      <Text style={styles.breakdownValue}>
+                        {currentData.gross.toLocaleString()}đ
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.breakdownItem}>
+                    <View style={[styles.breakdownIcon, { backgroundColor: '#FFF4E6' }]}>
+                      <Icon name="remove-circle" size={18} color="#FF9800" />
+                    </View>
+                    <View style={styles.breakdownContent}>
+                      <Text style={styles.breakdownLabel}>
+                        Hoa hồng ({(commissionRate * 100)}%)
+                      </Text>
+                      <Text style={[styles.breakdownValue, styles.breakdownValueNegative]}>
+                        -{currentData.commission.toLocaleString()}đ
+                      </Text>
+                    </View>
+                  </View>
                 </View>
-              </View>
-            ))}
-          </View>
+              </CleanCard>
+            </Animatable.View>
 
-          {/* Statistics */}
-          <View style={styles.statsSection}>
-            <Text style={styles.sectionTitle}>Thống kê chi tiết</Text>
-            
-            <View style={styles.statsGrid}>
-              <View style={styles.statCard}>
-                <LinearGradient
-                  colors={['#9C27B0', '#7B1FA2']}
-                  style={styles.statIcon}
+            {/* Available Balance */}
+            <Animatable.View animation="fadeInUp" duration={400} delay={180}>
+              <CleanCard style={styles.balanceCard} contentStyle={styles.balanceCardContent}>
+                <View style={styles.balanceHeader}>
+                  <View>
+                    <Text style={styles.balanceLabel}>Số dư khả dụng</Text>
+                    <Text style={styles.balanceAmount}>
+                      {earnings.thisMonth.toLocaleString()}đ
+                    </Text>
+                  </View>
+                  <View style={[styles.balanceIcon, { backgroundColor: '#E8F5E9' }]}>
+                    <Icon name="account-balance-wallet" size={24} color={colors.primary} />
+                  </View>
+                </View>
+                <TouchableOpacity
+                  style={styles.withdrawButton}
+                  onPress={handleWithdrawal}
+                  activeOpacity={0.8}
                 >
-                  <Icon name="schedule" size={20} color="#fff" />
-                </LinearGradient>
-                <Text style={styles.statValue}>6.5h</Text>
-                <Text style={styles.statLabel}>Thời gian online</Text>
-              </View>
+                  <View style={styles.withdrawButtonContent}>
+                    <View style={styles.withdrawIconContainer}>
+                      <Icon name="account-balance" size={20} color="#FFFFFF" />
+                    </View>
+                    <Text style={styles.withdrawButtonText}>Rút tiền</Text>
+                    <Icon name="arrow-forward" size={20} color="#FFFFFF" style={styles.withdrawArrow} />
+                  </View>
+                </TouchableOpacity>
+              </CleanCard>
+            </Animatable.View>
 
-              <View style={styles.statCard}>
-                <LinearGradient
-                  colors={['#FF5722', '#D84315']}
-                  style={styles.statIcon}
+            {/* Recent Earnings */}
+            <View style={styles.recentSection}>
+              <Text style={styles.sectionTitle}>Thu nhập gần đây</Text>
+              {recentEarnings.map((earning, index) => (
+                <Animatable.View 
+                  key={earning.id}
+                  animation="fadeInUp" 
+                  duration={400}
+                  delay={240 + index * 40}
                 >
-                  <Icon name="speed" size={20} color="#fff" />
-                </LinearGradient>
-                <Text style={styles.statValue}>12.5</Text>
-                <Text style={styles.statLabel}>Km trung bình</Text>
-              </View>
-
-              <View style={styles.statCard}>
-                <LinearGradient
-                  colors={['#607D8B', '#455A64']}
-                  style={styles.statIcon}
-                >
-                  <Icon name="local-gas-station" size={20} color="#fff" />
-                </LinearGradient>
-                <Text style={styles.statValue}>25k</Text>
-                <Text style={styles.statLabel}>Chi phí xăng</Text>
-              </View>
-
-              <View style={styles.statCard}>
-                <LinearGradient
-                  colors={['#795548', '#5D4037']}
-                  style={styles.statIcon}
-                >
-                  <Icon name="star" size={20} color="#fff" />
-                </LinearGradient>
-                <Text style={styles.statValue}>4.8</Text>
-                <Text style={styles.statLabel}>Đánh giá TB</Text>
-              </View>
+                  <CleanCard style={styles.earningCard} contentStyle={styles.earningCardContent}>
+                    <View style={styles.earningTop}>
+                      <View style={styles.earningLeft}>
+                        <View style={[styles.earningIcon, { backgroundColor: '#E8F5E9' }]}>
+                          <Icon name="check-circle" size={18} color="#4CAF50" />
+                        </View>
+                        <View style={styles.earningInfo}>
+                          <Text style={styles.earningRider}>{earning.riderName}</Text>
+                          <Text style={styles.earningTime}>{formatDate(earning.date)}</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.earningAmount}>+{earning.net.toLocaleString()}đ</Text>
+                    </View>
+                    <Text style={styles.earningRoute} numberOfLines={1}>
+                      {earning.route}
+                    </Text>
+                    <View style={styles.earningDetails}>
+                      <Text style={styles.earningDetailText}>
+                        Cước: {earning.fare.toLocaleString()}đ
+                      </Text>
+                      <Text style={styles.earningDetailText}>
+                        Hoa hồng: -{earning.commission.toLocaleString()}đ
+                      </Text>
+                    </View>
+                  </CleanCard>
+                </Animatable.View>
+              ))}
             </View>
           </View>
-        </View>
-      </ScrollView>
+        </ScrollView>
 
-      {/* Withdrawal Modal */}
-      {showWithdrawal && (
-        <View style={styles.modalOverlay}>
-          <Animatable.View animation="slideInUp" style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Rút tiền</Text>
-              <TouchableOpacity onPress={() => setShowWithdrawal(false)}>
-                <Icon name="close" size={24} color="#000" />
-              </TouchableOpacity>
-            </View>
-            
-            <View style={styles.modalBody}>
-              <Text style={styles.availableBalance}>
-                Số dư khả dụng: {earnings.thisMonth.toLocaleString()} VNĐ
-              </Text>
-              
-              <View style={styles.withdrawalOptions}>
-                <TouchableOpacity 
-                  style={styles.withdrawalOption}
-                  onPress={() => confirmWithdrawal(100000)}
-                >
-                  <Text style={styles.withdrawalAmount}>100,000đ</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity 
-                  style={styles.withdrawalOption}
-                  onPress={() => confirmWithdrawal(200000)}
-                >
-                  <Text style={styles.withdrawalAmount}>200,000đ</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity 
-                  style={styles.withdrawalOption}
-                  onPress={() => confirmWithdrawal(earnings.thisMonth)}
-                >
-                  <Text style={styles.withdrawalAmount}>Tất cả</Text>
+        {/* Withdrawal Modal */}
+        {showWithdrawal && (
+          <View style={styles.modalOverlay}>
+            <Animatable.View animation="slideInUp" style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Rút tiền</Text>
+                <TouchableOpacity onPress={() => setShowWithdrawal(false)}>
+                  <Icon name="close" size={24} color={colors.textPrimary} />
                 </TouchableOpacity>
               </View>
               
-              <Text style={styles.withdrawalNote}>
-                • Phí xử lý: 5,000 VNĐ{'\n'}
-                • Thời gian xử lý: 1-2 ngày làm việc{'\n'}
-                • Tiền sẽ được chuyển vào tài khoản đã đăng ký
-              </Text>
-            </View>
-          </Animatable.View>
-        </View>
-      )}
-    </SafeAreaView>
+              <View style={styles.modalBody}>
+                <Text style={styles.availableBalance}>
+                  Số dư khả dụng: {earnings.thisMonth.toLocaleString()} VNĐ
+                </Text>
+                
+                <View style={styles.withdrawalOptions}>
+                  <TouchableOpacity 
+                    style={styles.withdrawalOption}
+                    onPress={() => confirmWithdrawal(100000)}
+                  >
+                    <Text style={styles.withdrawalAmount}>100,000đ</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={styles.withdrawalOption}
+                    onPress={() => confirmWithdrawal(200000)}
+                  >
+                    <Text style={styles.withdrawalAmount}>200,000đ</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={styles.withdrawalOption}
+                    onPress={() => confirmWithdrawal(earnings.thisMonth)}
+                  >
+                    <Text style={styles.withdrawalAmount}>Tất cả</Text>
+                  </TouchableOpacity>
+                </View>
+                
+                <Text style={styles.withdrawalNote}>
+                  • Phí xử lý: 5,000 VNĐ{'\n'}
+                  • Thời gian xử lý: 1-2 ngày làm việc{'\n'}
+                  • Tiền sẽ được chuyển vào tài khoản đã đăng ký
+                </Text>
+              </View>
+            </Animatable.View>
+          </View>
+        )}
+      </SafeAreaView>
+    </AppBackground>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
   },
-  header: {
-    paddingTop: 20,
-    paddingBottom: 24,
-    paddingHorizontal: 20,
+  scrollView: {
+    flex: 1,
   },
-  headerContent: {
-    alignItems: 'center',
+  scrollContent: {
+    paddingBottom: 160,
+    paddingTop: 24,
   },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 4,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.8)',
+  headerSpacing: {
+    marginBottom: 24,
   },
   content: {
-    flex: 1,
-    padding: 20,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    gap: spacing.md,
   },
-  periodSelector: {
-    marginBottom: 20,
+  // Period Selector
+  periodContainer: {
+    paddingVertical: spacing.sm,
+    gap: spacing.sm,
   },
   periodTab: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    marginRight: 12,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
     borderRadius: 20,
-    backgroundColor: '#fff',
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    marginRight: spacing.sm,
   },
   periodTabActive: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   periodTabText: {
-    fontSize: 14,
-    color: '#666',
-    fontWeight: '500',
+    fontSize: typography.small,
+    fontFamily: 'Inter_500Medium',
+    color: colors.textSecondary,
   },
   periodTabTextActive: {
-    color: '#fff',
+    color: '#FFFFFF',
+    fontFamily: 'Inter_600SemiBold',
   },
-  summaryCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 20,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+  // Hero Card
+  heroCard: {
+    marginBottom: 0,
   },
-  summaryTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    marginBottom: 20,
-  },
-  summaryStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  summaryItem: {
-    flex: 1,
+  heroCardContent: {
+    padding: spacing.lg,
     alignItems: 'center',
   },
-  summaryIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
+  heroLabel: {
+    fontSize: typography.small,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
   },
-  summaryValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
-    marginBottom: 4,
+  heroAmount: {
+    fontSize: 48,
+    fontFamily: 'Inter_700Bold',
+    color: colors.textPrimary,
+    letterSpacing: -1,
+    marginBottom: spacing.md,
   },
-  summaryLabel: {
-    fontSize: 11,
-    color: '#666',
-    textAlign: 'center',
-  },
-  ridesInfo: {
+  heroMeta: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
+    gap: spacing.md,
   },
-  ridesText: {
-    fontSize: 14,
-    color: '#666',
-    marginLeft: 8,
-  },
-  balanceCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 20,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-  },
-  balanceHeader: {
+  heroMetaItem: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    gap: spacing.xs,
   },
-  balanceTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1a1a1a',
+  heroMetaDivider: {
+    width: 1,
+    height: 16,
+    backgroundColor: '#E5E7EB',
   },
-  balanceAmount: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#4CAF50',
-    marginBottom: 16,
+  heroMetaText: {
+    fontSize: typography.small,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textSecondary,
   },
-  withdrawButton: {
-    marginTop: 8,
+  // Breakdown Card
+  breakdownCard: {
+    marginBottom: 0,
   },
-  recentSection: {
-    marginBottom: 20,
+  breakdownCardContent: {
+    padding: spacing.md,
+    gap: spacing.md,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    marginBottom: 16,
+  cardTitle: {
+    fontSize: typography.subheading,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
   },
-  earningItem: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+  breakdownList: {
+    gap: spacing.md,
   },
-  earningHeader: {
+  breakdownItem: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    gap: spacing.sm,
   },
-  earningTime: {
-    fontSize: 12,
-    color: '#666',
-  },
-  earningAmount: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#4CAF50',
-  },
-  earningRider: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    marginBottom: 4,
-  },
-  earningRoute: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 8,
-  },
-  earningBreakdown: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  breakdownText: {
-    fontSize: 12,
-    color: '#999',
-  },
-  statsSection: {
-    marginBottom: 20,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  statCard: {
-    width: '48%',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    marginBottom: 12,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-  },
-  statIcon: {
+  breakdownIcon: {
     width: 40,
     height: 40,
     borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
   },
-  statValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
-    marginBottom: 4,
+  breakdownContent: {
+    flex: 1,
   },
-  statLabel: {
-    fontSize: 12,
-    color: '#666',
-    textAlign: 'center',
+  breakdownLabel: {
+    fontSize: typography.small,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textSecondary,
+    marginBottom: 2,
   },
+  breakdownValue: {
+    fontSize: typography.body,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
+  },
+  breakdownValueNegative: {
+    color: '#EF4444',
+  },
+  // Balance Card
+  balanceCard: {
+    marginBottom: 0,
+  },
+  balanceCardContent: {
+    padding: spacing.md,
+    gap: spacing.md,
+  },
+  balanceHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  balanceLabel: {
+    fontSize: typography.small,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+  },
+  balanceAmount: {
+    fontSize: 32,
+    fontFamily: 'Inter_700Bold',
+    color: colors.primary,
+    letterSpacing: -0.5,
+  },
+  balanceIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  withdrawButton: {
+    marginTop: spacing.md,
+    borderRadius: 16,
+    backgroundColor: colors.primary,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: colors.primary,
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.3,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
+  },
+  withdrawButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.md + 2,
+    paddingHorizontal: spacing.lg,
+    gap: spacing.sm,
+  },
+  withdrawIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  withdrawButtonText: {
+    fontSize: typography.body,
+    fontFamily: 'Inter_600SemiBold',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
+  },
+  withdrawArrow: {
+    marginLeft: 'auto',
+  },
+  // Recent Section
+  recentSection: {
+    gap: spacing.sm,
+  },
+  sectionTitle: {
+    fontSize: typography.subheading,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
+    paddingHorizontal: spacing.xs,
+  },
+  earningCard: {
+    marginBottom: 0,
+  },
+  earningCardContent: {
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  earningTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  earningLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: spacing.sm,
+  },
+  earningIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  earningInfo: {
+    flex: 1,
+  },
+  earningRider: {
+    fontSize: typography.body,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
+    marginBottom: 2,
+  },
+  earningTime: {
+    fontSize: typography.small,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textMuted,
+  },
+  earningAmount: {
+    fontSize: typography.body,
+    fontFamily: 'Inter_700Bold',
+    color: '#4CAF50',
+  },
+  earningRoute: {
+    fontSize: typography.small,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
+  },
+  earningDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  earningDetailText: {
+    fontSize: typography.small,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textMuted,
+  },
+  // Modal
   modalOverlay: {
     position: 'absolute',
     top: 0,
@@ -598,46 +657,50 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
+    padding: spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: '#F3F4F6',
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
+    fontSize: typography.subheading,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
   },
   modalBody: {
-    padding: 20,
+    padding: spacing.lg,
   },
   availableBalance: {
-    fontSize: 16,
-    color: '#1a1a1a',
-    marginBottom: 20,
+    fontSize: typography.body,
+    fontFamily: 'Inter_500Medium',
+    color: colors.textPrimary,
+    marginBottom: spacing.lg,
     textAlign: 'center',
   },
   withdrawalOptions: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 20,
+    marginBottom: spacing.lg,
+    gap: spacing.sm,
   },
   withdrawalOption: {
     flex: 1,
-    backgroundColor: '#f8f8f8',
-    borderRadius: 8,
-    paddingVertical: 16,
-    marginHorizontal: 4,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    paddingVertical: spacing.md,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
   withdrawalAmount: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1a1a1a',
+    fontSize: typography.body,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
   },
   withdrawalNote: {
-    fontSize: 12,
-    color: '#666',
-    lineHeight: 18,
+    fontSize: typography.small,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textSecondary,
+    lineHeight: 20,
   },
 });
 

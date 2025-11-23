@@ -3,14 +3,15 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   TouchableOpacity,
   ScrollView,
   Image,
   Alert,
   ActivityIndicator,
   RefreshControl,
+  Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Animatable from 'react-native-animatable';
@@ -19,6 +20,11 @@ import { useFocusEffect } from '@react-navigation/native';
 import ModernButton from '../../components/ModernButton.jsx';
 import authService from '../../services/authService';
 import vehicleService from '../../services/vehicleService';
+import GlassHeader from '../../components/ui/GlassHeader.jsx';
+import CleanCard from '../../components/ui/CleanCard.jsx';
+import AppBackground from '../../components/layout/AppBackground.jsx';
+import { StatusBar } from 'react-native';
+import { colors, typography, spacing } from '../../theme/designTokens';
 
 const DriverProfileScreen = ({ navigation }) => {
   const [showVehicleInfo, setShowVehicleInfo] = useState(true);
@@ -111,7 +117,7 @@ const DriverProfileScreen = ({ navigation }) => {
   };
 
   const handleEditProfile = () => {
-    Alert.alert('Chỉnh sửa hồ sơ', 'Chức năng đang được phát triển');
+    navigation.navigate('EditProfile');
   };
 
   const handleVehicleEdit = () => {
@@ -128,9 +134,10 @@ const DriverProfileScreen = ({ navigation }) => {
     {
       title: 'Tài khoản',
       items: [
+        { icon: 'swap-horiz', title: 'Chuyển đổi chế độ', onPress: () => navigation.navigate('ProfileSwitch') },
         { icon: 'edit', title: 'Chỉnh sửa thông tin', onPress: handleEditProfile },
-        { icon: 'security', title: 'Đổi mật khẩu', onPress: () => Alert.alert('Thông báo', 'Chức năng đang phát triển') },
-        { icon: 'verified', title: 'Xác minh tài khoản', onPress: () => Alert.alert('Thông báo', 'Chức năng đang phát triển') },
+        { icon: 'security', title: 'Đổi mật khẩu', onPress: () => navigation.navigate('ChangePassword') },
+        { icon: 'verified', title: 'Xác minh tài khoản', onPress: () => navigation.navigate('ProfileSwitch') },
         { icon: 'account-balance', title: 'Thông tin ngân hàng', onPress: () => Alert.alert('Thông báo', 'Chức năng đang phát triển') }
       ]
     },
@@ -191,25 +198,26 @@ const DriverProfileScreen = ({ navigation }) => {
   const isVerified = isDriverProfileVerified();
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView 
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-      >
-        {/* Header */}
-        <LinearGradient
-          colors={['#10412F', '#000000']}
-          style={styles.header}
+    <AppBackground>
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <StatusBar barStyle="light-content" />
+        <ScrollView 
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         >
-          <View style={styles.headerContent}>
-            <Text style={styles.headerTitle}>Hồ sơ tài xế</Text>
+          <View style={styles.headerSpacing}>
+            <GlassHeader
+              title="Hồ sơ tài xế"
+            />
           </View>
-        </LinearGradient>
 
         <View style={styles.content}>
           {/* Profile Card */}
-          <Animatable.View animation="fadeInUp" style={styles.profileCard}>
-            <View style={styles.profileHeader}>
+          <Animatable.View animation="fadeInUp">
+            <CleanCard style={styles.profileCard} contentStyle={styles.profileCardContent}>
+                <View style={styles.profileHeader}>
               <Image 
                 source={{ 
                   uri: user.user?.profile_photo_url 
@@ -236,81 +244,72 @@ const DriverProfileScreen = ({ navigation }) => {
                   </Text>
                 </View>
               </View>
-              <TouchableOpacity style={styles.editButton} onPress={handleEditProfile}>
-                <Icon name="edit" size={20} color="#4CAF50" />
-              </TouchableOpacity>
-            </View>
+                <TouchableOpacity style={styles.editButton} onPress={handleEditProfile}>
+                  <Icon name="edit" size={20} color="#4CAF50" />
+                </TouchableOpacity>
+              </View>
+            </CleanCard>
           </Animatable.View>
 
           {/* Stats Card */}
-          <View style={styles.statsCard}>
-            <Text style={styles.cardTitle}>Thống kê tài xế</Text>
-            <View style={styles.statsGrid}>
-              <View style={styles.statItem}>
-                <LinearGradient
-                  colors={['#FF9800', '#F57C00']}
-                  style={styles.statIcon}
-                >
-                  <Icon name="star" size={20} color="#fff" />
-                </LinearGradient>
-                <Text style={styles.statValue}>
-                  {driverProfile.rating_avg ? driverProfile.rating_avg.toFixed(1) : '0.0'}
-                </Text>
-                <Text style={styles.statLabel}>Đánh giá</Text>
-              </View>
+          <Animatable.View animation="fadeInUp" duration={400} delay={80}>
+            <CleanCard style={styles.statsCard} contentStyle={styles.statsCardContent}>
+              <Text style={styles.cardTitle}>Thống kê tài xế</Text>
+              <View style={styles.statsContainer}>
+                <View style={styles.statItem}>
+                  <View style={[styles.statIconContainer, { backgroundColor: '#FFF4E6' }]}>
+                    <Icon name="star" size={20} color="#FF9800" />
+                  </View>
+                  <Text style={styles.statValue}>
+                    {driverProfile.rating_avg ? driverProfile.rating_avg.toFixed(1) : '0.0'}
+                  </Text>
+                  <Text style={styles.statLabel}>Đánh giá</Text>
+                </View>
 
-              <View style={styles.statItem}>
-                <LinearGradient
-                  colors={['#2196F3', '#1976D2']}
-                  style={styles.statIcon}
-                >
-                  <Icon name="directions-car" size={20} color="#fff" />
-                </LinearGradient>
-                <Text style={styles.statValue}>
-                  {driverProfile.total_shared_rides || 0}
-                </Text>
-                <Text style={styles.statLabel}>Chuyến đi</Text>
-              </View>
+                <View style={styles.statItem}>
+                  <View style={[styles.statIconContainer, { backgroundColor: '#E3F2FD' }]}>
+                    <Icon name="directions-car" size={20} color="#2196F3" />
+                  </View>
+                  <Text style={styles.statValue}>
+                    {driverProfile.total_shared_rides || 0}
+                  </Text>
+                  <Text style={styles.statLabel}>Chuyến đi</Text>
+                </View>
 
-              <View style={styles.statItem}>
-                <LinearGradient
-                  colors={['#10412F', '#000000']}
-                  style={styles.statIcon}
-                >
-                  <Icon name="account-balance-wallet" size={20} color="#fff" />
-                </LinearGradient>
-                <Text style={styles.statValue}>
-                  {user.wallet?.cached_balance 
-                    ? `${(user.wallet.cached_balance / 1000).toFixed(0)}k`
-                    : '0'}
-                </Text>
-                <Text style={styles.statLabel}>Số dư ví</Text>
-              </View>
+                <View style={styles.statItem}>
+                  <View style={[styles.statIconContainer, { backgroundColor: '#E8F5E9' }]}>
+                    <Icon name="account-balance-wallet" size={20} color={colors.primary} />
+                  </View>
+                  <Text style={styles.statValue}>
+                    {user.wallet?.cached_balance 
+                      ? `${(user.wallet.cached_balance / 1000).toFixed(0)}k`
+                      : '0'}
+                  </Text>
+                  <Text style={styles.statLabel}>Số dư ví</Text>
+                </View>
 
-              <View style={styles.statItem}>
-                <LinearGradient
-                  colors={['#9C27B0', '#7B1FA2']}
-                  style={styles.statIcon}
-                >
-                  <Icon name="trending-up" size={20} color="#fff" />
-                </LinearGradient>
-                <Text style={styles.statValue}>
-                  {driverProfile.total_earned 
-                    ? `${(driverProfile.total_earned / 1000000).toFixed(1)}M`
-                    : '0'}
-                </Text>
-                <Text style={styles.statLabel}>Tổng thu nhập</Text>
+                <View style={styles.statItem}>
+                  <View style={[styles.statIconContainer, { backgroundColor: '#F3E5F5' }]}>
+                    <Icon name="trending-up" size={20} color="#9C27B0" />
+                  </View>
+                  <Text style={styles.statValue}>
+                    {driverProfile.total_earned 
+                      ? `${(driverProfile.total_earned / 1000000).toFixed(1)}M`
+                      : '0'}
+                  </Text>
+                  <Text style={styles.statLabel}>Tổng thu nhập</Text>
+                </View>
               </View>
-            </View>
-          </View>
+            </CleanCard>
+          </Animatable.View>
 
           {/* Vehicle Info Card */}
-          <View style={styles.vehicleCard}>
-            <TouchableOpacity 
-              style={styles.vehicleHeader}
-              onPress={() => setShowVehicleInfo(!showVehicleInfo)}
-            >
-              <Text style={styles.cardTitle}>Thông tin xe</Text>
+          <CleanCard style={styles.vehicleCard} contentStyle={styles.vehicleCardContent}>
+                <TouchableOpacity 
+                  style={styles.vehicleHeader}
+                  onPress={() => setShowVehicleInfo(!showVehicleInfo)}
+                >
+                  <Text style={styles.cardTitle}>Thông tin xe</Text>
               <Icon 
                 name={showVehicleInfo ? 'expand-less' : 'expand-more'} 
                 size={24} 
@@ -383,19 +382,19 @@ const DriverProfileScreen = ({ navigation }) => {
                 )}
               </Animatable.View>
             )}
-          </View>
+          </CleanCard>
 
           {/* Menu Sections */}
           {menuSections.map((section, sectionIndex) => (
             <View key={sectionIndex} style={styles.menuSection}>
               <Text style={styles.sectionTitle}>{section.title}</Text>
-              <View style={styles.menuContainer}>
+              <CleanCard style={styles.menuContainer} contentStyle={styles.menuContainerContent}>
                 {section.items.map((item, itemIndex) => (
                   <TouchableOpacity 
                     key={itemIndex} 
                     style={[
                       styles.menuItem,
-                      itemIndex === section.items.length - 1 && styles.lastMenuItem
+                      itemIndex !== section.items.length - 1 && styles.menuDivider
                     ]}
                     onPress={item.onPress}
                   >
@@ -406,59 +405,53 @@ const DriverProfileScreen = ({ navigation }) => {
                     <Icon name="chevron-right" size={24} color="#ccc" />
                   </TouchableOpacity>
                 ))}
-              </View>
+              </CleanCard>
             </View>
           ))}
 
           {/* Logout Button */}
-          <ModernButton
-            title="Đăng xuất"
-            variant="outline"
-            icon="logout"
-            onPress={handleLogout}
-            style={styles.logoutButton}
-          />
+          <Animatable.View animation="fadeInUp" duration={480} delay={200}>
+            <CleanCard style={styles.logoutCard} contentStyle={styles.logoutCardContent}>
+              <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+                <Icon name="logout" size={22} color="#EF4444" />
+                <Text style={styles.logoutText}>Đăng xuất</Text>
+              </TouchableOpacity>
+            </CleanCard>
+          </Animatable.View>
 
           {/* App Version */}
           <Text style={styles.versionText}>MSSUS Driver v1.0.0</Text>
         </View>
-      </ScrollView>
-    </SafeAreaView>
+        </ScrollView>
+      </SafeAreaView>
+    </AppBackground>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
   },
-  header: {
-    paddingTop: 20,
-    paddingBottom: 24,
-    paddingHorizontal: 20,
+  scrollView: {
+    flex: 1,
   },
-  headerContent: {
-    alignItems: 'center',
+  scrollContent: {
+    paddingBottom: 160,
+    paddingTop: 24,
   },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
+  headerSpacing: {
+    marginBottom: 24,
   },
   content: {
     flex: 1,
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 12,
   },
   profileCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
     marginBottom: 20,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+  },
+  profileCardContent: {
+    padding: 20,
   },
   profileHeader: {
     flexDirection: 'row',
@@ -502,61 +495,58 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   statsCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
     marginBottom: 20,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+  },
+  statsCardContent: {
+    padding: 20,
   },
   cardTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    marginBottom: 16,
+    fontSize: typography.subheading,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
+    marginBottom: 20,
   },
-  statsGrid: {
+  statsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    gap: 12,
   },
   statItem: {
-    width: '48%',
+    flex: 1,
+    minWidth: '47%',
     alignItems: 'center',
-    marginBottom: 16,
+    padding: 16,
+    backgroundColor: '#FAFAFA',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.08)',
   },
-  statIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
+  statIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   statValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
+    fontSize: 24,
+    fontFamily: 'Inter_700Bold',
+    color: colors.textPrimary,
     marginBottom: 4,
+    letterSpacing: -0.5,
   },
   statLabel: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: typography.small,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textSecondary,
     textAlign: 'center',
   },
   vehicleCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
     marginBottom: 20,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+  },
+  vehicleCardContent: {
+    padding: 20,
   },
   vehicleHeader: {
     flexDirection: 'row',
@@ -597,25 +587,22 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   menuContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+    marginBottom: 0,
+  },
+  menuContainerContent: {
+    paddingHorizontal: 6,
+    paddingVertical: 8,
   },
   menuItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
   },
-  lastMenuItem: {
-    borderBottomWidth: 0,
+  menuDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(148,163,184,0.2)',
   },
   menuItemLeft: {
     flexDirection: 'row',
@@ -627,8 +614,23 @@ const styles = StyleSheet.create({
     color: '#1a1a1a',
     marginLeft: 16,
   },
-  logoutButton: {
+  logoutCard: {
     marginBottom: 20,
+  },
+  logoutCardContent: {
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  logoutText: {
+    fontSize: 16,
+    fontFamily: 'Inter_600SemiBold',
+    color: '#EF4444',
   },
   versionText: {
     textAlign: 'center',

@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   TouchableOpacity,
   ScrollView,
   RefreshControl,
@@ -11,6 +10,7 @@ import {
   Alert,
   StatusBar,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import * as Animatable from 'react-native-animatable';
 import { useFocusEffect } from '@react-navigation/native';
@@ -487,12 +487,6 @@ const RideHistoryScreen = ({ navigation }) => {
             <Text style={styles.emptyText}>
               {selectedTab === 'ongoing' ? 'Bạn chưa có chuyến đi nào đang diễn ra' : 'Chưa có lịch sử chuyến đi'}
             </Text>
-            {selectedTab === 'ongoing' && (
-              <TouchableOpacity style={styles.createRideButton} onPress={() => navigation.navigate('Home')} activeOpacity={0.8}>
-                <Icon name="add" size={20} color="#fff" />
-                <Text style={styles.createRideButtonText}>Tạo chuyến mới</Text>
-              </TouchableOpacity>
-            )}
           </CleanCard>
         </Animatable.View>
       );

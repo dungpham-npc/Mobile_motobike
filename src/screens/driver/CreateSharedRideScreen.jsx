@@ -28,6 +28,10 @@ import locationService from "../../services/LocationService";
 import goongService from "../../services/goongService";
 import GoongMap from "../../components/GoongMap";
 import { locationStorageService } from "../../services/locationStorageService";
+import GlassHeader, { SoftBackHeader } from '../../components/ui/GlassHeader.jsx';
+import CleanCard from '../../components/ui/CleanCard.jsx';
+import AppBackground from '../../components/layout/AppBackground.jsx';
+import { colors } from '../../theme/designTokens';
 
 const { width, height } = Dimensions.get('window');
 
@@ -658,22 +662,16 @@ const [timePart, setTimePart] = React.useState(() => {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-    >
-      <SafeAreaView style={styles.container}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-          >
-            <Icon name="arrow-back" size={24} color="#333" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Tạo chuyến chia sẻ</Text>
-          <View style={styles.placeholder} />
-        </View>
+    <AppBackground>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      >
+        <SafeAreaView style={styles.container}>
+          <SoftBackHeader
+            title="Tạo chuyến chia sẻ"
+            onBackPress={() => navigation.goBack()}
+          />
 
         {/* Map */}
         {goongService.isMapsConfigured() ? (
@@ -1096,8 +1094,9 @@ const [timePart, setTimePart] = React.useState(() => {
     }}
   />
 )}
-      </SafeAreaView>
-    </KeyboardAvoidingView>
+        </SafeAreaView>
+      </KeyboardAvoidingView>
+    </AppBackground>
   );
 };
 

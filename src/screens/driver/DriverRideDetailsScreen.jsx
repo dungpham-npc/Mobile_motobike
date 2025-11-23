@@ -3,18 +3,21 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   TouchableOpacity,
   ScrollView,
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import CleanCard from '../../components/ui/CleanCard';
+import GlassHeader from '../../components/ui/GlassHeader.jsx';
+import AppBackground from '../../components/layout/AppBackground.jsx';
 import GoongMap from '../../components/GoongMap';
 import rideService from '../../services/rideService';
 import goongService from '../../services/goongService';
 import { colors } from '../../theme/designTokens';
+import { SoftBackHeader } from '../../components/ui/GlassHeader.jsx';
 
 const DriverRideDetailsScreen = ({ navigation, route }) => {
   const { rideId } = route?.params || {};
@@ -200,26 +203,34 @@ const DriverRideDetailsScreen = ({ navigation, route }) => {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.loadingText}>Đang tải...</Text>
-        </View>
-      </SafeAreaView>
+      <AppBackground>
+        <SafeAreaView style={styles.container}>
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.loadingText}>Đang tải...</Text>
+          </View>
+        </SafeAreaView>
+      </AppBackground>
     );
   }
 
   if (!ride) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.errorContainer}>
-          <Icon name="error-outline" size={48} color="#F44336" />
-          <Text style={styles.errorText}>Không tìm thấy chuyến xe</Text>
-          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-            <Text style={styles.backButtonText}>Quay lại</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
+      <AppBackground>
+        <SafeAreaView style={styles.container}>
+          <SoftBackHeader
+            title="Chi tiết chuyến xe"
+            onBackPress={() => navigation.goBack()}
+          />
+          <View style={styles.errorContainer}>
+            <Icon name="error-outline" size={48} color="#F44336" />
+            <Text style={styles.errorText}>Không tìm thấy chuyến xe</Text>
+            <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+              <Text style={styles.backButtonText}>Quay lại</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </AppBackground>
     );
   }
 
@@ -228,29 +239,23 @@ const DriverRideDetailsScreen = ({ navigation, route }) => {
   const scheduledTime = ride.scheduled_time || ride.scheduledTime;
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Icon name="arrow-back" size={24} color="#333" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Chi tiết chuyến xe</Text>
-        <View style={styles.placeholder} />
-      </View>
+    <AppBackground>
+      <SafeAreaView style={styles.container}>
+        <SoftBackHeader
+          title="Chi tiết chuyến xe"
+          onBackPress={() => navigation.goBack()}
+        />
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Status Badge */}
-        <View style={styles.statusContainer}>
+        <CleanCard style={styles.statusCard} contentStyle={styles.statusCardContent}>
           <View style={[styles.statusBadge, { backgroundColor: getStatusColor(ride.status) + '20' }]}>
             <View style={[styles.statusDot, { backgroundColor: getStatusColor(ride.status) }]} />
             <Text style={[styles.statusText, { color: getStatusColor(ride.status) }]}>
               {getStatusText(ride.status)}
             </Text>
           </View>
-        </View>
+        </CleanCard>
 
         {/* Map */}
         {startLocation && endLocation && (
@@ -415,15 +420,20 @@ const DriverRideDetailsScreen = ({ navigation, route }) => {
             )}
           </View>
         )}
-      </ScrollView>
-    </SafeAreaView>
+        </ScrollView>
+      </SafeAreaView>
+    </AppBackground>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+  },
+  scrollContent: {
+    paddingBottom: 160,
+    paddingTop: 24,
+    paddingHorizontal: 16,
   },
   header: {
     flexDirection: 'row',
@@ -471,7 +481,11 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
   },
-  statusContainer: {
+  statusCard: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+  },
+  statusCardContent: {
     padding: 16,
   },
   statusBadge: {
