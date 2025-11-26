@@ -32,7 +32,8 @@ class VehicleService {
         page: page.toString(),
         size: size.toString(),
         sortBy,
-        sortDir
+        sortDir,
+        _t: Date.now().toString() // Add timestamp to bypass cache
       });
 
       const response = await this.apiService.get(`${endpoint}?${queryParams.toString()}`);
