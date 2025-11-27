@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   Platform,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -54,6 +55,9 @@ const HomeScreen = ({ navigation }) => {
   const [dropoffAddress, setDropoffAddress] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [startLocationSearch, setStartLocationSearch] = useState('');
+  const [endLocationSearch, setEndLocationSearch] = useState('');
+  const searchTimeoutRef = useRef(null);
   const greetingName = currentUserName
     ? currentUserName.split(' ')[0]
     : 'bạn';
@@ -103,7 +107,7 @@ const HomeScreen = ({ navigation }) => {
 
   useEffect(() => {
     if (activeTab === 'share') {
-      loadNearbyRides();
+      loadNearbyRides(false);
     }
   }, [activeTab]);
 
@@ -441,10 +445,20 @@ const HomeScreen = ({ navigation }) => {
   };
 
 
-  const loadNearbyRides = async () => {
+  const loadNearbyRides = async (useSearchParams = true) => {
     try {
       setLoadingRides(true);
-      const rides = await rideService.getAvailableRides();
+      const rides = await rideService.getAvailableRides(
+        null, // startTime
+        null, // endTime
+        0, // page
+        20, // size
+        useSearchParams && startLocationSearch.trim() ? startLocationSearch.trim() : null, // startLocation
+        useSearchParams && endLocationSearch.trim() ? endLocationSearch.trim() : null, // endLocation
+        null, // currentLat
+        null, // currentLng
+        null  // radiusKm
+      );
       setNearbyRides(rides?.data || rides?.content || []);
     } catch (error) {
       console.error('Error loading nearby rides:', error);
@@ -452,6 +466,26 @@ const HomeScreen = ({ navigation }) => {
     } finally {
       setLoadingRides(false);
     }
+  };
+
+  const handleSearchInputChange = (field, value) => {
+    if (field === 'start') {
+      setStartLocationSearch(value);
+    } else {
+      setEndLocationSearch(value);
+    }
+
+    // Clear existing timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    // Debounce: Only search after user stops typing for 500ms
+    searchTimeoutRef.current = setTimeout(() => {
+      if (activeTab === 'share') {
+        loadNearbyRides(true);
+      }
+    }, 500);
   };
 
   const onRefresh = async () => {
@@ -485,22 +519,23 @@ const HomeScreen = ({ navigation }) => {
   const formatScheduledTime = (scheduledTime) => {
     if (!scheduledTime) return 'Ngay lập tức';
     try {
-      // Backend sends local time (Vietnam UTC+7) but marks it as UTC with 'Z'
-      // Remove 'Z' to parse as local time without timezone conversion
-      const localTimeString = scheduledTime.replace('Z', '');
-      const date = new Date(localTimeString);
-      
-      // Check if date is valid
-      if (isNaN(date.getTime())) {
+      const date =
+        scheduledTime instanceof Date
+          ? scheduledTime
+          : new Date(scheduledTime);
+
+      if (Number.isNaN(date.getTime())) {
         return 'Ngay lập tức';
       }
-      
-      // Get local time components (already in local timezone)
-      const hours = date.getHours();
-      const minutes = date.getMinutes();
-      const ampm = hours >= 12 ? 'PM' : 'AM';
-      const displayHours = hours % 12 || 12;
-      return `${displayHours}:${String(minutes).padStart(2, '0')} ${ampm}`;
+
+      const formatted = date.toLocaleString('vi-VN', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+        hour: '2-digit',
+        minute: '2-digit',
+        day: '2-digit',
+        month: '2-digit',
+      });
+      return formatted;
     } catch (error) {
       console.error('Error formatting scheduled time:', error, scheduledTime);
       return 'Ngay lập tức';
@@ -634,11 +669,91 @@ const HomeScreen = ({ navigation }) => {
                   {/* Active Ride Card */}
                   <ActiveRideCard navigation={navigation} />
 
+                  {/* Search Section */}
+                  <View style={styles.searchContainer}>
+                    <CleanCard style={styles.searchCard} contentStyle={styles.searchCardContent}>
+                      <View style={styles.searchInputContainer}>
+                        <Icon name="location-on" size={20} color={colors.primary} style={styles.searchIcon} />
+                        <TextInput
+                          style={styles.searchInput}
+                          placeholder="Tìm theo điểm đi..."
+                          placeholderTextColor={colors.textMuted}
+                          value={startLocationSearch}
+                          onChangeText={(value) => handleSearchInputChange('start', value)}
+                          returnKeyType="next"
+                        />
+                        {startLocationSearch.length > 0 && (
+                          <TouchableOpacity
+                            onPress={() => setStartLocationSearch('')}
+                            style={styles.clearButton}
+                          >
+                            <Icon name="close" size={18} color={colors.textMuted} />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+
+                      <View style={styles.searchInputContainer}>
+                        <Icon name="location-on" size={20} color="#F44336" style={styles.searchIcon} />
+                        <TextInput
+                          style={styles.searchInput}
+                          placeholder="Tìm theo điểm đến..."
+                          placeholderTextColor={colors.textMuted}
+                          value={endLocationSearch}
+                          onChangeText={(value) => handleSearchInputChange('end', value)}
+                          returnKeyType="search"
+                          onSubmitEditing={() => {
+                            if (searchTimeoutRef.current) {
+                              clearTimeout(searchTimeoutRef.current);
+                            }
+                            loadNearbyRides(true);
+                          }}
+                        />
+                        {endLocationSearch.length > 0 && (
+                          <TouchableOpacity
+                            onPress={() => setEndLocationSearch('')}
+                            style={styles.clearButton}
+                          >
+                            <Icon name="close" size={18} color={colors.textMuted} />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+
+                      <View style={styles.searchActions}>
+                        {(startLocationSearch.trim() || endLocationSearch.trim()) && (
+                          <TouchableOpacity
+                            style={styles.clearAllButton}
+                            onPress={() => {
+                              setStartLocationSearch('');
+                              setEndLocationSearch('');
+                            }}
+                            activeOpacity={0.7}
+                          >
+                            <Icon name="clear" size={18} color={colors.textSecondary} />
+                            <Text style={styles.clearAllText}>Xóa</Text>
+                          </TouchableOpacity>
+                        )}
+                        <TouchableOpacity
+                          style={styles.searchButton}
+                          onPress={() => {
+                            if (searchTimeoutRef.current) {
+                              clearTimeout(searchTimeoutRef.current);
+                            }
+                            loadNearbyRides(true);
+                          }}
+                          activeOpacity={0.8}
+                        >
+                          <Icon name="search" size={20} color="#fff" />
+                          <Text style={styles.searchButtonText}>Tìm kiếm</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </CleanCard>
+                  </View>
+
                   {/* Available Shared Rides */}
                   <View style={styles.sharedRidesSection}>
                     <View style={styles.sectionHeader}>
                       <Text style={styles.sectionTitle}>Chuyến đi đang chia sẻ</Text>
-                      <TouchableOpacity onPress={loadNearbyRides} style={styles.refreshButton}>
+                      <TouchableOpacity onPress={() => loadNearbyRides(false)} style={styles.refreshButton}>
                         <Icon name="refresh" size={20} color="#4CAF50" />
                       </TouchableOpacity>
                     </View>
@@ -666,8 +781,7 @@ const HomeScreen = ({ navigation }) => {
                         const driverName = ride.driver_name || ride.driverName || 'Tài xế';
                         const driverRating = ride.driver_rating || ride.driverRating || 4.8;
                         
-                        // Extract location names/addresses - handle null, undefined, and empty strings
-                        // LocationResponse structure: { locationId, name, lat, lng, address }
+                        
                         const getLocationDisplay = (location) => {
                           if (!location) return null;
                           const name = location.name;
@@ -1130,6 +1244,77 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',
+  },
+  searchContainer: {
+    marginBottom: 16,
+  },
+  searchCard: {
+    marginBottom: 0,
+  },
+  searchCardContent: {
+    padding: 16,
+    gap: 12,
+  },
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(148,163,184,0.08)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  searchIcon: {
+    marginRight: 4,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: colors.textPrimary,
+    fontFamily: 'Inter_400Regular',
+    padding: 0,
+  },
+  clearButton: {
+    padding: 4,
+  },
+  searchActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+    marginTop: 4,
+  },
+  clearAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(148,163,184,0.1)',
+    gap: 6,
+  },
+  clearAllText: {
+    fontSize: 14,
+    fontFamily: 'Inter_500Medium',
+    color: colors.textSecondary,
+  },
+  searchButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: colors.primary,
+    gap: 8,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  searchButtonText: {
+    fontSize: 14,
+    fontFamily: 'Inter_600SemiBold',
+    color: '#fff',
   },
 });
 

@@ -8,6 +8,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   FlatList,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -26,6 +27,8 @@ const BrowseRidesScreen = ({ navigation }) => {
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [startLocationSearch, setStartLocationSearch] = useState('');
+  const [endLocationSearch, setEndLocationSearch] = useState('');
 
   useEffect(() => {
     loadRides(true);
@@ -49,7 +52,17 @@ const BrowseRidesScreen = ({ navigation }) => {
       }
 
       const currentPage = reset ? 0 : page;
-      const response = await rideService.getAvailableRides(null, null, currentPage, 20);
+      const response = await rideService.getAvailableRides(
+        null, 
+        null, 
+        currentPage, 
+        20,
+        startLocationSearch.trim() || null,
+        endLocationSearch.trim() || null,
+        null, // currentLat
+        null, // currentLng
+        null  // radiusKm
+      );
       
       console.log('🔍 [BrowseRides] Raw API response:', JSON.stringify(response, null, 2));
       
@@ -91,7 +104,17 @@ const BrowseRidesScreen = ({ navigation }) => {
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     loadRides(true);
-  }, []);
+  }, [startLocationSearch, endLocationSearch]);
+
+  const handleSearch = () => {
+    loadRides(true);
+  };
+
+  const handleClearSearch = () => {
+    setStartLocationSearch('');
+    setEndLocationSearch('');
+    loadRides(true);
+  };
 
   const loadMore = () => {
     if (!loadingMore && hasMore) {
@@ -303,6 +326,73 @@ const BrowseRidesScreen = ({ navigation }) => {
           onBackPress={() => navigation.goBack()}
         />
 
+        {/* Search Section */}
+        <View style={styles.searchContainer}>
+          <CleanCard style={styles.searchCard} contentStyle={styles.searchCardContent}>
+            <View style={styles.searchInputContainer}>
+              <Icon name="location-on" size={20} color={colors.primary} style={styles.searchIcon} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Tìm theo điểm đi..."
+                placeholderTextColor={colors.textMuted}
+                value={startLocationSearch}
+                onChangeText={setStartLocationSearch}
+                returnKeyType="next"
+              />
+              {startLocationSearch.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => setStartLocationSearch('')}
+                  style={styles.clearButton}
+                >
+                  <Icon name="close" size={18} color={colors.textMuted} />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <View style={styles.searchInputContainer}>
+              <Icon name="location-on" size={20} color="#F44336" style={styles.searchIcon} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Tìm theo điểm đến..."
+                placeholderTextColor={colors.textMuted}
+                value={endLocationSearch}
+                onChangeText={setEndLocationSearch}
+                returnKeyType="search"
+                onSubmitEditing={handleSearch}
+              />
+              {endLocationSearch.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => setEndLocationSearch('')}
+                  style={styles.clearButton}
+                >
+                  <Icon name="close" size={18} color={colors.textMuted} />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <View style={styles.searchActions}>
+              {(startLocationSearch.trim() || endLocationSearch.trim()) && (
+                <TouchableOpacity
+                  style={styles.clearAllButton}
+                  onPress={handleClearSearch}
+                  activeOpacity={0.7}
+                >
+                  <Icon name="clear" size={18} color={colors.textSecondary} />
+                  <Text style={styles.clearAllText}>Xóa</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={styles.searchButton}
+                onPress={handleSearch}
+                activeOpacity={0.8}
+              >
+                <Icon name="search" size={20} color="#fff" />
+                <Text style={styles.searchButtonText}>Tìm kiếm</Text>
+              </TouchableOpacity>
+            </View>
+          </CleanCard>
+        </View>
+
         {loading && rides.length === 0 ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={colors.primary} />
@@ -340,8 +430,82 @@ const styles = StyleSheet.create({
   safe: {
     flex: 1,
   },
+  searchContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 8,
+  },
+  searchCard: {
+    marginBottom: 0,
+  },
+  searchCardContent: {
+    padding: 16,
+    gap: 12,
+  },
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(148,163,184,0.08)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  searchIcon: {
+    marginRight: 4,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: colors.textPrimary,
+    fontFamily: 'Inter_400Regular',
+    padding: 0,
+  },
+  clearButton: {
+    padding: 4,
+  },
+  searchActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+    marginTop: 4,
+  },
+  clearAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(148,163,184,0.1)',
+    gap: 6,
+  },
+  clearAllText: {
+    fontSize: 14,
+    fontFamily: 'Inter_500Medium',
+    color: colors.textSecondary,
+  },
+  searchButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: colors.primary,
+    gap: 8,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  searchButtonText: {
+    fontSize: 14,
+    fontFamily: 'Inter_600SemiBold',
+    color: '#fff',
+  },
   listContent: {
     padding: 20,
+    paddingTop: 8,
     paddingBottom: 100,
   },
   loadingContainer: {

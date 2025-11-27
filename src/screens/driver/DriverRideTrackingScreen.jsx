@@ -31,7 +31,7 @@ const DriverRideTrackingScreen = ({ route, navigation }) => {
   const [isTracking, setIsTracking] = useState(false);
   const [driverLocation, setDriverLocation] = useState(null);
   const [riderLocation, setRiderLocation] = useState(null);
-  const [rideData, setRideData] = useState(null);
+  const [rideData, setRideData] = useState(initialRideData || null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [etaText, setEtaText] = useState(null);
@@ -654,21 +654,22 @@ const trackingSubscriptionRef = useRef(null);
 
   // Update phase when rideData changes (especially request status)
   useEffect(() => {
-    if (!rideData) return;
+    const data = rideData || initialRideData;
+    if (!data) return;
     
     // Get request status from various possible locations
     let requestStatus = null;
     
     // Try to get from ride_requests array (first request)
-    if (rideData.ride_requests && rideData.ride_requests.length > 0) {
-      requestStatus = rideData.ride_requests[0].status || rideData.ride_requests[0].request_status;
+    if (data.ride_requests && data.ride_requests.length > 0) {
+      requestStatus = data.ride_requests[0].status || data.ride_requests[0].request_status;
     }
     
     // Fallback to direct fields
     if (!requestStatus) {
-      requestStatus = rideData.shared_ride_request_status || 
-                     rideData.request_status ||
-                     rideData.ride_request_status;
+      requestStatus = data.shared_ride_request_status || 
+                     data.request_status ||
+                     data.ride_request_status;
     }
     
     // SIMPLE: CONFIRMED = toPickup, ONGOING = toDropoff
@@ -678,21 +679,23 @@ const trackingSubscriptionRef = useRef(null);
     } else if (requestStatus === 'ONGOING') {
       setPhase('toDropoff');
       console.log('📍 [DriverTracking] Phase updated to toDropoff (request is ONGOING)');
-    } else {
+    } else if (requestStatus) {
       console.warn('⚠️ [DriverTracking] Unknown request status:', requestStatus, 'Defaulting to toPickup');
       setPhase('toPickup');
     }
-  }, [rideData]);
+    // If requestStatus is still null/undefined, don't log warning - data might still be loading
+  }, [rideData, initialRideData]);
 
   // Auto start tracking when ride is CONFIRMED
   useEffect(() => {
-    if (rideData?.status === 'CONFIRMED' && !isTracking) {
+    const data = rideData || initialRideData;
+    if (data?.status === 'CONFIRMED' && !isTracking) {
       console.log('Ride confirmed, auto-starting GPS tracking...');
       setTimeout(() => {
         startTrackingService();
       }, 2000);
     }
-  }, [rideData?.status, isTracking]);
+  }, [rideData?.status, initialRideData?.status, isTracking]);
 
   const loadRideData = async () => {
     try {
@@ -710,14 +713,20 @@ const trackingSubscriptionRef = useRef(null);
 
   const startTrackingService = async () => {
     try {
-      if (rideData?.status !== 'ONGOING' && rideData?.status !== 'CONFIRMED') {
-        console.warn('⚠️ [DriverTracking] Ride status is not CONFIRMED or ONGOING:', rideData?.status);
+      const data = rideData || initialRideData;
+      if (!data) {
+        console.warn('⚠️ [DriverTracking] Ride data not available yet');
+        return;
+      }
+      
+      if (data.status !== 'ONGOING' && data.status !== 'CONFIRMED') {
+        console.warn('⚠️ [DriverTracking] Ride status is not CONFIRMED or ONGOING:', data.status);
         Alert.alert('Chưa thể theo dõi', 'Vui lòng bắt đầu chuyến đi trước khi theo dõi GPS.');
         return;
       }
 
       console.log('🚀 [DriverTracking] Starting GPS tracking for ride:', rideId);
-      console.log('🚀 [DriverTracking] Ride status:', rideData?.status);
+      console.log('🚀 [DriverTracking] Ride status:', data?.status);
       console.log('🚀 [DriverTracking] WebSocket connected:', websocketService.isConnected);
       
       const success = await locationTrackingService.startTracking(rideId);

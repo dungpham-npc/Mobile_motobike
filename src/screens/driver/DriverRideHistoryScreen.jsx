@@ -53,15 +53,15 @@ const DriverRideHistoryScreen = ({ navigation }) => {
         return;
       }
 
-      // Load ongoing rides (ONGOING, CONFIRMED status)
+      // Load ongoing rides (ONGOING, SCHEDULED status)
       try {
         const ongoingResponse = await rideService.getMyRides('ONGOING', 0, 50);
-        const confirmedResponse = await rideService.getMyRides('CONFIRMED', 0, 50);
+        const scheduledResponse = await rideService.getMyRides('SCHEDULED', 0, 50);
 
         const ongoingData = ongoingResponse?.data || [];
-        const confirmedData = confirmedResponse?.data || [];
+        const scheduledData = scheduledResponse?.data || [];
 
-        const allOngoing = [...ongoingData, ...confirmedData].map((ride) => {
+        const allOngoing = [...ongoingData, ...scheduledData].map((ride) => {
           const startAddr =
             ride.start_location?.address ||
             ride.start_location?.name ||
@@ -188,7 +188,6 @@ const DriverRideHistoryScreen = ({ navigation }) => {
   const getStatusColor = (status) => {
     switch (status?.toUpperCase()) {
       case 'ONGOING':
-      case 'CONFIRMED':
         return '#F97316';
       case 'COMPLETED':
         return '#22C55E';
@@ -205,8 +204,6 @@ const DriverRideHistoryScreen = ({ navigation }) => {
     switch (status?.toUpperCase()) {
       case 'ONGOING':
         return 'Đang diễn ra';
-      case 'CONFIRMED':
-        return 'Đã xác nhận';
       case 'COMPLETED':
         return 'Hoàn thành';
       case 'CANCELLED':
@@ -240,30 +237,19 @@ const DriverRideHistoryScreen = ({ navigation }) => {
     const date = parseBackendDate(dateString);
     if (!date) return 'N/A';
 
-    const months = [
-      'Th 1',
-      'Th 2',
-      'Th 3',
-      'Th 4',
-      'Th 5',
-      'Th 6',
-      'Th 7',
-      'Th 8',
-      'Th 9',
-      'Th 10',
-      'Th 11',
-      'Th 12',
-    ];
-    const day = date.getDate();
-    const month = months[date.getMonth()];
-    const hours = date.getHours() % 12 || 12;
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    const period = date.getHours() >= 12 ? 'PM' : 'AM';
-    return `${day} ${month}, ${hours}:${minutes} ${period}`;
+    return date.toLocaleString('vi-VN', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      hour: '2-digit',
+      minute: '2-digit',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      weekday: 'long',
+    });
   };
 
   const renderRideCard = (ride, index) => {
-    const isOngoing = ride.status === 'ONGOING' || ride.status === 'CONFIRMED';
+    const isOngoing = ride.status === 'ONGOING' || ride.status === 'SCHEDULED';
 
     return (
       <TouchableOpacity
@@ -433,14 +419,17 @@ const styles = StyleSheet.create({
   },
   tabsContainer: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
   },
   tab: {
     flex: 1,
+    minWidth: '30%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 12,
+    paddingHorizontal: 8,
     borderRadius: 12,
     gap: 6,
     backgroundColor: 'rgba(148,163,184,0.08)',
@@ -449,9 +438,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(34,197,94,0.15)',
   },
   tabText: {
-    fontSize: 14,
+    fontSize: 13,
     fontFamily: 'Inter_500Medium',
     color: colors.textMuted,
+    flexShrink: 1,
   },
   activeTabText: {
     color: colors.primary,

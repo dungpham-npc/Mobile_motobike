@@ -207,7 +207,12 @@ class RideService {
     startTime = null,
     endTime = null,
     page = 0,
-    size = 20
+    size = 20,
+    startLocation = null,
+    endLocation = null,
+    currentLat = null,
+    currentLng = null,
+    radiusKm = null
   ) {
     try {
       const params = new URLSearchParams({
@@ -217,6 +222,11 @@ class RideService {
 
       if (startTime) params.append("startTime", startTime);
       if (endTime) params.append("endTime", endTime);
+      if (startLocation) params.append("startLocation", startLocation);
+      if (endLocation) params.append("endLocation", endLocation);
+      if (currentLat !== null && currentLat !== undefined) params.append("currentLat", currentLat.toString());
+      if (currentLng !== null && currentLng !== undefined) params.append("currentLng", currentLng.toString());
+      if (radiusKm !== null && radiusKm !== undefined) params.append("radiusKm", radiusKm.toString());
 
       const response = await this.apiService.get(
         `${ENDPOINTS.RIDES.AVAILABLE}?${params.toString()}`

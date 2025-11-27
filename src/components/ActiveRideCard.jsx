@@ -40,8 +40,7 @@ const ActiveRideCard = ({ navigation }) => {
       let ride = await activeRideService.getActiveRide();
       
       // Validate requestId if ride exists in storage
-      if (ride && (!ride.requestId || ride.requestId === 'undefined' || ride.requestId === 'null' || ride.requestId === '{requestId}')) {
-        console.warn('⚠️ [ActiveRideCard] Invalid requestId in stored ride, clearing...');
+      if (ride && (!ride.requestId || ride.requestId === 'undefined' || ride.requestId === 'null' || ride.requestId === '{requestId}')) { 
         await activeRideService.clearActiveRide();
         ride = null;
       }
@@ -52,14 +51,9 @@ const ActiveRideCard = ({ navigation }) => {
         // Use userId from various possible locations (user_id is the standard field)
         const riderId = currentUser?.user?.user_id || currentUser?.user?.userId || currentUser?.userId || currentUser?.user?.id || currentUser?.id;
         
-        console.log('🔍 [ActiveRideCard] Current user:', currentUser);
-        console.log('🔍 [ActiveRideCard] User ID (riderId):', riderId);
-        
         if (riderId) {
           // First, try to fetch ONGOING requests (highest priority)
-          console.log('📥 [ActiveRideCard] Fetching ONGOING requests from backend for rider:', riderId);
           let response = await rideService.getRiderRequests(riderId, 'ONGOING', 0, 1);
-          console.log('📥 [ActiveRideCard] ONGOING response:', JSON.stringify(response, null, 2));
           
           // Handle different response structures
           let requests = [];
@@ -73,13 +67,9 @@ const ActiveRideCard = ({ navigation }) => {
             requests = response.pagination.data;
           }
           
-          console.log('📥 [ActiveRideCard] ONGOING requests extracted:', requests.length);
-          
           // If no ONGOING request, try CONFIRMED requests
           if (requests.length === 0) {
-            console.log('📥 [ActiveRideCard] No ONGOING request, fetching CONFIRMED requests...');
             response = await rideService.getRiderRequests(riderId, 'CONFIRMED', 0, 1);
-            console.log('📥 [ActiveRideCard] CONFIRMED response:', JSON.stringify(response, null, 2));
             
             // Handle different response structures
             if (Array.isArray(response)) {
@@ -92,23 +82,19 @@ const ActiveRideCard = ({ navigation }) => {
               requests = response.pagination.data;
             }
             
-            console.log('📥 [ActiveRideCard] CONFIRMED requests extracted:', requests.length);
           }
           
           // Get the newest request (first one, sorted by createdAt desc)
           const activeRequest = requests.length > 0 ? requests[0] : null;
           
           if (activeRequest) {
-            console.log('✅ [ActiveRideCard] Found active request:', JSON.stringify(activeRequest, null, 2));
             
             // Extract requestId and validate it
             const requestId = activeRequest.shared_ride_request_id || activeRequest.sharedRideRequestId || activeRequest.requestId || activeRequest.id;
             
-            console.log('🔍 [ActiveRideCard] Extracted requestId:', requestId);
             
             // Validate requestId before saving
             if (!requestId || requestId === 'undefined' || requestId === 'null' || requestId === '{requestId}') {
-              console.warn('⚠️ [ActiveRideCard] Invalid requestId from backend, skipping save');
               // Clear any old invalid data
               await activeRideService.clearActiveRide();
               ride = null;
@@ -140,30 +126,25 @@ const ActiveRideCard = ({ navigation }) => {
                 timestamp: Date.now(),
               };
               
-              console.log('💾 [ActiveRideCard] Saving active ride to storage:', ride);
               
               // Save to AsyncStorage for future quick access
               await activeRideService.saveActiveRide(ride);
             }
           } else {
             // No active request found, clear old data
-            console.log('📭 [ActiveRideCard] No active request found, clearing old data');
             await activeRideService.clearActiveRide();
             ride = null;
           }
-        } else {
-          console.warn('⚠️ [ActiveRideCard] No riderId found, cannot fetch active requests');
+        } else {  
+          console.error('❌ [ActiveRideCard] No riderId found, cannot fetch active requests');
         }
       } catch (apiError) {
-        console.error('❌ [ActiveRideCard] Failed to fetch from API:', apiError);
-        console.error('❌ [ActiveRideCard] Error details:', JSON.stringify(apiError, null, 2));
         // If API fails and we have cached data, use it; otherwise clear
         if (!ride) {
           await activeRideService.clearActiveRide();
         }
       }
       
-      console.log('🎯 [ActiveRideCard] Setting activeRide state:', ride);
       setActiveRide(ride);
     } catch (error) {
       console.error('❌ [ActiveRideCard] Failed to load active ride:', error);
@@ -175,7 +156,6 @@ const ActiveRideCard = ({ navigation }) => {
   
   // Debug: Log when activeRide changes
   useEffect(() => {
-    console.log('🔄 [ActiveRideCard] activeRide state changed:', activeRide);
   }, [activeRide]);
 
   const handleResumeRide = () => {
@@ -183,7 +163,6 @@ const ActiveRideCard = ({ navigation }) => {
 
     // Validate requestId before navigating
     if (!activeRide.requestId || activeRide.requestId === 'undefined' || activeRide.requestId === 'null' || activeRide.requestId === '{requestId}') {
-      console.warn('⚠️ [ActiveRideCard] Invalid requestId, clearing active ride');
       Alert.alert(
         'Lỗi',
         'Thông tin chuyến đi không hợp lệ. Vui lòng thử lại.',
@@ -232,7 +211,6 @@ const ActiveRideCard = ({ navigation }) => {
     } else {
       // Validate requestId before navigating
       if (!activeRide.requestId || activeRide.requestId === 'undefined' || activeRide.requestId === 'null' || activeRide.requestId === '{requestId}') {
-        console.warn('⚠️ [ActiveRideCard] Invalid requestId, clearing active ride');
         Alert.alert(
           'Lỗi',
           'Thông tin chuyến đi không hợp lệ. Vui lòng thử lại.',
@@ -293,7 +271,6 @@ const ActiveRideCard = ({ navigation }) => {
               setActiveRide(null);
               Alert.alert('Thành công', isDriver ? 'Chuyến xe đã được hủy.' : 'Yêu cầu đã được hủy.');
             } catch (error) {
-              console.error('Cancel ride error:', error);
               Alert.alert('Lỗi', error?.message || 'Không thể hủy chuyến. Vui lòng thử lại.');
             } finally {
               setCancelling(false);

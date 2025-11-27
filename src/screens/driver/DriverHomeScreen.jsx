@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
   StatusBar,
   Platform,
   RefreshControl,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -84,8 +85,9 @@ const DriverHomeScreen = ({ navigation }) => {
   // Shared ride states
   const [sharedRides, setSharedRides] = useState([]);
   const [loadingSharedRides, setLoadingSharedRides] = useState(false);
-  const [activeSharedRide, setActiveSharedRide] = useState(null);
   const [pendingJoinRequests, setPendingJoinRequests] = useState({}); // { rideId: [requests] }
+  const [sharedStartLocationSearch, setSharedStartLocationSearch] = useState('');
+  const [sharedEndLocationSearch, setSharedEndLocationSearch] = useState('');
   const [unreadCount, setUnreadCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   
@@ -335,14 +337,37 @@ const DriverHomeScreen = ({ navigation }) => {
             pendingRequests = [];
           }
           
+          const fromLabel =
+            getLocationLabel(ride.start_location) ||
+            getLocationLabel(ride.startLocation) ||
+            'Điểm đi';
+          const toLabel =
+            getLocationLabel(ride.end_location) ||
+            getLocationLabel(ride.endLocation) ||
+            'Điểm đến';
+
+          const startSearchFields = buildSearchFields(fromLabel, [
+            ride.start_location?.name,
+            ride.start_location?.address,
+            ride.start_location?.description,
+            ride.startLocationName,
+            ride.pickup_location?.name,
+            ride.pickup_location?.address,
+          ]);
+
+          const endSearchFields = buildSearchFields(toLabel, [
+            ride.end_location?.name,
+            ride.end_location?.address,
+            ride.end_location?.description,
+            ride.endLocationName,
+            ride.dropoff_location?.name,
+            ride.dropoff_location?.address,
+          ]);
+
           return {
             rideId: rideId,
-            from: getLocationLabel(ride.start_location) || 
-                  getLocationLabel(ride.startLocation) ||
-                  'Điểm đi',
-            to: getLocationLabel(ride.end_location) || 
-                getLocationLabel(ride.endLocation) ||
-                'Điểm đến',
+            from: fromLabel,
+            to: toLabel,
             scheduledTime: formatScheduledTime(ride.scheduled_time || ride.scheduledTime),
             currentPassengers: currentPassengers,
             maxPassengers: maxPassengers, // Always 1
@@ -350,6 +375,8 @@ const DriverHomeScreen = ({ navigation }) => {
             baseFare: ride.base_fare || ride.baseFare || 0,
             raw: ride,
             pendingRequests: pendingRequests,
+            searchStartFields: startSearchFields,
+            searchEndFields: endSearchFields,
           };
         })
       );
@@ -370,16 +397,6 @@ const DriverHomeScreen = ({ navigation }) => {
       });
       setPendingJoinRequests(requestsMap);
       
-      // Set the first active ride as activeSharedRide if exists
-      if (activeRides.length > 0) {
-        const firstRide = activeRides[0];
-        setActiveSharedRide({
-          ...firstRide,
-          status: firstRide.status === 'ONGOING' ? 'ongoing' : 'waiting',
-        });
-      } else {
-        setActiveSharedRide(null);
-      }
     } catch (error) {
       console.error('Failed to load shared rides:', error);
     } finally {
@@ -452,31 +469,105 @@ const DriverHomeScreen = ({ navigation }) => {
     }
   };
 
+  const handleSharedRideSearchChange = (type, value) => {
+    if (type === 'start') {
+      setSharedStartLocationSearch(value);
+    } else {
+      setSharedEndLocationSearch(value);
+    }
+  };
+
+  const clearSharedRideSearch = () => {
+    setSharedStartLocationSearch('');
+    setSharedEndLocationSearch('');
+  };
+
   const formatScheduledTime = (scheduledTime) => {
     if (!scheduledTime) return 'Ngay lập tức';
-    
     try {
-      // Backend sends local time (Vietnam UTC+7) but marks it as UTC with 'Z'
-      // Remove 'Z' to parse as local time without timezone conversion
-      const localTimeString = scheduledTime.replace('Z', '');
-      const date = new Date(localTimeString);
-      
-      // Check if date is valid
-      if (isNaN(date.getTime())) {
+      const date =
+        scheduledTime instanceof Date
+          ? scheduledTime
+          : new Date(scheduledTime);
+      if (Number.isNaN(date.getTime())) {
         return 'Ngay lập tức';
       }
-      
-      // Get local time components (already in local timezone)
-      const hours = date.getHours();
-      const minutes = date.getMinutes();
-      const ampm = hours >= 12 ? 'PM' : 'AM';
-      const displayHours = hours % 12 || 12;
-      return `${displayHours}:${String(minutes).padStart(2, '0')} ${ampm}`;
+
+      return date.toLocaleString('vi-VN', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+        hour: '2-digit',
+        minute: '2-digit',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      });
     } catch (error) {
       console.error('Error formatting scheduled time:', error, scheduledTime);
       return 'Ngay lập tức';
     }
   };
+
+  const normalizeText = (value) => {
+    if (typeof value !== 'string') return '';
+    return value
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
+  };
+
+  const buildSearchFields = (label, additional = []) => {
+    const fields = [];
+    if (typeof label === 'string' && label.trim()) {
+      fields.push(label);
+    }
+    additional.forEach((item) => {
+      if (typeof item === 'string' && item.trim()) {
+        fields.push(item);
+      }
+    });
+    return fields;
+  };
+
+  const rideMatchesSearch = (ride, startKeyword, endKeyword) => {
+    const normalizedStart = normalizeText(startKeyword);
+    const normalizedEnd = normalizeText(endKeyword);
+
+    const startMatch =
+      !normalizedStart ||
+      (ride.searchStartFields || []).some((field) =>
+        normalizeText(field).includes(normalizedStart)
+      );
+
+    const endMatch =
+      !normalizedEnd ||
+      (ride.searchEndFields || []).some((field) =>
+        normalizeText(field).includes(normalizedEnd)
+      );
+
+    return startMatch && endMatch;
+  };
+
+  const filteredSharedRides = useMemo(() => {
+    const startKeyword = sharedStartLocationSearch.trim();
+    const endKeyword = sharedEndLocationSearch.trim();
+
+    if (!startKeyword && !endKeyword) {
+      return sharedRides;
+    }
+
+    return sharedRides.filter((ride) =>
+      rideMatchesSearch(ride, startKeyword, endKeyword)
+    );
+  }, [sharedRides, sharedStartLocationSearch, sharedEndLocationSearch]);
+
+  const activeSharedRide = filteredSharedRides.length > 0 ? filteredSharedRides[0] : null;
+  const otherSharedRides = activeSharedRide
+    ? filteredSharedRides.slice(1)
+    : [];
+  const isFilteringSharedRides =
+    sharedStartLocationSearch.trim().length > 0 ||
+    sharedEndLocationSearch.trim().length > 0;
 
   const getLocationLabel = (location) => {
     if (!location) return null;
@@ -1174,219 +1265,312 @@ const DriverHomeScreen = ({ navigation }) => {
               </View>
             ) : (
               <>
-                {/* Active Shared Ride */}
-                {activeSharedRide && (
-                  <Animatable.View animation="fadeInUp" duration={400} delay={300}>
-                    <CleanCard style={styles.activeSharedRideCard} contentStyle={styles.activeSharedRideCardContent}>
+                <View style={styles.sharedSearchContainer}>
+                  <CleanCard style={styles.sharedSearchCard} contentStyle={styles.sharedSearchCardContent}>
+                    <View style={styles.sharedSearchInputContainer}>
+                      <Icon name="location-on" size={20} color={colors.primary} style={styles.sharedSearchIcon} />
+                      <TextInput
+                        style={styles.sharedSearchInput}
+                        placeholder="Tìm theo điểm đi..."
+                        placeholderTextColor={colors.textMuted}
+                        value={sharedStartLocationSearch}
+                        onChangeText={(value) => handleSharedRideSearchChange('start', value)}
+                        returnKeyType="next"
+                      />
+                      {sharedStartLocationSearch.length > 0 && (
+                        <TouchableOpacity
+                          onPress={() => setSharedStartLocationSearch('')}
+                          style={styles.sharedClearButton}
+                        >
+                          <Icon name="close" size={18} color={colors.textMuted} />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+
+                    <View style={styles.sharedSearchInputContainer}>
+                      <Icon name="location-on" size={20} color="#F44336" style={styles.sharedSearchIcon} />
+                      <TextInput
+                        style={styles.sharedSearchInput}
+                        placeholder="Tìm theo điểm đến..."
+                        placeholderTextColor={colors.textMuted}
+                        value={sharedEndLocationSearch}
+                        onChangeText={(value) => handleSharedRideSearchChange('end', value)}
+                        returnKeyType="search"
+                        onSubmitEditing={loadSharedRides}
+                      />
+                      {sharedEndLocationSearch.length > 0 && (
+                        <TouchableOpacity
+                          onPress={() => setSharedEndLocationSearch('')}
+                          style={styles.sharedClearButton}
+                        >
+                          <Icon name="close" size={18} color={colors.textMuted} />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+
+                    <View style={styles.sharedSearchActions}>
+                      {isFilteringSharedRides && (
+                        <TouchableOpacity
+                          style={styles.sharedClearAllButton}
+                          onPress={clearSharedRideSearch}
+                          activeOpacity={0.7}
+                        >
+                          <Icon name="clear" size={18} color={colors.textSecondary} />
+                          <Text style={styles.sharedClearAllText}>Xóa</Text>
+                        </TouchableOpacity>
+                      )}
                       <TouchableOpacity
-                        onPress={() => {
-                          navigation.navigate('DriverRideDetails', {
-                            rideId: activeSharedRide.rideId,
-                          });
-                        }}
+                        style={styles.sharedSearchButton}
+                        onPress={loadSharedRides}
                         activeOpacity={0.8}
                       >
-                        <View style={styles.activeSharedRideHeader}>
-                          <View style={styles.activeSharedRideTitle}>
-                            <View style={[styles.activeSharedRideIcon, { backgroundColor: '#EFF6FF' }]}>
-                              <Icon name="people" size={18} color="#3B82F6" />
-                            </View>
-                            <View style={styles.activeSharedRideTitleText}>
-                              <Text style={styles.activeSharedRideTitleMain}>Chuyến xe đang được chia sẻ</Text>
-                              <View style={[
-                                styles.activeSharedRideBadge,
-                                activeSharedRide.status === 'ongoing' && styles.activeSharedRideBadgeOngoing
-                              ]}>
-                                <Text style={[
-                                  styles.activeSharedRideBadgeText,
-                                  activeSharedRide.status === 'ongoing' && styles.activeSharedRideBadgeTextOngoing
-                                ]}>
-                                  {activeSharedRide.status === 'ongoing' ? 'Đang di chuyển' : 'Đang chờ'}
-                                </Text>
-                              </View>
-                            </View>
-                          </View>
-                        </View>
+                        <Icon name="search" size={20} color="#fff" />
+                        <Text style={styles.sharedSearchButtonText}>Tìm kiếm</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </CleanCard>
+                </View>
 
-                        <View style={styles.activeSharedRideRoute}>
-                          <View style={styles.routeItem}>
-                            <View style={styles.routeDot} />
-                            <Text style={styles.routeText} numberOfLines={1}>{activeSharedRide.from}</Text>
-                          </View>
-                          <View style={styles.routeLine} />
-                          <View style={styles.routeItem}>
-                            <Icon name="location-on" size={12} color="#EF4444" />
-                            <Text style={styles.routeText} numberOfLines={1}>{activeSharedRide.to}</Text>
-                          </View>
-                        </View>
-
-                        <View style={styles.activeSharedRideStats}>
-                          <View style={styles.activeSharedRideStat}>
-                            <Icon name="access-time" size={14} color={colors.textMuted} />
-                            <Text style={styles.activeSharedRideStatValue}>
-                              {activeSharedRide.scheduledTime}
-                            </Text>
-                          </View>
-                          <View style={styles.activeSharedRideStatDivider} />
-                          <View style={styles.activeSharedRideStat}>
-                            <Icon name="people" size={14} color={colors.textMuted} />
-                            <Text style={styles.activeSharedRideStatValue}>
-                              {activeSharedRide.currentPassengers}/{activeSharedRide.maxPassengers}
-                            </Text>
-                          </View>
-                        </View>
-
-                        {/* Pending Join Requests */}
-                        {pendingJoinRequests[activeSharedRide.rideId] && 
-                         pendingJoinRequests[activeSharedRide.rideId].length > 0 && (
-                          <View style={styles.pendingRequestsContainer}>
-                            <Text style={styles.pendingRequestsTitle}>
-                              Yêu cầu tham gia ({pendingJoinRequests[activeSharedRide.rideId].length})
-                            </Text>
-                            {pendingJoinRequests[activeSharedRide.rideId].map((req, idx) => (
-                              <CleanCard key={req.shared_ride_request_id || req.sharedRideRequestId} style={styles.pendingRequestCard} contentStyle={styles.pendingRequestCardContent}>
-                                <View style={styles.pendingRequestHeader}>
-                                  <View style={styles.pendingRequestRiderInfo}>
-                                    <View style={styles.pendingRequestAvatar}>
-                                      <Text style={styles.pendingRequestAvatarText}>
-                                        {getInitials(req.rider_name || req.riderName || 'Hành khách')}
-                                      </Text>
-                                    </View>
-                                    <View style={styles.pendingRequestDetails}>
-                                      <Text style={styles.pendingRequestRiderName}>
-                                        {req.rider_name || req.riderName || 'Hành khách'}
-                                      </Text>
-                                      <Text style={styles.pendingRequestFare}>
-                                        {formatCurrency(req.total_fare || req.totalFare || req.fareAmount || 0)}
-                                      </Text>
-                                    </View>
-                                  </View>
-                                  <View style={styles.pendingRequestActions}>
-                                    {req.status === 'PENDING' ? (
-                                      <>
-                                        <TouchableOpacity
-                                          style={styles.pendingRequestRejectButton}
-                                          onPress={() => {
-                                            handleRejectRequest({
-                                              ...req,
-                                              requestId: req.shared_ride_request_id || req.sharedRideRequestId,
-                                              rideId: activeSharedRide.rideId,
-                                            });
-                                          }}
-                                          activeOpacity={0.7}
-                                        >
-                                          <Icon name="close" size={16} color="#EF4444" />
-                                        </TouchableOpacity>
-                                        <TouchableOpacity
-                                          style={styles.pendingRequestAcceptButton}
-                                          onPress={() => {
-                                            handleAcceptRequest({
-                                              ...req,
-                                              requestId: req.shared_ride_request_id || req.sharedRideRequestId,
-                                              rideId: activeSharedRide.rideId,
-                                              pickupLocation: req.pickup_location || req.pickupLocation,
-                                              dropoffLocation: req.dropoff_location || req.dropoffLocation,
-                                            });
-                                          }}
-                                          activeOpacity={0.7}
-                                        >
-                                          <Icon name="check" size={16} color="#22C55E" />
-                                        </TouchableOpacity>
-                                      </>
-                                    ) : (
-                                      <View style={styles.pendingRequestExpiredBadge}>
-                                        <Text style={styles.pendingRequestExpiredText}>
-                                          {req.status === 'EXPIRED' ? 'Hết hạn' : req.status === 'CANCELLED' ? 'Đã hủy' : req.status}
-                                        </Text>
-                                      </View>
-                                    )}
-                                  </View>
-                                </View>
-                              </CleanCard>
-                            ))}
-                          </View>
-                        )}
-
-                        <TouchableOpacity 
-                          style={styles.viewDetailsButton}
-                          onPress={() => {
-                            navigation.navigate('DriverRideDetails', {
-                              rideId: activeSharedRide.rideId,
-                            });
-                          }}
+                {filteredSharedRides.length === 0 ? (
+                  <View style={styles.sharedEmptyCardContainer}>
+                    <View style={styles.sharedEmptyCard}>
+                      <Icon name="travel-explore" size={40} color={colors.textMuted} />
+                      <Text style={styles.sharedEmptyText}>
+                        {isFilteringSharedRides
+                          ? 'Không tìm thấy chuyến phù hợp'
+                          : 'Bạn chưa có chuyến chia sẻ nào'}
+                      </Text>
+                      <Text style={styles.sharedEmptySubtext}>
+                        {isFilteringSharedRides
+                          ? 'Thử đổi lại từ khóa điểm đi/đến'
+                          : 'Tạo chuyến mới để bắt đầu chia sẻ'}
+                      </Text>
+                      {isFilteringSharedRides && (
+                        <TouchableOpacity
+                          style={styles.sharedFilterResetButton}
+                          onPress={clearSharedRideSearch}
                           activeOpacity={0.8}
                         >
-                          <Text style={styles.viewDetailsButtonText}>Xem chi tiết</Text>
-                          <Icon name="chevron-right" size={18} color="#FFFFFF" />
+                          <Icon name="restart-alt" size={18} color="#fff" />
+                          <Text style={styles.sharedFilterResetButtonText}>Đặt lại bộ lọc</Text>
                         </TouchableOpacity>
-                      </TouchableOpacity>
-                    </CleanCard>
-                  </Animatable.View>
-                )}
-
-                {/* List of Other Shared Rides */}
-                {sharedRides.length > 1 && (
-                  <View style={styles.sharedRidesList}>
-                    <Text style={styles.sharedRidesListTitle}>
-                      Các chuyến khác ({sharedRides.length - 1})
-                    </Text>
-                    {sharedRides.slice(1).map((ride, index) => (
-                      <Animatable.View
-                        key={ride.rideId}
-                        animation="fadeInUp"
-                        duration={400}
-                        delay={360 + index * 40}
-                      >
-                        <CleanCard style={styles.sharedRideCard} contentStyle={styles.sharedRideCardContent}>
+                      )}
+                    </View>
+                  </View>
+                ) : (
+                  <>
+                    {activeSharedRide && (
+                      <Animatable.View animation="fadeInUp" duration={400} delay={300}>
+                        <CleanCard style={styles.activeSharedRideCard} contentStyle={styles.activeSharedRideCardContent}>
                           <TouchableOpacity
                             onPress={() => {
                               navigation.navigate('DriverRideDetails', {
-                                rideId: ride.rideId || ride.shared_ride_id || ride.sharedRideId,
+                                rideId: activeSharedRide.rideId,
                               });
                             }}
-                            activeOpacity={0.7}
+                            activeOpacity={0.8}
                           >
-                            <View style={styles.sharedRideCardHeader}>
-                              <View style={styles.sharedRideCardRoute}>
-                                <View style={styles.routeItem}>
-                                  <View style={styles.routeDot} />
-                                  <Text style={styles.routeText} numberOfLines={1}>{ride.from}</Text>
+                            <View style={styles.activeSharedRideHeader}>
+                              <View style={styles.activeSharedRideTitle}>
+                                <View style={[styles.activeSharedRideIcon, { backgroundColor: '#EFF6FF' }]}>
+                                  <Icon name="people" size={18} color="#3B82F6" />
                                 </View>
-                                <View style={styles.routeLine} />
-                                <View style={styles.routeItem}>
-                                  <Icon name="location-on" size={12} color="#EF4444" />
-                                  <Text style={styles.routeText} numberOfLines={1}>{ride.to}</Text>
+                                <View style={styles.activeSharedRideTitleText}>
+                                  <Text style={styles.activeSharedRideTitleMain}>Chuyến xe đang được chia sẻ</Text>
+                                  <View style={[
+                                    styles.activeSharedRideBadge,
+                                    activeSharedRide.status === 'ONGOING' && styles.activeSharedRideBadgeOngoing
+                                  ]}>
+                                    <Text style={[
+                                      styles.activeSharedRideBadgeText,
+                                      activeSharedRide.status === 'ONGOING' && styles.activeSharedRideBadgeTextOngoing
+                                    ]}>
+                                      {activeSharedRide.status === 'ONGOING' ? 'Đang di chuyển' : 'Đang chờ'}
+                                    </Text>
+                                  </View>
                                 </View>
                               </View>
-                              <View style={[
-                                styles.sharedRideStatusBadge,
-                                ride.status === 'ONGOING' && styles.sharedRideStatusBadgeOngoing
-                              ]}>
-                                <Text style={[
-                                  styles.sharedRideStatusText,
-                                  ride.status === 'ONGOING' && styles.sharedRideStatusTextOngoing
-                                ]}>
-                                  {ride.status === 'ONGOING' ? 'Đang di chuyển' : 'Đang chờ'}
+                            </View>
+
+                            <View style={styles.activeSharedRideRoute}>
+                              <View style={styles.routeItem}>
+                                <View style={styles.routeDot} />
+                                <Text style={styles.routeText} numberOfLines={1}>{activeSharedRide.from}</Text>
+                              </View>
+                              <View style={styles.routeLine} />
+                              <View style={styles.routeItem}>
+                                <Icon name="location-on" size={12} color="#EF4444" />
+                                <Text style={styles.routeText} numberOfLines={1}>{activeSharedRide.to}</Text>
+                              </View>
+                            </View>
+
+                            <View style={styles.activeSharedRideStats}>
+                              <View style={styles.activeSharedRideStat}>
+                                <Icon name="access-time" size={14} color={colors.textMuted} />
+                                <Text style={styles.activeSharedRideStatValue}>
+                                  {activeSharedRide.scheduledTime}
+                                </Text>
+                              </View>
+                              <View style={styles.activeSharedRideStatDivider} />
+                              <View style={styles.activeSharedRideStat}>
+                                <Icon name="people" size={14} color={colors.textMuted} />
+                                <Text style={styles.activeSharedRideStatValue}>
+                                  {activeSharedRide.currentPassengers}/{activeSharedRide.maxPassengers}
                                 </Text>
                               </View>
                             </View>
-                            <View style={styles.sharedRideCardFooter}>
-                              <View style={styles.sharedRideCardInfo}>
-                                <Icon name="access-time" size={12} color={colors.textMuted} />
-                                <Text style={styles.sharedRideCardInfoText}>{ride.scheduledTime}</Text>
-                                <Text style={styles.sharedRideCardInfoDot}>•</Text>
-                                <Icon name="people" size={12} color={colors.textMuted} />
-                                <Text style={styles.sharedRideCardInfoText}>
-                                  {ride.currentPassengers}/{ride.maxPassengers}
+
+                            {pendingJoinRequests[activeSharedRide.rideId] && 
+                             pendingJoinRequests[activeSharedRide.rideId].length > 0 && (
+                              <View style={styles.pendingRequestsContainer}>
+                                <Text style={styles.pendingRequestsTitle}>
+                                  Yêu cầu tham gia ({pendingJoinRequests[activeSharedRide.rideId].length})
                                 </Text>
+                                {pendingJoinRequests[activeSharedRide.rideId].map((req) => (
+                                  <CleanCard key={req.shared_ride_request_id || req.sharedRideRequestId} style={styles.pendingRequestCard} contentStyle={styles.pendingRequestCardContent}>
+                                    <View style={styles.pendingRequestHeader}>
+                                      <View style={styles.pendingRequestRiderInfo}>
+                                        <View style={styles.pendingRequestAvatar}>
+                                          <Text style={styles.pendingRequestAvatarText}>
+                                            {getInitials(req.rider_name || req.riderName || 'Hành khách')}
+                                          </Text>
+                                        </View>
+                                        <View style={styles.pendingRequestDetails}>
+                                          <Text style={styles.pendingRequestRiderName}>
+                                            {req.rider_name || req.riderName || 'Hành khách'}
+                                          </Text>
+                                          <Text style={styles.pendingRequestFare}>
+                                            {formatCurrency(req.total_fare || req.totalFare || req.fareAmount || 0)}
+                                          </Text>
+                                        </View>
+                                      </View>
+                                      <View style={styles.pendingRequestActions}>
+                                        {req.status === 'PENDING' ? (
+                                          <>
+                                            <TouchableOpacity
+                                              style={styles.pendingRequestRejectButton}
+                                              onPress={() => {
+                                                handleRejectRequest({
+                                                  ...req,
+                                                  requestId: req.shared_ride_request_id || req.sharedRideRequestId,
+                                                  rideId: activeSharedRide.rideId,
+                                                });
+                                              }}
+                                              activeOpacity={0.7}
+                                            >
+                                              <Icon name="close" size={16} color="#EF4444" />
+                                            </TouchableOpacity>
+                                            <TouchableOpacity
+                                              style={styles.pendingRequestAcceptButton}
+                                              onPress={() => {
+                                                handleAcceptRequest({
+                                                  ...req,
+                                                  requestId: req.shared_ride_request_id || req.sharedRideRequestId,
+                                                  rideId: activeSharedRide.rideId,
+                                                  pickupLocation: req.pickup_location || req.pickupLocation,
+                                                  dropoffLocation: req.dropoff_location || req.dropoffLocation,
+                                                });
+                                              }}
+                                              activeOpacity={0.7}
+                                            >
+                                              <Icon name="check" size={16} color="#22C55E" />
+                                            </TouchableOpacity>
+                                          </>
+                                        ) : (
+                                          <View style={styles.pendingRequestExpiredBadge}>
+                                            <Text style={styles.pendingRequestExpiredText}>
+                                              {req.status === 'EXPIRED' ? 'Hết hạn' : req.status === 'CANCELLED' ? 'Đã hủy' : req.status}
+                                            </Text>
+                                          </View>
+                                        )}
+                                      </View>
+                                    </View>
+                                  </CleanCard>
+                                ))}
                               </View>
-                              <Icon name="chevron-right" size={18} color={colors.textMuted} />
-                            </View>
+                            )}
+
+                            <TouchableOpacity 
+                              style={styles.viewDetailsButton}
+                              onPress={() => {
+                                navigation.navigate('DriverRideDetails', {
+                                  rideId: activeSharedRide.rideId,
+                                });
+                              }}
+                              activeOpacity={0.8}
+                            >
+                              <Text style={styles.viewDetailsButtonText}>Xem chi tiết</Text>
+                              <Icon name="chevron-right" size={18} color="#FFFFFF" />
+                            </TouchableOpacity>
                           </TouchableOpacity>
                         </CleanCard>
                       </Animatable.View>
-                    ))}
-                  </View>
+                    )}
+
+                    {otherSharedRides.length > 0 && (
+                      <View style={styles.sharedRidesList}>
+                        <Text style={styles.sharedRidesListTitle}>
+                          Các chuyến khác ({otherSharedRides.length})
+                        </Text>
+                        {otherSharedRides.map((ride, index) => (
+                          <Animatable.View
+                            key={ride.rideId}
+                            animation="fadeInUp"
+                            duration={400}
+                            delay={360 + index * 40}
+                          >
+                            <CleanCard style={styles.sharedRideCard} contentStyle={styles.sharedRideCardContent}>
+                              <TouchableOpacity
+                                onPress={() => {
+                                  navigation.navigate('DriverRideDetails', {
+                                    rideId: ride.rideId || ride.shared_ride_id || ride.sharedRideId,
+                                  });
+                                }}
+                                activeOpacity={0.7}
+                              >
+                                <View style={styles.sharedRideCardHeader}>
+                                  <View style={styles.sharedRideCardRoute}>
+                                    <View style={styles.routeItem}>
+                                      <View style={styles.routeDot} />
+                                      <Text style={styles.routeText} numberOfLines={1}>{ride.from}</Text>
+                                    </View>
+                                    <View style={styles.routeLine} />
+                                    <View style={styles.routeItem}>
+                                      <Icon name="location-on" size={12} color="#EF4444" />
+                                      <Text style={styles.routeText} numberOfLines={1}>{ride.to}</Text>
+                                    </View>
+                                  </View>
+                                  <View style={[
+                                    styles.sharedRideStatusBadge,
+                                    ride.status === 'ONGOING' && styles.sharedRideStatusBadgeOngoing
+                                  ]}>
+                                    <Text style={[
+                                      styles.sharedRideStatusText,
+                                      ride.status === 'ONGOING' && styles.sharedRideStatusTextOngoing
+                                    ]}>
+                                      {ride.status === 'ONGOING' ? 'Đang di chuyển' : 'Đang chờ'}
+                                    </Text>
+                                  </View>
+                                </View>
+                                <View style={styles.sharedRideCardFooter}>
+                                  <View style={styles.sharedRideCardInfo}>
+                                    <Icon name="access-time" size={12} color={colors.textMuted} />
+                                    <Text style={styles.sharedRideCardInfoText}>{ride.scheduledTime}</Text>
+                                    <Text style={styles.sharedRideCardInfoDot}>•</Text>
+                                    <Icon name="people" size={12} color={colors.textMuted} />
+                                    <Text style={styles.sharedRideCardInfoText}>
+                                      {ride.currentPassengers}/{ride.maxPassengers}
+                                    </Text>
+                                  </View>
+                                  <Icon name="chevron-right" size={18} color={colors.textMuted} />
+                                </View>
+                              </TouchableOpacity>
+                            </CleanCard>
+                          </Animatable.View>
+                        ))}
+                      </View>
+                    )}
+                  </>
                 )}
 
                 {/* Create Shared Ride */}
@@ -1985,6 +2169,71 @@ const styles = StyleSheet.create({
     marginTop: 16,
     gap: 16,
   },
+  sharedSearchContainer: {
+    marginBottom: spacing.sm,
+  },
+  sharedSearchCard: {
+    borderRadius: 16,
+  },
+  sharedSearchCardContent: {
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  sharedSearchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  sharedSearchIcon: {
+    marginRight: spacing.xs,
+  },
+  sharedSearchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: colors.textPrimary,
+    paddingVertical: spacing.xs,
+  },
+  sharedClearButton: {
+    padding: 4,
+  },
+  sharedSearchActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: spacing.xs,
+  },
+  sharedClearAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
+  },
+  sharedClearAllText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  sharedSearchButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  sharedSearchButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   sharedLoadingContainer: {
     padding: 32,
     alignItems: 'center',
@@ -1994,6 +2243,43 @@ const styles = StyleSheet.create({
     marginTop: 16,
     fontSize: 14,
     color: '#666',
+  },
+  sharedEmptyCardContainer: {
+    alignItems: 'center',
+  },
+  sharedEmptyCard: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: spacing.lg,
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  sharedEmptyText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    textAlign: 'center',
+  },
+  sharedEmptySubtext: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  sharedFilterResetButton: {
+    marginTop: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  sharedFilterResetButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
   activeSharedRideCard: {
     marginBottom: spacing.sm,

@@ -13,7 +13,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import CleanCard from '../../components/ui/CleanCard';
 import GlassHeader from '../../components/ui/GlassHeader.jsx';
 import AppBackground from '../../components/layout/AppBackground.jsx';
-import GoongMap from '../../components/GoongMap';
+import MiniMap from '../../components/MiniMap';
 import rideService from '../../services/rideService';
 import goongService from '../../services/goongService';
 import { colors } from '../../theme/designTokens';
@@ -38,9 +38,7 @@ const DriverRideDetailsScreen = ({ navigation, route }) => {
   const loadRideDetails = async () => {
     try {
       setLoading(true);
-      console.log('📥 [DriverRideDetails] Loading ride details for rideId:', rideId);
       const response = await rideService.getRideDetails(rideId);
-      console.log('📥 [DriverRideDetails] Ride details received:', JSON.stringify(response, null, 2));
       setRide(response);
       
       // Decode polyline if available
@@ -254,38 +252,16 @@ const DriverRideDetailsScreen = ({ navigation, route }) => {
           </View>
         </CleanCard>
 
-        {/* Map */}
+        {/* Mini Map (Grab-style) */}
         {startLocation && endLocation && (
-          <View style={styles.mapContainer}>
-            <GoongMap
-              style={styles.map}
-              initialRegion={{
-                latitude: (startLocation.lat || startLocation.latitude + endLocation.lat || endLocation.latitude) / 2,
-                longitude: (startLocation.lng || startLocation.longitude + endLocation.lng || endLocation.longitude) / 2,
-                latitudeDelta: 0.05,
-                longitudeDelta: 0.05,
-              }}
+          <CleanCard style={styles.mapCard} contentStyle={styles.mapCardContent}>
+            <MiniMap
+              startLocation={startLocation}
+              endLocation={endLocation}
               polyline={routePolyline}
-              markers={[
-                {
-                  coordinate: {
-                    latitude: startLocation.lat || startLocation.latitude,
-                    longitude: startLocation.lng || startLocation.longitude,
-                  },
-                  title: startLocation.name || 'Điểm bắt đầu',
-                  pinColor: '#4CAF50',
-                },
-                {
-                  coordinate: {
-                    latitude: endLocation.lat || endLocation.latitude,
-                    longitude: endLocation.lng || endLocation.longitude,
-                  },
-                  title: endLocation.name || 'Điểm kết thúc',
-                  pinColor: '#F44336',
-                },
-              ]}
+              height={200}
             />
-          </View>
+          </CleanCard>
         )}
 
         {/* Route Information */}
@@ -503,15 +479,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  mapContainer: {
-    height: 200,
+  mapCard: {
     marginHorizontal: 16,
     marginBottom: 16,
-    borderRadius: 12,
-    overflow: 'hidden',
   },
-  map: {
-    flex: 1,
+  mapCardContent: {
+    padding: 0,
+    overflow: 'hidden',
   },
   card: {
     marginHorizontal: 16,
