@@ -1593,7 +1593,7 @@ const DriverHomeScreen = ({ navigation }) => {
                       activeOpacity={0.8}
                     >
                       <Icon name="add" size={20} color="#FFFFFF" />
-                      <Text style={styles.createSharedRideButtonText}>Tạo chuyến chia sẻ</Text>
+                      <Text style={styles.createSharedRideButtonText}>Chia sẻ chuyến đi</Text>
                     </TouchableOpacity>
                   </CleanCard>
                 </Animatable.View>

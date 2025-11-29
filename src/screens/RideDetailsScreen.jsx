@@ -485,12 +485,6 @@ const RideDetailsScreen = ({ navigation, route }) => {
                 </View>
               )}
             </View>
-            <View style={styles.infoContainer}>
-              <Icon name="info-outline" size={16} color="#2196F3" />
-              <Text style={styles.infoText}>
-                Khi tham gia chuyến xe này, bạn sẽ đi theo tuyến đường mà tài xế đã định nghĩa.
-              </Text>
-            </View>
           </CleanCard>
         )}
 
