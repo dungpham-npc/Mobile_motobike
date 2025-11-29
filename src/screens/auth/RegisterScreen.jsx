@@ -17,6 +17,7 @@ import AppBackground from '../../components/layout/AppBackground.jsx';
 import CleanCard from '../../components/ui/CleanCard.jsx';
 import { SoftBackHeader } from '../../components/ui/GlassHeader.jsx';
 import authService from '../../services/authService';
+import { ApiError } from '../../services/api';
 import { colors } from '../../theme/designTokens';
 import ModernButton from '../../components/ModernButton.jsx';
 import useSoftHeaderSpacing from '../../hooks/useSoftHeaderSpacing.js';
@@ -44,9 +45,22 @@ const RegisterScreen = (props) => {
     number: false,
     special: false,
   });
+  const [errors, setErrors] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    password: '',
+    confirmPassword: '',
+  });
 
   const handleInputChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
+    
+    // Clear error when user starts typing
+    if (errors[field]) {
+      setErrors((prev) => ({ ...prev, [field]: '' }));
+    }
+    
     if (field === 'password') {
       const checks = {
         length: value.length >= 8,
@@ -62,31 +76,112 @@ const RegisterScreen = (props) => {
 
   const validate = () => {
     const { name, email, phone, password, confirmPassword } = formData;
-    if (!name || !email || !phone || !password || !confirmPassword) {
-      Alert.alert('Lỗi', 'Vui lòng nhập đầy đủ thông tin bắt buộc.');
-      return false;
+    const newErrors = {
+      name: '',
+      email: '',
+      phone: '',
+      password: '',
+      confirmPassword: '',
+    };
+    let isValid = true;
+
+    if (!name.trim()) {
+      newErrors.name = 'Vui lòng nhập họ và tên';
+      isValid = false;
     }
-    if (password !== confirmPassword) {
-      Alert.alert('Lỗi', 'Mật khẩu xác nhận không khớp.');
-      return false;
+    if (!email.trim()) {
+      newErrors.email = 'Vui lòng nhập email';
+      isValid = false;
+    } else if (!/^\S+@\S+\.\S+$/.test(email)) {
+      newErrors.email = 'Email không hợp lệ';
+      isValid = false;
     }
-    if (passwordStrength < 4) {
-      Alert.alert('Lỗi', 'Mật khẩu chưa đủ mạnh. Vui lòng đáp ứng tất cả điều kiện.');
-      return false;
+    if (!phone.trim()) {
+      newErrors.phone = 'Vui lòng nhập số điện thoại';
+      isValid = false;
+    } else if (!/^[0-9]{9,11}$/.test(phone)) {
+      newErrors.phone = 'Số điện thoại không hợp lệ (9-11 chữ số)';
+      isValid = false;
     }
-    if (!/^\S+@\S+\.\S+$/.test(email)) {
-      Alert.alert('Lỗi', 'Email không hợp lệ.');
-      return false;
+    if (!password.trim()) {
+      newErrors.password = 'Vui lòng nhập mật khẩu';
+      isValid = false;
+    } else if (passwordStrength < 5) {
+      newErrors.password = 'Mật khẩu chưa đủ mạnh. Vui lòng đáp ứng tất cả điều kiện';
+      isValid = false;
     }
-    if (!/^[0-9]{9,11}$/.test(phone)) {
-      Alert.alert('Lỗi', 'Số điện thoại không hợp lệ (9-11 chữ số).');
-      return false;
+    if (!confirmPassword.trim()) {
+      newErrors.confirmPassword = 'Vui lòng xác nhận mật khẩu';
+      isValid = false;
+    } else if (password !== confirmPassword) {
+      newErrors.confirmPassword = 'Mật khẩu xác nhận không khớp';
+      isValid = false;
     }
-    return true;
+
+    setErrors(newErrors);
+    return isValid;
   };
 
   const handleRegister = async () => {
-    if (!validate()) return;
+    // Clear previous errors
+    const frontendErrors = {
+      name: '',
+      email: '',
+      phone: '',
+      password: '',
+      confirmPassword: '',
+    };
+
+    // Run frontend validation first
+    const { name, email, phone, password, confirmPassword } = formData;
+    let hasFrontendErrors = false;
+
+    if (!name.trim()) {
+      frontendErrors.name = 'Vui lòng nhập họ và tên';
+      hasFrontendErrors = true;
+    }
+    if (!email.trim()) {
+      frontendErrors.email = 'Vui lòng nhập email';
+      hasFrontendErrors = true;
+    } else if (!/^\S+@\S+\.\S+$/.test(email)) {
+      frontendErrors.email = 'Email không hợp lệ';
+      hasFrontendErrors = true;
+    }
+    if (!phone.trim()) {
+      frontendErrors.phone = 'Vui lòng nhập số điện thoại';
+      hasFrontendErrors = true;
+    } else if (!/^[0-9]{9,11}$/.test(phone)) {
+      frontendErrors.phone = 'Số điện thoại không hợp lệ (9-11 chữ số)';
+      hasFrontendErrors = true;
+    }
+    if (!password.trim()) {
+      frontendErrors.password = 'Vui lòng nhập mật khẩu';
+      hasFrontendErrors = true;
+    } else if (passwordStrength < 5) {
+      frontendErrors.password = 'Mật khẩu chưa đủ mạnh. Vui lòng đáp ứng tất cả điều kiện';
+      hasFrontendErrors = true;
+    }
+    if (!confirmPassword.trim()) {
+      frontendErrors.confirmPassword = 'Vui lòng xác nhận mật khẩu';
+      hasFrontendErrors = true;
+    } else if (password !== confirmPassword) {
+      frontendErrors.confirmPassword = 'Mật khẩu xác nhận không khớp';
+      hasFrontendErrors = true;
+    }
+
+    // Set frontend errors first
+    setErrors(frontendErrors);
+
+    // If there are critical frontend errors (empty or format), don't call API
+    // But if only password-related errors, still call API to get email/phone conflicts
+    const hasCriticalErrors = !name.trim() || !email.trim() || !phone.trim() || 
+                              !/^\S+@\S+\.\S+$/.test(email) || !/^[0-9]{9,11}$/.test(phone);
+    
+    if (hasCriticalErrors) {
+      return;
+    }
+
+    // Call API even if there are password errors, to get all backend errors
     try {
       setLoading(true);
       await authService.register({
@@ -110,7 +205,85 @@ const RegisterScreen = (props) => {
         ]
       );
     } catch (err) {
-      Alert.alert('Đăng ký thất bại', err?.message || 'Có lỗi xảy ra, vui lòng thử lại.');
+      console.error('Register error:', err);
+      
+      // Merge backend errors with frontend errors (don't replace)
+      const mergedErrors = { ...frontendErrors };
+      
+      if (err instanceof ApiError) {
+        // Check error.id from backend (structured error response)
+        const errorId = err.data?.error?.id || '';
+        const errorMessage = err.data?.error?.message || err.message || '';
+        const messageText = errorMessage.toLowerCase();
+        
+        console.log('API Error details:', { errorId, errorMessage, status: err.status, data: err.data });
+        
+        // Check if it's phone conflict error FIRST (priority)
+        if (errorId === 'user.conflict.phone-exists') {
+          mergedErrors.phone = errorMessage || 'Số điện thoại đã được sử dụng';
+        } else if (err.status === 409 && (
+            messageText.includes('số điện thoại đã tồn tại') ||
+            messageText.includes('số điện thoại đã được đăng ký') ||
+            messageText.includes('phone already exists') ||
+            messageText.includes('phone đã tồn tại') ||
+            messageText.includes('số điện thoại'))) {
+          mergedErrors.phone = errorMessage || 'Số điện thoại đã được sử dụng';
+        }
+        
+        // Check if it's email conflict error
+        if (errorId === 'user.conflict.email-exists') {
+          mergedErrors.email = errorMessage || 'Email đã được sử dụng';
+        } else if (err.status === 409 && !mergedErrors.phone && (
+            messageText.includes('email đã tồn tại') || 
+            messageText.includes('email already exists') ||
+            messageText.includes('email đã được sử dụng') ||
+            messageText.includes('email đã được đăng ký') ||
+            messageText.includes('email đang chờ xác thực'))) {
+          mergedErrors.email = errorMessage || 'Email đã được sử dụng';
+        }
+        
+        // Handle other API errors
+        if (err.status === 400) {
+          // Bad request - might be validation error from backend
+          const backendMessage = errorMessage;
+          if (backendMessage.includes('email') || backendMessage.includes('Email')) {
+            mergedErrors.email = backendMessage;
+          } else if (backendMessage.includes('phone') || backendMessage.includes('Phone') || backendMessage.includes('số điện thoại')) {
+            mergedErrors.phone = backendMessage;
+          } else if (backendMessage.includes('password') || backendMessage.includes('Password') || backendMessage.includes('mật khẩu')) {
+            mergedErrors.password = backendMessage;
+          } else {
+            // Only show alert if no field-specific error
+            if (!mergedErrors.email && !mergedErrors.phone && !mergedErrors.password) {
+              Alert.alert('Đăng ký thất bại', backendMessage || 'Thông tin không hợp lệ');
+            }
+          }
+        } else if (err.status === 409) {
+          // Handle 409 conflict errors - only if not already set above
+          if (!mergedErrors.phone && (messageText.includes('phone') || messageText.includes('số điện thoại'))) {
+            mergedErrors.phone = errorMessage || 'Số điện thoại đã được sử dụng';
+          } else if (!mergedErrors.email && messageText.includes('email')) {
+            mergedErrors.email = errorMessage || 'Email đã được sử dụng';
+          } else if (!mergedErrors.phone && !mergedErrors.email) {
+            // Only show alert if no field-specific error was set
+            Alert.alert('Đăng ký thất bại', errorMessage || 'Thông tin đã tồn tại');
+          }
+        } else {
+          // For other errors, only show alert if no field-specific errors
+          if (!mergedErrors.email && !mergedErrors.phone && !mergedErrors.password) {
+            const errorMsg = errorMessage || 'Có lỗi xảy ra, vui lòng thử lại.';
+            Alert.alert('Đăng ký thất bại', errorMsg);
+          }
+        }
+      } else {
+        // Network or other errors - only show alert if no field-specific errors
+        if (!mergedErrors.email && !mergedErrors.phone && !mergedErrors.password) {
+          Alert.alert('Đăng ký thất bại', err?.message || 'Có lỗi xảy ra, vui lòng thử lại.');
+        }
+      }
+      
+      // Set all merged errors at once
+      setErrors(mergedErrors);
     } finally {
       setLoading(false);
     }
@@ -162,51 +335,81 @@ const RegisterScreen = (props) => {
             </CleanCard>
 
             <View style={styles.form}>
-              <InputCard
-                icon="user"
-                placeholder="Họ và tên"
-                value={formData.name}
-                onChangeText={(v) => handleInputChange('name', v)}
-              />
-              <InputCard
-                icon="mail"
-                placeholder="Email sinh viên"
-                value={formData.email}
-                onChangeText={(v) => handleInputChange('email', v)}
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-              <InputCard
-                icon="phone"
-                placeholder="Số điện thoại"
-                value={formData.phone}
-                onChangeText={(v) => handleInputChange('phone', v)}
-                keyboardType="phone-pad"
-              />
-              <InputCard
-                icon="lock"
-                placeholder="Mật khẩu"
-                value={formData.password}
-                onChangeText={(v) => handleInputChange('password', v)}
-                secureTextEntry={!showPassword}
-                trailing={
-                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.toggleIcon}>
-                    <Feather name={showPassword ? 'eye' : 'eye-off'} size={18} color="#8E8E93" />
-                  </TouchableOpacity>
-                }
-              />
-              <InputCard
-                icon="lock"
-                placeholder="Xác nhận mật khẩu"
-                value={formData.confirmPassword}
-                onChangeText={(v) => handleInputChange('confirmPassword', v)}
-                secureTextEntry={!showConfirmPassword}
-                trailing={
-                  <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} style={styles.toggleIcon}>
-                    <Feather name={showConfirmPassword ? 'eye' : 'eye-off'} size={18} color="#8E8E93" />
-                  </TouchableOpacity>
-                }
-              />
+              <View style={styles.fieldGroup}>
+                <InputCard
+                  icon="user"
+                  placeholder="Họ và tên"
+                  value={formData.name}
+                  onChangeText={(v) => handleInputChange('name', v)}
+                  error={errors.name}
+                />
+                <Text style={[styles.errorText, !errors.name && styles.errorTextHidden]}>
+                  {errors.name || 'placeholder'}
+                </Text>
+              </View>
+              <View style={styles.fieldGroup}>
+                <InputCard
+                  icon="mail"
+                  placeholder="Email sinh viên"
+                  value={formData.email}
+                  onChangeText={(v) => handleInputChange('email', v)}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  error={errors.email}
+                />
+                <Text style={[styles.errorText, !errors.email && styles.errorTextHidden]}>
+                  {errors.email || 'placeholder'}
+                </Text>
+              </View>
+              <View style={styles.fieldGroup}>
+                <InputCard
+                  icon="phone"
+                  placeholder="Số điện thoại"
+                  value={formData.phone}
+                  onChangeText={(v) => handleInputChange('phone', v)}
+                  keyboardType="phone-pad"
+                  error={errors.phone}
+                />
+                <Text style={[styles.errorText, !errors.phone && styles.errorTextHidden]}>
+                  {errors.phone || 'placeholder'}
+                </Text>
+              </View>
+              <View style={styles.fieldGroup}>
+                <InputCard
+                  icon="lock"
+                  placeholder="Mật khẩu"
+                  value={formData.password}
+                  onChangeText={(v) => handleInputChange('password', v)}
+                  secureTextEntry={!showPassword}
+                  error={errors.password}
+                  trailing={
+                    <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.toggleIcon}>
+                      <Feather name={showPassword ? 'eye' : 'eye-off'} size={18} color={errors.password ? '#EF4444' : '#8E8E93'} />
+                    </TouchableOpacity>
+                  }
+                />
+                <Text style={[styles.errorText, !errors.password && styles.errorTextHidden]}>
+                  {errors.password || 'placeholder'}
+                </Text>
+              </View>
+              <View style={styles.fieldGroup}>
+                <InputCard
+                  icon="lock"
+                  placeholder="Xác nhận mật khẩu"
+                  value={formData.confirmPassword}
+                  onChangeText={(v) => handleInputChange('confirmPassword', v)}
+                  secureTextEntry={!showConfirmPassword}
+                  error={errors.confirmPassword}
+                  trailing={
+                    <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} style={styles.toggleIcon}>
+                      <Feather name={showConfirmPassword ? 'eye' : 'eye-off'} size={18} color={errors.confirmPassword ? '#EF4444' : '#8E8E93'} />
+                    </TouchableOpacity>
+                  }
+                />
+                <Text style={[styles.errorText, !errors.confirmPassword && styles.errorTextHidden]}>
+                  {errors.confirmPassword || 'placeholder'}
+                </Text>
+              </View>
             </View>
 
             {formData.password.length > 0 && (
@@ -253,9 +456,9 @@ const RegisterScreen = (props) => {
   );
 };
 
-const InputCard = ({ icon, trailing, ...props }) => (
-  <View style={styles.inputCard}>
-    <Feather name={icon} size={20} color="#8E8E93" style={{ marginRight: 14 }} />
+const InputCard = ({ icon, trailing, error, ...props }) => (
+  <View style={[styles.inputCard, error && styles.inputCardError]}>
+    <Feather name={icon} size={20} color={error ? '#EF4444' : '#8E8E93'} style={{ marginRight: 14 }} />
     <TextInput
       style={styles.input}
       placeholderTextColor="#B0B0B3"
@@ -308,7 +511,10 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   form: {
-    gap: 12,
+    gap: 0,
+  },
+  fieldGroup: {
+    marginBottom: 10,
   },
   inputCard: {
     flexDirection: 'row',
@@ -317,10 +523,27 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingHorizontal: 18,
     paddingVertical: 18,
+    borderWidth: 1,
+    borderColor: '#E7E7EA',
     shadowColor: 'rgba(0,0,0,0.05)',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.12,
     shadowRadius: 16,
+  },
+  inputCardError: {
+    borderColor: '#EF4444',
+    borderWidth: 2,
+  },
+  errorText: {
+    color: '#EF4444',
+    fontSize: 13,
+    fontWeight: '500',
+    marginLeft: 18,
+    marginTop: 3,
+    minHeight: 12,
+  },
+  errorTextHidden: {
+    opacity: 0,
   },
   input: {
     flex: 1,

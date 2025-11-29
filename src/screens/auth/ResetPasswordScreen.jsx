@@ -12,7 +12,6 @@ import {
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import AntDesign from 'react-native-vector-icons/AntDesign';
 import Feather from 'react-native-vector-icons/Feather';
 import authService from '../../services/authService';
 import { ApiError } from '../../services/api';
@@ -76,7 +75,7 @@ const ResetPasswordScreen = ({ navigation }) => {
         <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           <View style={styles.headerRow}>
             <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-              <AntDesign name="arrowleft" size={20} color="#0A0A0A" />
+              <Feather name="arrow-left" size={22} color="#0A0A0A" />
             </TouchableOpacity>
             <View style={styles.headerTitleWrap}>
               <Text style={styles.headerTitle}>Quên mật khẩu</Text>
