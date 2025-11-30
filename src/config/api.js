@@ -234,6 +234,15 @@ export const ENDPOINTS = {
     SEARCH: "/locations/search",
   },
 
+  // Banks API
+  BANKS: {
+    ALL: "/banks",
+    SUPPORTED: "/banks/supported",
+    BY_BIN: "/banks/{bin}",
+    VALIDATE_BIN: "/banks/validate/{bin}",
+    STATS: "/banks/stats",
+  },
+
   // FCM Push Notifications
   FCM: {
     REGISTER: "/fcm/register",

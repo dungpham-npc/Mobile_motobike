@@ -25,8 +25,6 @@ class PaymentService {
         requestBody
       );
 
-      console.log('response', response);
-
       return {
         success: true,
         data: response,
@@ -44,13 +42,16 @@ class PaymentService {
   }
 
   // Initiate payout/withdrawal (Driver only)
-  async initiatePayout(amount, bankName, bankAccountNumber, accountHolderName) {
+  // Updated to match backend PayoutInitRequest: amount, bankName, bankBin, accountNumber, accountHolder, mode
+  async initiatePayout(amount, bankName, bankBin, accountNumber, accountHolder, mode = 'AUTOMATIC') {
     try {
       const requestBody = {
         amount: amount,
         bankName: bankName,
-        bankAccountNumber: bankAccountNumber,
-        accountHolderName: accountHolderName
+        bankBin: bankBin,
+        bankAccountNumber: accountNumber,
+        accountHolderName: accountHolder,
+        mode: mode // AUTOMATIC or MANUAL (optional, default AUTOMATIC)
       };
 
       const response = await this.apiService.post(
@@ -61,6 +62,9 @@ class PaymentService {
       return {
         success: true,
         data: response,
+        payoutRef: response.payoutRef,
+        idempotencyKey: response.idempotencyKey,
+        status: response.status,
         message: response.message || 'Đã tạo yêu cầu rút tiền thành công'
       };
     } catch (error) {
@@ -72,8 +76,7 @@ class PaymentService {
   // Get wallet balance (Updated API - no userId needed, uses authentication)
   async getWalletInfo() {
     try {
-      const response = await this.apiService.get(ENDPOINTS.WALLET.BALANCE);
-      console.log('response', response);
+      const response = await this.apiService.get(ENDPOINTS.WALLET.BALANCE)
       return response;
     } catch (error) {
       console.error('Get wallet info error:', error);
@@ -97,7 +100,6 @@ class PaymentService {
         `${ENDPOINTS.TRANSACTION.USER_HISTORY}?${params.toString()}`
       );
 
-      console.log('Transaction history response:', response);
       return response;
     } catch (error) {
       console.error('Get transaction history error:', error);
@@ -184,44 +186,164 @@ class PaymentService {
     }
   }
 
-  // Format transaction type
+  // Format transaction type (matching backend TransactionType enum)
   getTransactionTypeText(type) {
     switch (type) {
+      // User deposits funds via PSP
       case 'TOP_UP':
+      case 'TOPUP':
         return 'Nạp tiền';
+      
+      // Financial hold for quoted fare
+      case 'HOLD_CREATE':
+        return 'Tạm giữ tiền';
+      
+      // Release of financial hold
+      case 'HOLD_RELEASE':
+        return 'Giải phóng tiền';
+      
+      // Final payment deduction upon ride completion
+      case 'CAPTURE_FARE':
+        return 'Thanh toán chuyến đi';
+      
+      // Withdrawal to external bank/PSP
       case 'WITHDRAW':
+      case 'PAYOUT':
         return 'Rút tiền';
+      
+      // Promotional credit
+      case 'PROMO_CREDIT':
+        return 'Khuyến mãi';
+      
+      // Corrections, compensation, reversals
+      case 'ADJUSTMENT':
+        return 'Điều chỉnh';
+      
+      // Refund
+      case 'REFUND':
+        return 'Hoàn tiền';
+      
+      // Legacy/fallback types
       case 'RIDE_PAYMENT':
         return 'Thanh toán chuyến đi';
       case 'RIDE_EARNING':
         return 'Thu nhập chuyến đi';
       case 'COMMISSION':
         return 'Hoa hồng';
-      case 'REFUND':
-        return 'Hoàn tiền';
+      
       default:
-        return type;
+        return type || 'Giao dịch';
     }
   }
 
-  // Get transaction icon
+  // Get transaction icon (matching backend TransactionType enum)
   getTransactionIcon(type, direction) {
     switch (type) {
+      // User deposits funds via PSP
       case 'TOP_UP':
+      case 'TOPUP':
         return 'add-circle';
+      
+      // Financial hold for quoted fare
+      case 'HOLD_CREATE':
+        return 'lock';
+      
+      // Release of financial hold
+      case 'HOLD_RELEASE':
+        return 'lock-open';
+      
+      // Final payment deduction upon ride completion
+      case 'CAPTURE_FARE':
+        return direction === 'OUTBOUND' ? 'payment' : 'monetization-on';
+      
+      // Withdrawal to external bank/PSP
       case 'WITHDRAW':
+      case 'PAYOUT':
         return 'remove-circle';
+      
+      // Promotional credit
+      case 'PROMO_CREDIT':
+        return 'card-giftcard';
+      
+      // Corrections, compensation, reversals
+      case 'ADJUSTMENT':
+        return 'tune';
+      
+      // Refund
+      case 'REFUND':
+        return 'undo';
+      
+      // Legacy/fallback types
       case 'RIDE_PAYMENT':
         return direction === 'OUTBOUND' ? 'payment' : 'monetization-on';
       case 'RIDE_EARNING':
         return 'trending-up';
       case 'COMMISSION':
         return 'percent';
-      case 'REFUND':
-        return 'undo';
+      
       default:
         return 'account-balance-wallet';
     }
+  }
+
+  // Get bank BIN code from bank name (common Vietnamese banks)
+  getBankBin(bankName) {
+    if (!bankName) return null;
+    
+    const bankNameUpper = bankName.toUpperCase().trim();
+    const bankBinMap = {
+      // Major Vietnamese banks
+      'VIETCOMBANK': '970436',
+      'VCB': '970436',
+      'VIETINBANK': '970415',
+      'VTB': '970415',
+      'BIDV': '970418',
+      'AGRIBANK': '970405',
+      'ACB': '970416',
+      'TECHCOMBANK': '970407',
+      'TPBANK': '970423',
+      'VPBANK': '970432',
+      'MBBANK': '970422',
+      'MB': '970422',
+      'SACOMBANK': '970403',
+      'SCB': '970403',
+      'HDBANK': '970437',
+      'HD': '970437',
+      'SHB': '970443',
+      'SEABANK': '970409',
+      'OCB': '970448',
+      'VIB': '970441',
+      'EXIMBANK': '970431',
+      'MSB': '970426',
+      'VIETBANK': '970427',
+      'NAB': '970428',
+      'BAB': '970429',
+      'PGBANK': '970430',
+      'PUBLICBANK': '970439',
+      'PVCOMBANK': '970412',
+      'BAOVIETBANK': '970438',
+      'VIETABANK': '970427',
+      'NAMABANK': '970428',
+      'ABANK': '970429',
+      'PG': '970430',
+      'PUBLIC': '970439',
+      'PVCOM': '970412',
+      'BAOVIET': '970438',
+    };
+
+    // Try exact match first
+    if (bankBinMap[bankNameUpper]) {
+      return bankBinMap[bankNameUpper];
+    }
+
+    // Try partial match
+    for (const [key, bin] of Object.entries(bankBinMap)) {
+      if (bankNameUpper.includes(key) || key.includes(bankNameUpper)) {
+        return bin;
+      }
+    }
+
+    return null;
   }
 }
 
