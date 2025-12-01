@@ -176,7 +176,7 @@ class ApiService {
       }
       
       // Network or other errors
-      throw new ApiError('Network error or server unavailable', 0, error);
+      throw new ApiError('Lỗi kết nối mạng hoặc máy chủ không khả dụng', 0, error);
     }
   }
 

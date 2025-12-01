@@ -8,24 +8,31 @@ import {
   Alert,
   ActivityIndicator,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Icon from 'react-native-vector-icons/MaterialIcons';
-import { LinearGradient } from 'expo-linear-gradient';
+import Feather from 'react-native-vector-icons/Feather';
 import * as Animatable from 'react-native-animatable';
 
+import AppBackground from '../../components/layout/AppBackground.jsx';
+import CleanCard from '../../components/ui/CleanCard.jsx';
+import { SoftBackHeader } from '../../components/ui/GlassHeader.jsx';
 import ModernButton from '../../components/ModernButton.jsx';
+import useSoftHeaderSpacing from '../../hooks/useSoftHeaderSpacing.js';
 import authService from '../../services/authService';
 import { ApiError } from '../../services/api';
+import { colors } from '../../theme/designTokens';
 
 const OTPVerificationScreen = ({ navigation, route }) => {
   const { email, purpose = 'VERIFY_EMAIL' } = route.params || {};
+  const { headerOffset, contentPaddingTop } = useSoftHeaderSpacing({ contentExtra: 24 });
   
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
   const [countdown, setCountdown] = useState(0);
+  const [error, setError] = useState('');
   
   const inputRefs = useRef([]);
 
@@ -48,10 +55,12 @@ const OTPVerificationScreen = ({ navigation, route }) => {
   const requestOTP = async () => {
     try {
       setResending(true);
+      setError('');
       await authService.requestOtp(purpose, email);
       setCountdown(60); // Reset countdown
     } catch (error) {
       console.error('Request OTP error:', error);
+      setError('Không thể gửi mã OTP. Vui lòng thử lại.');
     } finally {
       setResending(false);
     }
@@ -62,6 +71,7 @@ const OTPVerificationScreen = ({ navigation, route }) => {
       const newOtp = [...otp];
       newOtp[index] = value;
       setOtp(newOtp);
+      setError(''); // Clear error when user types
 
       // Auto focus next input
       if (value && index < 5) {
@@ -71,8 +81,24 @@ const OTPVerificationScreen = ({ navigation, route }) => {
   };
 
   const handleKeyPress = (key, index) => {
-    if (key === 'Backspace' && !otp[index] && index > 0) {
+    if (key !== 'Backspace') return;
+
+    setError('');
+
+    if (otp[index]) {
+      // Clear current digit
+      const newOtp = [...otp];
+      newOtp[index] = '';
+      setOtp(newOtp);
+      return;
+    }
+
+    if (index > 0) {
+      // Move focus back and clear previous digit
       inputRefs.current[index - 1]?.focus();
+      const newOtp = [...otp];
+      newOtp[index - 1] = '';
+      setOtp(newOtp);
     }
   };
 
@@ -80,11 +106,12 @@ const OTPVerificationScreen = ({ navigation, route }) => {
     const otpCode = otp.join('');
     
     if (otpCode.length !== 6) {
-      Alert.alert('Lỗi', 'Vui lòng nhập đầy đủ mã OTP');
+      setError('Vui lòng nhập đầy đủ mã OTP');
       return;
     }
 
     setLoading(true);
+    setError('');
 
     try {
       const result = await authService.verifyOtp(otpCode, purpose, email);
@@ -98,8 +125,8 @@ const OTPVerificationScreen = ({ navigation, route }) => {
             onPress: () => {
               // Navigate back to login and try auto login
               navigation.navigate('Login', { 
-                emailVerified: true,
-                email: email 
+                verifiedEmail: true,
+                prefillEmail: email 
               });
             }
           }
@@ -125,7 +152,7 @@ const OTPVerificationScreen = ({ navigation, route }) => {
         }
       }
       
-      Alert.alert('Xác minh thất bại', errorMessage);
+      setError(errorMessage);
       
       // Clear OTP inputs on error
       setOtp(['', '', '', '', '', '']);
@@ -139,6 +166,7 @@ const OTPVerificationScreen = ({ navigation, route }) => {
     if (countdown > 0) return;
     
     setResending(true);
+    setError('');
     try {
       await authService.requestOtp(purpose, email);
       
@@ -158,7 +186,7 @@ const OTPVerificationScreen = ({ navigation, route }) => {
         errorMessage = error.message || errorMessage;
       }
       
-      Alert.alert('Lỗi', errorMessage);
+      setError(errorMessage);
     } finally {
       setResending(false);
     }
@@ -175,249 +203,262 @@ const OTPVerificationScreen = ({ navigation, route }) => {
     }
   };
 
+  const safeGoBack = () => navigation?.goBack?.();
+
   return (
-    <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardAvoidingView}
-      >
-        {/* Header */}
-        <LinearGradient
-          colors={['#4CAF50', '#2E7D32']}
-          style={styles.header}
+    <AppBackground>
+      <SafeAreaView style={styles.safe}>
+        <SoftBackHeader
+          floating
+          topOffset={headerOffset}
+          title=""
+          subtitle=""
+          onBackPress={safeGoBack}
+        />
+
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+          style={{ flex: 1 }}
         >
-          <View style={styles.headerContent}>
-            <TouchableOpacity 
-              style={styles.backButton}
-              onPress={() => navigation.goBack()}
-            >
-              <Icon name="arrow-back" size={24} color="#fff" />
-            </TouchableOpacity>
-            <Text style={styles.headerTitle}>Xác minh OTP</Text>
-            <View style={styles.placeholder} />
-          </View>
-        </LinearGradient>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={[styles.scrollContent, { paddingTop: contentPaddingTop }]}
+          >
+            {/* Hero Card */}
+            <Animatable.View animation="fadeInDown" duration={500} useNativeDriver>
+              <CleanCard contentStyle={styles.heroCard}>
+                <View style={styles.heroIcon}>
+                  <Feather name="mail" size={24} color={colors.accent} />
+                </View>
+                <View style={{ gap: 6 }}>
+                  <Text style={styles.heroTitle}>Xác minh OTP</Text>
+                  <Text style={styles.heroSubtitle}>
+                    Chúng tôi đã gửi mã OTP 6 số để {getPurposeText()} đến
+                  </Text>
+                  <Text style={styles.heroEmail}>{email}</Text>
+                </View>
+              </CleanCard>
+            </Animatable.View>
 
-        <View style={styles.content}>
-          {/* Instructions */}
-          <Animatable.View animation="fadeInUp" style={styles.instructionsContainer}>
-            <View style={styles.iconContainer}>
-              <LinearGradient
-                colors={['#4CAF50', '#2E7D32']}
-                style={styles.iconGradient}
-              >
-                <Icon name="email" size={48} color="#fff" />
-              </LinearGradient>
-            </View>
-            
-            <Text style={styles.title}>Nhập mã xác minh</Text>
-            <Text style={styles.subtitle}>
-              Chúng tôi đã gửi mã OTP 6 số để {getPurposeText()} đến
-            </Text>
-            <Text style={styles.email}>{email}</Text>
-          </Animatable.View>
-
-          {/* OTP Input */}
-          <Animatable.View animation="fadeInUp" delay={200} style={styles.otpContainer}>
-            <View style={styles.otpInputContainer}>
-              {otp.map((digit, index) => (
-                <TextInput
-                  key={index}
-                  ref={ref => inputRefs.current[index] = ref}
-                  style={[
-                    styles.otpInput,
-                    digit && styles.otpInputFilled
-                  ]}
-                  value={digit}
-                  onChangeText={(value) => handleOtpChange(value, index)}
-                  onKeyPress={({ nativeEvent }) => handleKeyPress(nativeEvent.key, index)}
-                  keyboardType="numeric"
-                  maxLength={1}
-                  textAlign="center"
-                  selectTextOnFocus
-                />
-              ))}
-            </View>
-          </Animatable.View>
-
-          {/* Verify Button */}
-          <Animatable.View animation="fadeInUp" delay={400}>
-            <ModernButton
-              title={loading ? "Đang xác minh..." : "Xác minh"}
-              onPress={verifyOTP}
-              disabled={loading || otp.join('').length !== 6}
-              icon={loading ? null : "verified-user"}
-              style={styles.verifyButton}
-            />
-          </Animatable.View>
-
-          {/* Resend OTP */}
-          <Animatable.View animation="fadeInUp" delay={600} style={styles.resendContainer}>
-            <Text style={styles.resendText}>Không nhận được mã?</Text>
-            
-            {countdown > 0 ? (
-              <Text style={styles.countdownText}>
-                Gửi lại sau {countdown}s
-              </Text>
-            ) : (
-              <TouchableOpacity 
-                onPress={resendOTP}
-                disabled={resending}
-                style={styles.resendButton}
-              >
-                {resending ? (
-                  <ActivityIndicator size="small" color="#4CAF50" />
-                ) : (
-                  <Text style={styles.resendButtonText}>Gửi lại mã OTP</Text>
+            {/* OTP Input Card */}
+            <Animatable.View animation="fadeInUp" delay={200} duration={500} useNativeDriver>
+              <CleanCard contentStyle={styles.otpCard}>
+                <Text style={styles.otpLabel}>Nhập mã xác minh</Text>
+                <View style={styles.otpInputContainer}>
+                  {otp.map((digit, index) => (
+                    <TextInput
+                      key={index}
+                      ref={ref => inputRefs.current[index] = ref}
+                      style={[
+                        styles.otpInput,
+                        digit && styles.otpInputFilled,
+                        error && styles.otpInputError
+                      ]}
+                      value={digit}
+                      onChangeText={(value) => handleOtpChange(value, index)}
+                      onKeyPress={({ nativeEvent }) => handleKeyPress(nativeEvent.key, index)}
+                      keyboardType="numeric"
+                      maxLength={1}
+                      textAlign="center"
+                      selectTextOnFocus
+                    />
+                  ))}
+                </View>
+                {error && (
+                  <Text style={styles.errorText}>{error}</Text>
                 )}
-              </TouchableOpacity>
-            )}
-          </Animatable.View>
+              </CleanCard>
+            </Animatable.View>
 
-          {/* Help */}
-          <View style={styles.helpContainer}>
-            <Icon name="help-outline" size={16} color="#666" />
-            <Text style={styles.helpText}>
-              Kiểm tra thư mục spam nếu không thấy email
-            </Text>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+            {/* Verify Button */}
+            <Animatable.View animation="fadeInUp" delay={400} duration={500} useNativeDriver>
+              <ModernButton
+                title={loading ? 'Đang xác minh...' : 'Xác minh'}
+                onPress={verifyOTP}
+                disabled={loading || otp.join('').length !== 6}
+                icon={loading ? null : 'check-circle'}
+                style={styles.verifyButton}
+              />
+            </Animatable.View>
+
+            {/* Resend OTP Card */}
+            <Animatable.View animation="fadeInUp" delay={600} duration={500} useNativeDriver>
+              <CleanCard contentStyle={styles.resendCard}>
+                <Text style={styles.resendText}>Không nhận được mã?</Text>
+                
+                {countdown > 0 ? (
+                  <View style={styles.countdownContainer}>
+                    <Feather name="clock" size={16} color={colors.textSecondary} />
+                    <Text style={styles.countdownText}>
+                      Gửi lại sau {countdown}s
+                    </Text>
+                  </View>
+                ) : (
+                  <TouchableOpacity 
+                    onPress={resendOTP}
+                    disabled={resending}
+                    style={styles.resendButton}
+                  >
+                    {resending ? (
+                      <ActivityIndicator size="small" color={colors.accent} />
+                    ) : (
+                      <>
+                        <Feather name="refresh-cw" size={16} color={colors.accent} />
+                        <Text style={styles.resendButtonText}>Gửi lại mã OTP</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </CleanCard>
+            </Animatable.View>
+
+            {/* Help Card */}
+            <Animatable.View animation="fadeInUp" delay={800} duration={500} useNativeDriver>
+              <CleanCard variant="accent" contentStyle={styles.helpCard}>
+                <Feather name="info" size={18} color={colors.accent} />
+                <Text style={styles.helpText}>
+                  Kiểm tra thư mục spam nếu không thấy email
+                </Text>
+              </CleanCard>
+            </Animatable.View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </AppBackground>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8f9fa',
-  },
-  keyboardAvoidingView: {
+  safe: {
     flex: 1,
   },
-  header: {
-    paddingTop: 20,
-    paddingBottom: 24,
-    paddingHorizontal: 20,
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingBottom: 40,
+    gap: 20,
   },
-  headerContent: {
+  heroCard: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 16,
+    paddingVertical: 28,
+    paddingHorizontal: 22,
   },
-  backButton: {
-    padding: 8,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  placeholder: {
-    width: 40,
-  },
-  content: {
-    flex: 1,
-    padding: 20,
-    justifyContent: 'center',
-  },
-  instructionsContainer: {
-    alignItems: 'center',
-    marginBottom: 40,
-  },
-  iconContainer: {
-    marginBottom: 24,
-  },
-  iconGradient: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+  heroIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    backgroundColor: 'rgba(59,130,246,0.12)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
-    marginBottom: 12,
-    textAlign: 'center',
+  heroTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: colors.textPrimary,
   },
-  subtitle: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: 8,
+  heroSubtitle: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    lineHeight: 20,
   },
-  email: {
+  heroEmail: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.accent,
+    marginTop: 4,
+  },
+  otpCard: {
+    paddingVertical: 28,
+    paddingHorizontal: 22,
+    gap: 20,
+  },
+  otpLabel: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#4CAF50',
+    color: colors.textPrimary,
     textAlign: 'center',
-  },
-  otpContainer: {
-    marginBottom: 32,
   },
   otpInputContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    gap: 12,
   },
   otpInput: {
-    width: 45,
-    height: 55,
+    flex: 1,
+    height: 60,
     borderWidth: 2,
-    borderColor: '#E0E0E0',
-    borderRadius: 12,
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
-    backgroundColor: '#fff',
+    borderColor: colors.border,
+    borderRadius: 16,
+    fontSize: 24,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    backgroundColor: colors.glassLight,
   },
   otpInputFilled: {
-    borderColor: '#4CAF50',
-    backgroundColor: '#E8F5E8',
+    borderColor: colors.accent,
+    backgroundColor: 'rgba(59,130,246,0.08)',
+  },
+  otpInputError: {
+    borderColor: '#EF4444',
+  },
+  errorText: {
+    color: '#EF4444',
+    fontSize: 13,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginTop: 4,
   },
   verifyButton: {
-    marginBottom: 24,
+    marginTop: 8,
   },
-  resendContainer: {
+  resendCard: {
+    paddingVertical: 20,
+    paddingHorizontal: 22,
     alignItems: 'center',
-    marginBottom: 32,
+    gap: 12,
   },
   resendText: {
     fontSize: 14,
-    color: '#666',
-    marginBottom: 8,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  countdownContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   countdownText: {
     fontSize: 14,
-    color: '#999',
+    color: colors.textMuted,
     fontStyle: 'italic',
   },
   resendButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     paddingVertical: 8,
     paddingHorizontal: 16,
   },
   resendButtonText: {
-    fontSize: 16,
-    color: '#4CAF50',
+    fontSize: 15,
     fontWeight: '600',
+    color: colors.accent,
   },
-  helpContainer: {
+  helpCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#E3F2FD',
-    borderRadius: 8,
-    padding: 12,
+    gap: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
   },
   helpText: {
-    fontSize: 12,
-    color: '#1565C0',
-    marginLeft: 8,
-    textAlign: 'center',
     flex: 1,
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 18,
   },
 });
 

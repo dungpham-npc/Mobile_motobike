@@ -22,6 +22,96 @@ import { colors } from '../../theme/designTokens';
 import ModernButton from '../../components/ModernButton.jsx';
 import useSoftHeaderSpacing from '../../hooks/useSoftHeaderSpacing.js';
 
+// Helper function to translate English error messages to Vietnamese
+const translateErrorMessage = (message) => {
+  if (!message) return message;
+  
+  const msg = message.toLowerCase();
+  
+  // Password validation errors - check most specific first
+  // Match: "Password must contain at least one uppercase letter, one lowercase letter, one digit, and one special character"
+  if ((msg.includes('password must contain') && msg.includes('uppercase') && msg.includes('lowercase') && msg.includes('digit') && msg.includes('special')) ||
+      msg.includes('password must contain at least one uppercase letter')) {
+    return 'Mật khẩu phải chứa ít nhất một chữ hoa, một chữ thường, một chữ số và một ký tự đặc biệt';
+  }
+  // Match any password validation that mentions uppercase, lowercase, digit, special
+  if (msg.includes('password') && msg.includes('uppercase') && msg.includes('lowercase') && msg.includes('digit') && msg.includes('special')) {
+    return 'Mật khẩu phải chứa ít nhất một chữ hoa, một chữ thường, một chữ số và một ký tự đặc biệt';
+  }
+  if (msg.includes('password must be between 8 and 100')) {
+    return 'Mật khẩu phải từ 8 đến 100 ký tự';
+  }
+  if (msg.includes('password must contain')) {
+    return 'Mật khẩu phải chứa ít nhất một chữ hoa, một chữ thường, một chữ số và một ký tự đặc biệt';
+  }
+  if (msg.includes('password') && (msg.includes('required') || msg.includes('invalid'))) {
+    return 'Mật khẩu không hợp lệ';
+  }
+  
+  // Full name validation errors
+  if (msg.includes('full name is required')) {
+    return 'Vui lòng nhập họ và tên';
+  }
+  if (msg.includes('full name must be between 2 and 100')) {
+    return 'Họ và tên phải từ 2 đến 100 ký tự';
+  }
+  if (msg.includes('full name can only contain')) {
+    return 'Họ và tên chỉ được chứa chữ cái, khoảng trắng, dấu gạch ngang và ký tự tiếng Việt';
+  }
+  if (msg.includes('full name')) {
+    return message.replace(/full name/gi, 'Họ và tên').replace(/is required/gi, 'là bắt buộc');
+  }
+  
+  // Email validation errors
+  if (msg.includes('email is required')) {
+    return 'Vui lòng nhập email';
+  }
+  if (msg.includes('email must be valid') || (msg.includes('email') && msg.includes('valid'))) {
+    return 'Email không hợp lệ';
+  }
+  if (msg.includes('email already exists') || msg.includes('email đã tồn tại')) {
+    return 'Email đã được sử dụng';
+  }
+  
+  // Phone validation errors
+  if (msg.includes('phone is required')) {
+    return 'Vui lòng nhập số điện thoại';
+  }
+  if (msg.includes('phone number must be valid') || (msg.includes('phone') && msg.includes('valid'))) {
+    return 'Số điện thoại không hợp lệ (định dạng Việt Nam)';
+  }
+  if (msg.includes('phone already exists') || msg.includes('số điện thoại đã tồn tại')) {
+    return 'Số điện thoại đã được sử dụng';
+  }
+  
+  // Generic validation errors - more patterns
+  if (msg.includes('validation failed')) {
+    return 'Thông tin không hợp lệ. Vui lòng kiểm tra lại các trường đã nhập';
+  }
+  if (msg.includes('is required')) {
+    const field = message.match(/^(.+?)\s+is required/i)?.[1] || '';
+    if (field) {
+      return `${field} là bắt buộc`;
+    }
+    return message.replace(/is required/gi, 'là bắt buộc');
+  }
+  if (msg.includes('must be between')) {
+    const match = message.match(/must be between (\d+) and (\d+) characters?/i);
+    if (match) {
+      return `Phải từ ${match[1]} đến ${match[2]} ký tự`;
+    }
+    return message.replace(/must be between/gi, 'phải từ').replace(/and/gi, 'đến').replace(/characters?/gi, 'ký tự');
+  }
+  if (msg.includes('must be valid')) {
+    return message.replace(/must be valid/gi, 'không hợp lệ');
+  }
+  if (msg.includes('must contain')) {
+    return message.replace(/must contain/gi, 'phải chứa');
+  }
+  
+  return message;
+};
+
 const RegisterScreen = (props) => {
   const navigation = props?.navigation;
   const { headerOffset, contentPaddingTop } = useSoftHeaderSpacing({ contentExtra: 24 });
@@ -139,6 +229,18 @@ const RegisterScreen = (props) => {
     if (!name.trim()) {
       frontendErrors.name = 'Vui lòng nhập họ và tên';
       hasFrontendErrors = true;
+    } else {
+      const trimmedName = name.trim();
+      if (trimmedName.length < 2) {
+        frontendErrors.name = 'Họ và tên phải có ít nhất 2 ký tự';
+        hasFrontendErrors = true;
+      } else if (trimmedName.length > 100) {
+        frontendErrors.name = 'Họ và tên không được vượt quá 100 ký tự';
+        hasFrontendErrors = true;
+      } else if (!/^[a-zA-ZàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđĐ\s'-]+$/.test(trimmedName)) {
+        frontendErrors.name = 'Họ và tên chỉ được chứa chữ cái, khoảng trắng, dấu gạch ngang và ký tự tiếng Việt';
+        hasFrontendErrors = true;
+      }
     }
     if (!email.trim()) {
       frontendErrors.email = 'Vui lòng nhập email';
@@ -213,10 +315,29 @@ const RegisterScreen = (props) => {
       if (err instanceof ApiError) {
         // Check error.id from backend (structured error response)
         const errorId = err.data?.error?.id || '';
-        const errorMessage = err.data?.error?.message || err.message || '';
+        const rawErrorMessage = err.data?.error?.message || err.message || '';
+        // Translate error message to Vietnamese
+        const errorMessage = translateErrorMessage(rawErrorMessage);
         const messageText = errorMessage.toLowerCase();
+        const fieldErrors = err.data?.field_errors || err.data?.fieldErrors || {};
         
-        console.log('API Error details:', { errorId, errorMessage, status: err.status, data: err.data });
+        console.log('API Error details:', { errorId, rawErrorMessage, translatedMessage: errorMessage, status: err.status, data: err.data, fieldErrors });
+        
+        // Handle field-specific errors from backend (field_errors)
+        if (fieldErrors && Object.keys(fieldErrors).length > 0) {
+          if (fieldErrors.fullName || fieldErrors.full_name) {
+            mergedErrors.name = translateErrorMessage(fieldErrors.fullName || fieldErrors.full_name);
+          }
+          if (fieldErrors.email) {
+            mergedErrors.email = translateErrorMessage(fieldErrors.email);
+          }
+          if (fieldErrors.phone) {
+            mergedErrors.phone = translateErrorMessage(fieldErrors.phone);
+          }
+          if (fieldErrors.password) {
+            mergedErrors.password = translateErrorMessage(fieldErrors.password);
+          }
+        }
         
         // Check if it's phone conflict error FIRST (priority)
         if (errorId === 'user.conflict.phone-exists') {
@@ -245,16 +366,21 @@ const RegisterScreen = (props) => {
         // Handle other API errors
         if (err.status === 400) {
           // Bad request - might be validation error from backend
-          const backendMessage = errorMessage;
-          if (backendMessage.includes('email') || backendMessage.includes('Email')) {
+          const backendMessage = translateErrorMessage(errorMessage);
+          const backendMsgLower = backendMessage.toLowerCase();
+          
+          if (backendMsgLower.includes('full name') || backendMsgLower.includes('họ và tên') ||
+              (backendMsgLower.includes('name') && (backendMsgLower.includes('required') || backendMsgLower.includes('between') || backendMsgLower.includes('contain')))) {
+            mergedErrors.name = backendMessage;
+          } else if (backendMsgLower.includes('email')) {
             mergedErrors.email = backendMessage;
-          } else if (backendMessage.includes('phone') || backendMessage.includes('Phone') || backendMessage.includes('số điện thoại')) {
+          } else if (backendMsgLower.includes('phone') || backendMsgLower.includes('số điện thoại')) {
             mergedErrors.phone = backendMessage;
-          } else if (backendMessage.includes('password') || backendMessage.includes('Password') || backendMessage.includes('mật khẩu')) {
+          } else if (backendMsgLower.includes('password') || backendMsgLower.includes('mật khẩu')) {
             mergedErrors.password = backendMessage;
           } else {
             // Only show alert if no field-specific error
-            if (!mergedErrors.email && !mergedErrors.phone && !mergedErrors.password) {
+            if (!mergedErrors.name && !mergedErrors.email && !mergedErrors.phone && !mergedErrors.password) {
               Alert.alert('Đăng ký thất bại', backendMessage || 'Thông tin không hợp lệ');
             }
           }
@@ -268,17 +394,24 @@ const RegisterScreen = (props) => {
             // Only show alert if no field-specific error was set
             Alert.alert('Đăng ký thất bại', errorMessage || 'Thông tin đã tồn tại');
           }
+        } else if (err.status === 0) {
+          // Network error - translate message
+          if (!mergedErrors.email && !mergedErrors.phone && !mergedErrors.password) {
+            const networkErrorMsg = translateErrorMessage(errorMessage) || 'Lỗi kết nối mạng hoặc máy chủ không khả dụng';
+            Alert.alert('Đăng ký thất bại', networkErrorMsg);
+          }
         } else {
           // For other errors, only show alert if no field-specific errors
           if (!mergedErrors.email && !mergedErrors.phone && !mergedErrors.password) {
-            const errorMsg = errorMessage || 'Có lỗi xảy ra, vui lòng thử lại.';
+            const errorMsg = translateErrorMessage(errorMessage) || 'Có lỗi xảy ra, vui lòng thử lại.';
             Alert.alert('Đăng ký thất bại', errorMsg);
           }
         }
       } else {
-        // Network or other errors - only show alert if no field-specific errors
+        // Network or other errors - translate message
         if (!mergedErrors.email && !mergedErrors.phone && !mergedErrors.password) {
-          Alert.alert('Đăng ký thất bại', err?.message || 'Có lỗi xảy ra, vui lòng thử lại.');
+          const errorMsg = translateErrorMessage(err?.message) || 'Có lỗi xảy ra, vui lòng thử lại.';
+          Alert.alert('Đăng ký thất bại', errorMsg);
         }
       }
       
