@@ -44,17 +44,30 @@ const ResetPasswordScreen = ({ navigation }) => {
   };
 
   const validatePassword = (password) => {
+    if (!password) {
+      return {
+        minLength: false,
+        hasUpperCase: false,
+        hasLowerCase: false,
+        hasNumbers: false,
+        hasSpecialChar: false,
+        isValid: false,
+      };
+    }
+
     const minLength = 8;
     const hasUpperCase = /[A-Z]/.test(password);
     const hasLowerCase = /[a-z]/.test(password);
     const hasNumbers = /\d/.test(password);
+    const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
 
     return {
       minLength: password.length >= minLength,
       hasUpperCase,
       hasLowerCase,
       hasNumbers,
-      isValid: password.length >= minLength && hasUpperCase && hasLowerCase && hasNumbers
+      hasSpecialChar,
+      isValid: password.length >= minLength && hasUpperCase && hasLowerCase && hasNumbers && hasSpecialChar
     };
   };
 
@@ -140,7 +153,7 @@ const ResetPasswordScreen = ({ navigation }) => {
     if (!passwordValidation.isValid) {
       Alert.alert(
         'Mật khẩu không hợp lệ', 
-        'Mật khẩu mới phải có ít nhất 8 ký tự, bao gồm chữ hoa, chữ thường và số'
+        'Mật khẩu mới phải có ít nhất 8 ký tự, bao gồm chữ hoa, chữ thường, chữ số và ký tự đặc biệt'
       );
       return;
     }
@@ -382,6 +395,20 @@ const ResetPasswordScreen = ({ navigation }) => {
                         { color: passwordValidation.hasNumbers ? '#4CAF50' : '#F44336' }
                       ]}>
                         Có số
+                      </Text>
+                    </View>
+                    
+                    <View style={styles.requirementItem}>
+                      <Icon 
+                        name={passwordValidation.hasSpecialChar ? 'check' : 'close'} 
+                        size={16} 
+                        color={passwordValidation.hasSpecialChar ? '#4CAF50' : '#F44336'} 
+                      />
+                      <Text style={[
+                        styles.requirementText,
+                        { color: passwordValidation.hasSpecialChar ? '#4CAF50' : '#F44336' }
+                      ]}>
+                        Ký tự đặc biệt
                       </Text>
                     </View>
                   </View>

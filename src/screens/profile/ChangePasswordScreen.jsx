@@ -23,6 +23,33 @@ import { ApiError } from '../../services/api';
 import { colors } from '../../theme/designTokens';
 import useSoftHeaderSpacing from '../../hooks/useSoftHeaderSpacing.js';
 
+// Helper to translate backend error messages to Vietnamese
+const translateErrorMessage = (message) => {
+  if (!message) return '';
+  const msg = message.toLowerCase();
+
+  if (msg.includes('current password') && msg.includes('incorrect')) {
+    return 'Mật khẩu hiện tại không chính xác';
+  }
+  if (msg.includes('new password') && msg.includes('same')) {
+    return 'Mật khẩu mới phải khác mật khẩu hiện tại';
+  }
+  if (msg.includes('new password') && msg.includes('invalid')) {
+    return 'Mật khẩu mới không hợp lệ';
+  }
+  if (msg.includes('password must contain')) {
+    return 'Mật khẩu phải chứa chữ hoa, chữ thường, chữ số và ký tự đặc biệt';
+  }
+  if (msg.includes('password must be between')) {
+    return 'Mật khẩu phải từ 8 đến 100 ký tự';
+  }
+  if (msg.includes('network error') || msg.includes('server unavailable')) {
+    return 'Lỗi kết nối mạng hoặc máy chủ không khả dụng';
+  }
+
+  return message;
+};
+
 const ChangePasswordScreen = ({ navigation }) => {
   const { headerOffset, contentPaddingTop } = useSoftHeaderSpacing({ contentExtra: 24 });
   const [formData, setFormData] = useState({
@@ -32,37 +59,219 @@ const ChangePasswordScreen = ({ navigation }) => {
   });
   const [showPasswords, setShowPasswords] = useState({ current: false, new: false, confirm: false });
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState({
+    current: '',
+    new: '',
+    confirm: '',
+    general: '',
+  });
 
-  const updateField = (field, value) => setFormData((prev) => ({ ...prev, [field]: value }));
+  const fieldErrorMap = {
+    currentPassword: 'current',
+    newPassword: 'new',
+    confirmPassword: 'confirm',
+  };
+
+  const updateField = (field, value) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+    const mappedField = fieldErrorMap[field];
+    if (mappedField) {
+      setErrors((prev) => ({ ...prev, [mappedField]: '', general: '' }));
+    }
+  };
   const toggleVisibility = (field) => setShowPasswords((prev) => ({ ...prev, [field]: !prev[field] }));
 
   const validation = validatePassword(formData.newPassword);
   const match = formData.confirmPassword && formData.newPassword === formData.confirmPassword;
+  const isSameAsCurrent =
+    formData.currentPassword.length > 0 &&
+    formData.newPassword.length > 0 &&
+    formData.currentPassword === formData.newPassword;
 
   const handleSubmit = async () => {
+    const newErrors = { current: '', new: '', confirm: '', general: '' };
+    let hasError = false;
+
     if (!formData.currentPassword.trim()) {
-      Alert.alert('Lỗi', 'Vui lòng nhập mật khẩu hiện tại.');
+      newErrors.current = 'Vui lòng nhập mật khẩu hiện tại';
+      hasError = true;
+    }
+    if (!formData.newPassword.trim()) {
+      newErrors.new = 'Vui lòng nhập mật khẩu mới';
+      hasError = true;
+    } else if (!validation.isValid) {
+      newErrors.new = 'Mật khẩu mới phải có ít nhất 8 ký tự, bao gồm chữ hoa, chữ thường, chữ số và ký tự đặc biệt';
+      hasError = true;
+    } else if (formData.currentPassword && formData.currentPassword === formData.newPassword) {
+      newErrors.new = 'Mật khẩu mới phải khác mật khẩu hiện tại';
+      hasError = true;
+    }
+    if (!formData.confirmPassword.trim()) {
+      newErrors.confirm = 'Vui lòng nhập lại mật khẩu';
+      hasError = true;
+    } else if (!match) {
+      newErrors.confirm = 'Mật khẩu xác nhận không khớp';
+      hasError = true;
+    }
+
+    setErrors(newErrors);
+    if (hasError) {
       return;
     }
-    if (!validation.isValid) {
-      Alert.alert('Lỗi', 'Mật khẩu mới phải có ít nhất 8 ký tự, bao gồm chữ hoa, chữ thường và số.');
-      return;
-    }
-    if (!match) {
-      Alert.alert('Lỗi', 'Xác nhận mật khẩu không khớp.');
-      return;
-    }
+
+    // Clear previous errors before calling API
+    setErrors({ current: '', new: '', confirm: '', general: '' });
 
     try {
       setLoading(true);
-      await authService.changePassword(formData.currentPassword, formData.newPassword);
+      await authService.updatePassword(formData.currentPassword, formData.newPassword);
+      setErrors({ current: '', new: '', confirm: '', general: '' });
       Alert.alert('Thành công', 'Mật khẩu đã được cập nhật.', [{ text: 'OK', onPress: () => navigation.goBack() }]);
     } catch (error) {
-      let message = 'Không thể đổi mật khẩu';
+      console.error('Change password error:', error);
+      let message = translateErrorMessage(error?.message || 'Không thể đổi mật khẩu');
+
       if (error instanceof ApiError) {
-        message = error.message || message;
+        const matchesKeywords = (text, keywords = []) => {
+          if (!text) return false;
+          return keywords.some((keyword) => text.includes(keyword));
+        };
+
+        const keywordSets = {
+          current: ['current password', 'old password', 'mật khẩu cũ', 'mat khau cu', 'mật khẩu hiện tại', 'mat khau hien tai'],
+          new: ['new password', 'mật khẩu mới', 'mat khau moi'],
+          confirm: ['confirm password', 'confirmation password', 'mật khẩu xác nhận', 'mat khau xac nhan'],
+        };
+
+        const fieldErrors =
+          error?.data?.field_errors ||
+          error?.data?.fieldErrors ||
+          error?.data?.error?.fieldErrors;
+
+        const mapFieldKey = (key) => {
+          if (!key) return null;
+          const normalized = key.toLowerCase();
+          if (
+            normalized.includes('current') ||
+            normalized.includes('old') ||
+            matchesKeywords(normalized, keywordSets.current)
+          ) {
+            return 'current';
+          }
+          if (
+            normalized.includes('confirm') ||
+            matchesKeywords(normalized, keywordSets.confirm)
+          ) {
+            return 'confirm';
+          }
+          if (
+            normalized.includes('new') ||
+            matchesKeywords(normalized, keywordSets.new)
+          ) {
+            return 'new';
+          }
+          return null;
+        };
+
+        if (fieldErrors && typeof fieldErrors === 'object') {
+          const nextErrors = { current: '', new: '', confirm: '', general: '' };
+          Object.entries(fieldErrors).forEach(([field, fieldMessage]) => {
+            const translated = translateErrorMessage(fieldMessage);
+            const mappedKey = mapFieldKey(field);
+            if (mappedKey === 'current') {
+              nextErrors.current =
+                translated || 'Mật khẩu hiện tại không chính xác';
+            } else if (mappedKey === 'new') {
+              nextErrors.new =
+                translated ||
+                'Mật khẩu mới phải có ít nhất 8 ký tự, bao gồm chữ hoa, chữ thường, chữ số và ký tự đặc biệt';
+            } else if (mappedKey === 'confirm') {
+              nextErrors.confirm = translated || 'Mật khẩu xác nhận không khớp';
+            } else {
+              nextErrors.general = translated || error.message;
+            }
+          });
+          setErrors((prev) => ({ ...prev, ...nextErrors }));
+          return;
+        }
+
+        const backendMessage =
+          translateErrorMessage(error?.data?.error?.message || error.message) ||
+          '';
+        const backendMessageRaw = (
+          error?.data?.error?.message ||
+          error?.data?.message ||
+          error.message ||
+          ''
+        ).toLowerCase();
+
+        const shouldShowOnCurrent = matchesKeywords(
+          backendMessageRaw,
+          keywordSets.current
+        );
+        const shouldShowOnNew = matchesKeywords(
+          backendMessageRaw,
+          keywordSets.new
+        );
+        const shouldShowOnConfirm = matchesKeywords(
+          backendMessageRaw,
+          keywordSets.confirm
+        );
+
+        switch (error.status) {
+          case 400:
+            if (shouldShowOnCurrent) {
+              setErrors((prev) => ({
+                ...prev,
+                current:
+                  backendMessage || 'Mật khẩu hiện tại không chính xác',
+              }));
+            } else if (shouldShowOnConfirm) {
+              setErrors((prev) => ({
+                ...prev,
+                confirm:
+                  backendMessage ||
+                  'Mật khẩu xác nhận không khớp với mật khẩu mới',
+              }));
+            } else if (shouldShowOnNew) {
+              setErrors((prev) => ({
+                ...prev,
+                new:
+                  backendMessage ||
+                  'Mật khẩu mới không hợp lệ. Vui lòng kiểm tra lại.',
+              }));
+            } else {
+              setErrors((prev) => ({
+                ...prev,
+                general: backendMessage || 'Không thể đổi mật khẩu lúc này',
+              }));
+            }
+            break;
+          case 401:
+          case 403:
+            setErrors((prev) => ({
+              ...prev,
+              current: backendMessage || 'Mật khẩu hiện tại không chính xác',
+            }));
+            break;
+          case 0:
+            setErrors((prev) => ({
+              ...prev,
+              general:
+                backendMessage ||
+                'Lỗi kết nối mạng hoặc máy chủ không khả dụng. Vui lòng thử lại.',
+            }));
+            break;
+          default:
+            setErrors((prev) => ({
+              ...prev,
+              general: backendMessage || 'Không thể đổi mật khẩu lúc này',
+            }));
+        }
+        return;
       }
-      Alert.alert('Lỗi', message);
+
+      setErrors((prev) => ({ ...prev, general: message }));
     } finally {
       setLoading(false);
     }
@@ -108,6 +317,7 @@ const ChangePasswordScreen = ({ navigation }) => {
                     onPress={() => toggleVisibility('current')}
                   />
                 }
+                error={errors.current}
               />
               <InputRow
                 placeholder="Mật khẩu mới"
@@ -121,6 +331,7 @@ const ChangePasswordScreen = ({ navigation }) => {
                     onPress={() => toggleVisibility('new')}
                   />
                 }
+                error={errors.new}
               />
               <InputRow
                 placeholder="Xác nhận mật khẩu mới"
@@ -134,6 +345,7 @@ const ChangePasswordScreen = ({ navigation }) => {
                     onPress={() => toggleVisibility('confirm')}
                   />
                 }
+                error={errors.confirm}
               />
             </CleanCard>
 
@@ -143,6 +355,12 @@ const ChangePasswordScreen = ({ navigation }) => {
               <RequirementRow label="Chữ hoa và chữ thường" checked={validation.hasUpperCase && validation.hasLowerCase} />
               <RequirementRow label="Ít nhất 1 chữ số" checked={validation.hasNumbers} />
               <RequirementRow label="Ký tự đặc biệt" checked={validation.hasSpecialChar} />
+              {formData.currentPassword.length > 0 && formData.newPassword.length > 0 && (
+                <RequirementRow
+                  label="Khác mật khẩu hiện tại"
+                  checked={!isSameAsCurrent}
+                />
+              )}
             </CleanCard>
 
             {formData.confirmPassword.length > 0 && (
@@ -154,10 +372,14 @@ const ChangePasswordScreen = ({ navigation }) => {
               </CleanCard>
             )}
 
+            {!!errors.general && (
+              <Text style={styles.generalError}>{errors.general}</Text>
+            )}
+
             <ModernButton
               title={loading ? 'Đang xử lý...' : 'Đổi mật khẩu'}
               onPress={handleSubmit}
-              disabled={loading || !validation.isValid || !match}
+              disabled={loading || !validation.isValid || !match || isSameAsCurrent}
             />
 
             <TouchableOpacity style={styles.link} onPress={() => navigation.navigate('ResetPassword')}>
@@ -170,15 +392,18 @@ const ChangePasswordScreen = ({ navigation }) => {
   );
 };
 
-const InputRow = ({ icon, trailing, style, ...props }) => (
-  <View style={[styles.inputRow, style]}>
-    <Feather name={icon} size={18} color="#8E8E93" style={{ marginRight: 12 }} />
-    <TextInput
-      placeholderTextColor="#B0B0B3"
-      style={styles.input}
-      {...props}
-    />
-    {trailing}
+const InputRow = ({ icon, trailing, error, style, ...props }) => (
+  <View style={{ gap: 6 }}>
+    <View style={[styles.inputRow, error && styles.inputRowError, style]}>
+      <Feather name={icon} size={18} color={error ? '#EF4444' : '#8E8E93'} style={{ marginRight: 12 }} />
+      <TextInput
+        placeholderTextColor="#B0B0B3"
+        style={[styles.input, { color: colors.textPrimary }]}
+        {...props}
+      />
+      {trailing}
+    </View>
+    {error ? <Text style={styles.inputErrorText}>{error}</Text> : null}
   </View>
 );
 
@@ -196,6 +421,17 @@ const RequirementRow = ({ label, checked }) => (
 );
 
 const validatePassword = (password) => {
+  if (!password) {
+    return {
+      minLength: false,
+      hasUpperCase: false,
+      hasLowerCase: false,
+      hasNumbers: false,
+      hasSpecialChar: false,
+      isValid: false,
+    };
+  }
+
   const minLength = password.length >= 8;
   const hasUpperCase = /[A-Z]/.test(password);
   const hasLowerCase = /[a-z]/.test(password);
@@ -208,7 +444,7 @@ const validatePassword = (password) => {
     hasLowerCase,
     hasNumbers,
     hasSpecialChar,
-    isValid: minLength && hasUpperCase && hasLowerCase && hasNumbers,
+    isValid: minLength && hasUpperCase && hasLowerCase && hasNumbers && hasSpecialChar,
   };
 };
 
@@ -265,6 +501,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },
+  inputRowError: {
+    borderColor: '#EF4444',
+    backgroundColor: 'rgba(239,68,68,0.05)',
+  },
   input: {
     flex: 1,
     fontSize: 15,
@@ -303,6 +543,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
+  inputErrorText: {
+    fontSize: 12,
+    color: '#EF4444',
+    marginLeft: 6,
+  },
   link: {
     alignSelf: 'center',
   },
@@ -310,6 +555,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.accent,
     fontWeight: '600',
+  },
+  generalError: {
+    color: '#EF4444',
+    fontSize: 13,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginTop: -4,
+    marginBottom: 8,
   },
 });
 
