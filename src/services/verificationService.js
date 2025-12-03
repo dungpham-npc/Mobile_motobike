@@ -62,30 +62,6 @@ class VerificationService {
     }
   }
 
-  // Get verification history for current user
-  async getMyVerificationHistory() {
-    try {
-      console.log('Getting verification history...');
-      const response = await this.apiService.get(ENDPOINTS.PROFILE.VERIFICATION_HISTORY);
-      console.log('Verification history response:', response);
-      
-      // Sort by created_at descending (newest first) - backend should already sort, but ensure it
-      if (Array.isArray(response)) {
-        return response.sort((a, b) => {
-          const dateA = a.created_at ? new Date(a.created_at) : new Date(0);
-          const dateB = b.created_at ? new Date(b.created_at) : new Date(0);
-          return dateB - dateA;
-        });
-      }
-      
-      return response || [];
-    } catch (error) {
-      console.error('Get verification history error:', error);
-      // Return empty array on error instead of throwing
-      return [];
-    }
-  }
-
   // Get current driver verification status
   async getCurrentDriverVerification() {
     try {

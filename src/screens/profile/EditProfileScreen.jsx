@@ -168,11 +168,10 @@ const EditProfileScreen = ({ navigation }) => {
     setSaving(true);
     try {
       const payload = {
-        fullName: formData.fullName.trim(),
-        email: formData.email.trim(),
-        phone: formData.phone.trim() || null,
-        studentId: formData.studentId.trim() || null,
-        emergencyContact: formData.emergencyContact.trim() || null,
+        fullName: formData.fullName,
+        phone: formData.phone,
+        studentId: formData.studentId,
+        emergencyContact: formData.emergencyContact,
       };
       await profileService.updateProfile(payload);
       Alert.alert('Thành công', 'Thông tin hồ sơ đã được cập nhật.', [

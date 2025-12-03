@@ -1,4 +1,3 @@
-import { Platform } from 'react-native';
 import apiService,{ApiError} from './api';
 import { ENDPOINTS } from '../config/api';
 class ProfileService {
@@ -9,9 +8,7 @@ class ProfileService {
   async getCurrentUserProfile() {
     try {
       const response = await apiService.get('/me');
-      // Save to authService storage
-      const authService = require('./authService').default;
-      await authService.saveUserToStorage(response);
+      await this.saveUserToStorage(response);
       return response;
     } catch (error) {
       console.error('Get profile error:', error);
@@ -22,12 +19,8 @@ class ProfileService {
   // Update profile
   async updateProfile(profileData) {
     try {
-      const response = await apiService.put('/me/profile', profileData);
-      // Save updated profile to authService storage
-      if (response) {
-        const authService = require('./authService').default;
-        await authService.saveUserToStorage(response);
-      }
+      const response = await apiService.put('/me', profileData);
+      await this.saveUserToStorage(response);
       return response;
     } catch (error) {
       console.error('Update profile error:', error);

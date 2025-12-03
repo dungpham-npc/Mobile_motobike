@@ -11,18 +11,15 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Animatable from 'react-native-animatable';
 
 import ModernButton from '../../components/ModernButton.jsx';
-import CleanCard from '../../components/ui/CleanCard.jsx';
-import { SoftBackHeader } from '../../components/ui/GlassHeader.jsx';
-import AppBackground from '../../components/layout/AppBackground.jsx';
 import authService from '../../services/authService';
 import verificationService from '../../services/verificationService';
 import { ApiError } from '../../services/api';
-import { colors, spacing, radii } from '../../theme/designTokens';
 
 const DriverVerificationScreen = ({ navigation }) => {
   // State for each document type
@@ -412,321 +409,297 @@ const DriverVerificationScreen = ({ navigation }) => {
     }
   };
 
-  const renderDocumentSection = (documentType, title, description, frontImage, backImage, setFrontImage, setBackImage, isOptional = false) => {
+  const renderDocumentSection = (documentType, title, description, frontImage, backImage, setFrontImage, setBackImage) => {
     return (
-      <Animatable.View animation="fadeInUp">
-        <CleanCard contentStyle={styles.documentCard}>
-          <View style={styles.documentHeader}>
-            <Text style={styles.documentTitle}>{title}</Text>
-            {isOptional && (
-              <View style={styles.optionalBadge}>
-                <Text style={styles.optionalText}>Tùy chọn</Text>
-              </View>
-            )}
+      <Animatable.View animation="fadeInUp" style={styles.documentSection}>
+        <Text style={styles.documentTitle}>{title}</Text>
+          <Text style={styles.documentDescription}>{description}</Text>
+        
+        <View style={styles.imageContainer}>
+          {/* Front Image */}
+          <View style={styles.imageWrapper}>
+            <Text style={styles.imageLabel}>Mặt trước</Text>
+            <TouchableOpacity 
+              style={styles.imageButton}
+              onPress={() => showImagePicker(documentType, 'front')}
+            >
+              {frontImage ? (
+                <Image source={{ uri: frontImage.uri }} style={styles.imagePreview} />
+              ) : (
+                <View style={styles.imagePlaceholder}>
+                  <Icon name="add-a-photo" size={40} color="#ccc" />
+                  <Text style={styles.placeholderText}>Chụp mặt trước</Text>
+                </View>
+              )}
+            </TouchableOpacity>
           </View>
-          {description && (
-            <Text style={styles.documentDescription}>{description}</Text>
-          )}
-          
-          <View style={styles.imageContainer}>
-            {/* Front Image */}
-            <View style={styles.imageWrapper}>
-              <Text style={styles.imageLabel}>Mặt trước</Text>
-              <TouchableOpacity 
-                style={styles.imageButton}
-                onPress={() => showImagePicker(documentType, 'front')}
-                activeOpacity={0.7}
-              >
-                {frontImage ? (
-                  <View style={styles.imagePreviewWrapper}>
-                    <Image source={{ uri: frontImage.uri }} style={styles.imagePreview} />
-                    <TouchableOpacity 
-                      style={styles.editOverlay}
-                      onPress={() => showImagePicker(documentType, 'front')}
-                    >
-                      <Icon name="edit" size={16} color="#fff" />
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <View style={styles.imagePlaceholder}>
-                    <Icon name="add-a-photo" size={32} color={colors.accent} />
-                    <Text style={styles.placeholderText}>Chụp mặt trước</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            </View>
 
-            {/* Back Image */}
-            <View style={styles.imageWrapper}>
-              <Text style={styles.imageLabel}>Mặt sau</Text>
-              <TouchableOpacity 
-                style={styles.imageButton}
-                onPress={() => showImagePicker(documentType, 'back')}
-                activeOpacity={0.7}
-              >
-                {backImage ? (
-                  <View style={styles.imagePreviewWrapper}>
-                    <Image source={{ uri: backImage.uri }} style={styles.imagePreview} />
-                    <TouchableOpacity 
-                      style={styles.editOverlay}
-                      onPress={() => showImagePicker(documentType, 'back')}
-                    >
-                      <Icon name="edit" size={16} color="#fff" />
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <View style={styles.imagePlaceholder}>
-                    <Icon name="add-a-photo" size={32} color={colors.accent} />
-                    <Text style={styles.placeholderText}>Chụp mặt sau</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            </View>
+          {/* Back Image */}
+          <View style={styles.imageWrapper}>
+            <Text style={styles.imageLabel}>Mặt sau</Text>
+          <TouchableOpacity 
+              style={styles.imageButton}
+              onPress={() => showImagePicker(documentType, 'back')}
+            >
+              {backImage ? (
+                <Image source={{ uri: backImage.uri }} style={styles.imagePreview} />
+              ) : (
+                <View style={styles.imagePlaceholder}>
+                  <Icon name="add-a-photo" size={40} color="#ccc" />
+                  <Text style={styles.placeholderText}>Chụp mặt sau</Text>
+                </View>
+              )}
+          </TouchableOpacity>
           </View>
-        </CleanCard>
+      </View>
       </Animatable.View>
     );
   };
 
   return (
-    <AppBackground>
-      <SafeAreaView style={styles.container} edges={['top']}>
-        <SoftBackHeader
-          title="Xác minh tài xế"
-          onBackPress={() => navigation.goBack()}
-        />
-        <ScrollView 
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContent}
+    <SafeAreaView style={styles.container}>
+      <ScrollView showsVerticalScrollIndicator={false}>
+        {/* Header */}
+        <LinearGradient
+          colors={['#FF9800', '#F57C00']}
+          style={styles.header}
         >
-          <View style={styles.content}>
-            {/* Instructions Card */}
-            <Animatable.View animation="fadeInUp" delay={100} style={styles.cardWrapper}>
-              <CleanCard variant="accent" contentStyle={styles.instructionsCard}>
-                <View style={styles.instructionsHeader}>
-                  <View style={styles.instructionsIconWrapper}>
-                    <Icon name="info" size={24} color={colors.accent} />
-                  </View>
-                  <View style={styles.instructionsContent}>
-                    <Text style={styles.instructionsTitle}>Hướng dẫn gửi giấy tờ</Text>
-                    <Text style={styles.instructionsText}>
-                      Vui lòng chụp rõ nét các giấy tờ sau để xác minh tài khoản tài xế:
-                    </Text>
-                    <View style={styles.instructionsList}>
-                      <Text style={styles.instructionsListItem}>• Bằng lái xe (2 mặt)</Text>
-                      <Text style={styles.instructionsListItem}>• Giấy chứng nhận đăng ký xe (2 mặt)</Text>
-                      <Text style={styles.instructionsListItem}>• Giấy ủy quyền phương tiện (2 mặt) - nếu có</Text>
-                    </View>
-                  </View>
-                </View>
-              </CleanCard>
-            </Animatable.View>
-
-            {/* License Section */}
-            <Animatable.View animation="fadeInUp" delay={200} style={styles.cardWrapper}>
-              {renderDocumentSection(
-                'license',
-                'Bằng lái xe',
-                'Chụp ảnh mặt trước và mặt sau của bằng lái xe',
-                licenseFront,
-                licenseBack,
-                setLicenseFront,
-                setLicenseBack
-              )}
-            </Animatable.View>
-
-            {/* Vehicle Registration Section */}
-            <Animatable.View animation="fadeInUp" delay={300} style={styles.cardWrapper}>
-              {renderDocumentSection(
-                'vehicleRegistration',
-                'Giấy chứng nhận đăng ký xe',
-                'Chụp ảnh mặt trước và mặt sau của giấy chứng nhận đăng ký xe mô tô, xe gắn máy',
-                vehicleRegistrationFront,
-                vehicleRegistrationBack,
-                setVehicleRegistrationFront,
-                setVehicleRegistrationBack
-              )}
-            </Animatable.View>
-
-            {/* Vehicle Authorization Section (Optional) */}
-            <Animatable.View animation="fadeInUp" delay={400} style={styles.cardWrapper}>
-              {renderDocumentSection(
-                'vehicleAuthorization',
-                'Giấy ủy quyền phương tiện',
-                'Nếu bạn không phải chủ xe, vui lòng chụp giấy ủy quyền phương tiện',
-                vehicleAuthorizationFront,
-                vehicleAuthorizationBack,
-                setVehicleAuthorizationFront,
-                setVehicleAuthorizationBack,
-                true
-              )}
-            </Animatable.View>
-
-            {/* Submit Button */}
-            <Animatable.View animation="fadeInUp" delay={500} style={styles.buttonWrapper}>
-              <ModernButton
-                title={uploading ? "Đang gửi..." : "Gửi giấy tờ xác minh"}
-                onPress={submitVerification}
-                disabled={uploading || !licenseFront || !licenseBack || !vehicleRegistrationFront || !vehicleRegistrationBack}
-                loading={uploading}
-                icon={uploading ? null : "send"}
-              />
-            </Animatable.View>
+          <View style={styles.headerContent}>
+            <TouchableOpacity 
+              style={styles.backButton}
+              onPress={() => navigation.goBack()}
+            >
+              <Icon name="arrow-back" size={24} color="#fff" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Xác minh tài xế</Text>
+            <View style={styles.placeholder} />
           </View>
-        </ScrollView>
-      </SafeAreaView>
-    </AppBackground>
+        </LinearGradient>
+
+        <View style={styles.content}>
+          {/* Instructions */}
+          <Animatable.View animation="fadeInUp" style={styles.instructionsCard}>
+            <Icon name="info" size={24} color="#FF9800" />
+            <View style={styles.instructionsContent}>
+              <Text style={styles.instructionsTitle}>Hướng dẫn gửi giấy tờ</Text>
+            <Text style={styles.instructionsText}>
+                Vui lòng chụp rõ nét các giấy tờ sau để xác minh tài khoản tài xế:
+              </Text>
+              <Text style={styles.instructionsList}>
+                • Bằng lái xe (2 mặt){'\n'}
+                • Giấy chứng nhận đăng ký xe (2 mặt){'\n'}
+                • Giấy ủy quyền phương tiện (2 mặt) - nếu có
+            </Text>
+            </View>
+          </Animatable.View>
+
+          {/* License Section */}
+          {renderDocumentSection(
+            'license',
+            'Bằng lái xe',
+            'Chụp ảnh mặt trước và mặt sau của bằng lái xe',
+            licenseFront,
+            licenseBack,
+            setLicenseFront,
+            setLicenseBack
+          )}
+
+          {/* Vehicle Registration Section */}
+          {renderDocumentSection(
+            'vehicleRegistration',
+            'Giấy chứng nhận đăng ký xe',
+            'Chụp ảnh mặt trước và mặt sau của giấy chứng nhận đăng ký xe mô tô, xe gắn máy',
+            vehicleRegistrationFront,
+            vehicleRegistrationBack,
+            setVehicleRegistrationFront,
+            setVehicleRegistrationBack
+          )}
+
+          {/* Vehicle Authorization Section (Optional) */}
+          {renderDocumentSection(
+            'vehicleAuthorization',
+            'Giấy ủy quyền phương tiện (Tùy chọn)',
+            'Nếu bạn không phải chủ xe, vui lòng chụp giấy ủy quyền phương tiện',
+            vehicleAuthorizationFront,
+            vehicleAuthorizationBack,
+            setVehicleAuthorizationFront,
+            setVehicleAuthorizationBack
+          )}
+
+          {/* Submit Button */}
+          <Animatable.View animation="fadeInUp" style={styles.submitContainer}>
+          <ModernButton
+              title="Gửi giấy tờ xác minh"
+            onPress={submitVerification}
+              disabled={uploading || !licenseFront || !licenseBack || !vehicleRegistrationFront || !vehicleRegistrationBack}
+              loading={uploading}
+          />
+          </Animatable.View>
+        </View>
+      </ScrollView>
+
+      {/* Loading Overlay */}
+          {uploading && (
+        <View style={styles.loadingOverlay}>
+          <View style={styles.loadingContent}>
+            <ActivityIndicator size="large" color="#FF9800" />
+            <Text style={styles.loadingText}>Đang gửi giấy tờ...</Text>
+          </View>
+        </View>
+      )}
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#f5f5f5',
   },
-  scrollContent: {
-    paddingTop: spacing.md,
-    paddingBottom: spacing.xl * 2,
-    paddingHorizontal: spacing.md,
+  header: {
+    paddingTop: 10,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
   },
-  content: {
-    flex: 1,
-  },
-  cardWrapper: {
-    marginBottom: spacing.md,
-  },
-  // Instructions Card
-  instructionsCard: {
-    paddingVertical: spacing.lg,
-  },
-  instructionsHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  instructionsIconWrapper: {
-    width: 40,
-    height: 40,
-    borderRadius: radii.md,
-    backgroundColor: 'rgba(59,130,246,0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: spacing.md,
-  },
-  instructionsContent: {
-    flex: 1,
-  },
-  instructionsTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    marginBottom: spacing.sm,
-  },
-  instructionsText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginBottom: spacing.sm,
-    lineHeight: 20,
-  },
-  instructionsList: {
-    gap: spacing.xs,
-  },
-  instructionsListItem: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    lineHeight: 20,
-  },
-  // Document Card
-  documentCard: {
-    paddingVertical: spacing.lg,
-  },
-  documentHeader: {
+  headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing.sm,
+  },
+  backButton: {
+    padding: 8,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  placeholder: {
+    width: 40,
+  },
+  content: {
+    padding: 20,
+  },
+  instructionsCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  instructionsContent: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  instructionsTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 8,
+  },
+  instructionsText: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 8,
+  },
+  instructionsList: {
+    fontSize: 14,
+    color: '#666',
+    lineHeight: 20,
+  },
+  documentSection: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   documentTitle: {
     fontSize: 18,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    flex: 1,
-  },
-  optionalBadge: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: radii.sm,
-    backgroundColor: 'rgba(148,163,184,0.15)',
-  },
-  optionalText: {
-    fontSize: 11,
-    color: colors.textMuted,
-    fontWeight: '600',
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 8,
   },
   documentDescription: {
     fontSize: 14,
-    color: colors.textSecondary,
-    marginBottom: spacing.md,
-    lineHeight: 20,
+    color: '#666',
+    marginBottom: 16,
   },
   imageContainer: {
     flexDirection: 'row',
-    gap: spacing.sm,
+    justifyContent: 'space-between',
   },
   imageWrapper: {
     flex: 1,
+    marginHorizontal: 4,
   },
   imageLabel: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
-    color: colors.textPrimary,
-    marginBottom: spacing.sm,
+    color: '#333',
+    marginBottom: 8,
     textAlign: 'center',
   },
   imageButton: {
-    borderRadius: radii.md,
+    borderRadius: 8,
     overflow: 'hidden',
-  },
-  imagePreviewWrapper: {
-    position: 'relative',
   },
   imagePreview: {
     width: '100%',
-    height: 140,
-    borderRadius: radii.md,
-    resizeMode: 'cover',
-    backgroundColor: colors.glassLight,
-  },
-  editOverlay: {
-    position: 'absolute',
-    top: spacing.xs,
-    right: spacing.xs,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    height: 120,
+    borderRadius: 8,
   },
   imagePlaceholder: {
     width: '100%',
-    height: 140,
-    backgroundColor: colors.glassLight,
-    borderRadius: radii.md,
+    height: 120,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
     borderWidth: 2,
-    borderColor: colors.border,
+    borderColor: '#e9ecef',
     borderStyle: 'dashed',
     justifyContent: 'center',
     alignItems: 'center',
   },
   placeholderText: {
     fontSize: 12,
-    color: colors.textMuted,
-    marginTop: spacing.xs,
+    color: '#999',
+    marginTop: 8,
     textAlign: 'center',
   },
-  // Button
-  buttonWrapper: {
-    marginTop: spacing.md,
-    marginBottom: spacing.sm,
+  submitContainer: {
+    marginTop: 20,
+    marginBottom: 40,
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingContent: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 24,
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#333',
+    marginTop: 12,
   },
 });
 

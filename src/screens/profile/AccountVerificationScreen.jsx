@@ -25,7 +25,6 @@ const AccountVerificationScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [currentStudentVerification, setCurrentStudentVerification] = useState(null);
   const [currentDriverVerification, setCurrentDriverVerification] = useState(null);
-  const [verificationHistory, setVerificationHistory] = useState([]);
 
   useEffect(() => {
     loadUserProfile();
@@ -34,7 +33,6 @@ const AccountVerificationScreen = ({ navigation }) => {
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
       refreshVerificationStatus();
-      loadVerificationHistory();
     });
 
     return unsubscribe;
@@ -53,16 +51,6 @@ const AccountVerificationScreen = ({ navigation }) => {
     }
   };
 
-  const loadVerificationHistory = async () => {
-    try {
-      const history = await verificationService.getMyVerificationHistory();
-      setVerificationHistory(history || []);
-    } catch (error) {
-      console.log('Could not load verification history:', error);
-      setVerificationHistory([]);
-    }
-  };
-
   const loadUserProfile = async () => {
     try {
       const currentUser = authService.getCurrentUser();
@@ -73,10 +61,7 @@ const AccountVerificationScreen = ({ navigation }) => {
         setUser(profile);
       }
 
-      await Promise.all([
-        refreshVerificationStatus(),
-        loadVerificationHistory(),
-      ]);
+      await refreshVerificationStatus();
     } catch (error) {
       console.error('Error loading profile:', error);
       Alert.alert('Lỗi', 'Không thể tải thông tin hồ sơ');
@@ -170,13 +155,7 @@ const AccountVerificationScreen = ({ navigation }) => {
                 icon="book-open"
                 status={studentStatus.text}
                 statusColor={studentStatus.color}
-                buttonTitle={
-                  studentStatus.status === 'verified'
-                    ? undefined
-                    : studentStatus.status === 'pending'
-                    ? 'Đang xác minh'
-                    : 'Gửi giấy tờ'
-                }
+                buttonTitle={studentStatus.status === 'verified' ? undefined : 'Gửi giấy tờ'}
                 buttonDisabled={studentStatus.status === 'pending'}
                 onButtonPress={handleStudentVerificationPress}
               />
@@ -187,13 +166,7 @@ const AccountVerificationScreen = ({ navigation }) => {
                 icon="clipboard"
                 status={driverStatus.status === 'verified' ? driverStatus.text : undefined}
                 statusColor={driverStatus.color}
-                buttonTitle={
-                  driverStatus.status === 'verified'
-                    ? undefined
-                    : driverStatus.status === 'pending'
-                    ? 'Đang xác minh'
-                    : 'Gửi giấy tờ'
-                }
+                buttonTitle={driverStatus.status === 'verified' ? undefined : 'Gửi giấy tờ'}
                 buttonDisabled={driverStatus.disabled || driverStatus.status === 'pending'}
                 onButtonPress={() => navigation.navigate('DriverVerification')}
               />
@@ -205,21 +178,6 @@ const AccountVerificationScreen = ({ navigation }) => {
               </Text>
             </View>
           </View>
-
-          {verificationHistory.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Lịch sử xác minh</Text>
-              <CleanCard contentStyle={styles.cardPadding}>
-                {verificationHistory.map((verification, index) => (
-                  <VerificationHistoryItem
-                    key={verification.verification_id || index}
-                    verification={verification}
-                    isLast={index === verificationHistory.length - 1}
-                  />
-                ))}
-              </CleanCard>
-            </View>
-          )}
 
           <View style={styles.section}>
             <CleanCard contentStyle={styles.helpCard}>
@@ -286,82 +244,6 @@ const getStudentVerificationStatus = (verification) => {
     return { status: 'rejected', text: 'Bị từ chối', color: '#EF4444' };
   }
   return { status: 'not_verified', text: 'Chưa xác minh', color: '#9CA3AF' };
-};
-
-const VerificationHistoryItem = ({ verification, isLast = false }) => {
-  const getStatusInfo = (status) => {
-    const statusLower = status?.toLowerCase();
-    switch (statusLower) {
-      case 'pending':
-        return { text: 'Đang xác minh', color: '#F59E0B', icon: 'clock' };
-      case 'approved':
-      case 'verified':
-      case 'active':
-        return { text: 'Đã xác minh', color: '#22C55E', icon: 'check-circle' };
-      case 'rejected':
-      case 'suspended':
-        return { text: 'Bị từ chối', color: '#EF4444', icon: 'x-circle' };
-      default:
-        return { text: 'Chưa xác định', color: '#9CA3AF', icon: 'help-circle' };
-    }
-  };
-
-  const getTypeText = (type) => {
-    const typeLower = type?.toLowerCase();
-    switch (typeLower) {
-      case 'student_id':
-        return 'Thẻ sinh viên';
-      case 'driver_license':
-        return 'Bằng lái xe';
-      case 'vehicle_registration':
-        return 'Đăng ký xe';
-      case 'driver_documents':
-        return 'Giấy tờ tài xế';
-      default:
-        return type || 'Không xác định';
-    }
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('vi-VN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
-  const statusInfo = getStatusInfo(verification.status);
-  const typeText = getTypeText(verification.type);
-
-  return (
-    <View style={[styles.historyItem, isLast && styles.historyItemLast]}>
-      <View style={styles.historyItemHeader}>
-        <View style={styles.historyItemLeft}>
-          <Feather name={statusInfo.icon} size={16} color={statusInfo.color} />
-          <View style={styles.historyItemInfo}>
-            <Text style={styles.historyItemType}>{typeText}</Text>
-            <Text style={[styles.historyItemStatus, { color: statusInfo.color }]}>
-              {statusInfo.text}
-            </Text>
-          </View>
-        </View>
-        <Text style={styles.historyItemDate}>
-          {formatDate(verification.created_at)}
-        </Text>
-      </View>
-      {verification.rejection_reason && (
-        <View style={styles.rejectionReason}>
-          <Text style={styles.rejectionReasonText}>
-            Lý do: {verification.rejection_reason}
-          </Text>
-        </View>
-      )}
-    </View>
-  );
 };
 
 const getDriverVerificationStatus = (user, studentStatus) => {
@@ -536,56 +418,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     color: colors.textSecondary,
     lineHeight: 20,
-  },
-  historyItem: {
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(148,163,184,0.15)',
-  },
-  historyItemLast: {
-    borderBottomWidth: 0,
-  },
-  historyItemHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-  },
-  historyItemLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    flex: 1,
-  },
-  historyItemInfo: {
-    flex: 1,
-    gap: 4,
-  },
-  historyItemType: {
-    fontSize: typography.body,
-    fontFamily: 'Inter_600SemiBold',
-    color: colors.textPrimary,
-  },
-  historyItemStatus: {
-    fontSize: typography.small,
-    fontFamily: 'Inter_500Medium',
-  },
-  historyItemDate: {
-    fontSize: typography.small,
-    fontFamily: 'Inter_400Regular',
-    color: colors.textMuted,
-  },
-  rejectionReason: {
-    marginTop: spacing.xs,
-    paddingTop: spacing.xs,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(148,163,184,0.1)',
-  },
-  rejectionReasonText: {
-    fontSize: typography.small,
-    fontFamily: 'Inter_400Regular',
-    color: '#EF4444',
-    lineHeight: 18,
   },
 });
 
