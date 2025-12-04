@@ -118,33 +118,106 @@ const EditProfileScreen = ({ navigation }) => {
   };
 
   const uploadAvatar = async () => {
-    if (!selectedAvatar) return;
+    if (!selectedAvatar) {
+      Alert.alert('Lỗi', 'Vui lòng chọn ảnh đại diện');
+      return;
+    }
+
     setUploadingAvatar(true);
     try {
+      console.log('Starting avatar upload...', {
+        uri: selectedAvatar.uri,
+        width: selectedAvatar.width,
+        height: selectedAvatar.height,
+        type: selectedAvatar.type,
+        mimeType: selectedAvatar.mimeType,
+        fileName: selectedAvatar.fileName,
+      });
+
+      // Determine MIME type from file extension or mimeType
+      let mimeType = 'image/jpeg'; // default
+      if (selectedAvatar.mimeType) {
+        mimeType = selectedAvatar.mimeType;
+      } else if (selectedAvatar.uri) {
+        const uri = selectedAvatar.uri.toLowerCase();
+        if (uri.endsWith('.png')) {
+          mimeType = 'image/png';
+        } else if (uri.endsWith('.jpg') || uri.endsWith('.jpeg')) {
+          mimeType = 'image/jpeg';
+        } else if (uri.endsWith('.webp')) {
+          mimeType = 'image/webp';
+        }
+      }
+
+      // Generate file name
+      const fileName = selectedAvatar.fileName || 
+                      selectedAvatar.uri.split('/').pop() || 
+                      `avatar_${Date.now()}.${mimeType.split('/')[1]}`;
+
       const avatarFile = {
         uri: selectedAvatar.uri,
-        type: 'image/jpeg',
-        name: 'avatar.jpg',
+        type: mimeType,
+        name: fileName,
       };
-      await profileService.updateAvatar(avatarFile);
-      const freshProfile = await profileService.getCurrentUserProfile();
-      if (freshProfile) {
-        setUser(freshProfile);
-        setFormData({
-          fullName: freshProfile.user?.full_name || '',
-          email: freshProfile.user?.email || '',
-          phone: freshProfile.user?.phone || '',
-          studentId: freshProfile.user?.student_id || '',
-          emergencyContact: freshProfile.rider_profile?.emergency_contact || '',
-        });
+
+      console.log('Avatar file prepared:', avatarFile);
+
+      const response = await profileService.updateAvatar(avatarFile);
+      console.log('Avatar upload response:', response);
+
+      // Refresh profile to get updated avatar URL
+      try {
+        const freshProfile = await profileService.getCurrentUserProfile();
+        if (freshProfile) {
+          setUser(freshProfile);
+          setFormData({
+            fullName: freshProfile.user?.full_name || '',
+            email: freshProfile.user?.email || '',
+            phone: freshProfile.user?.phone || '',
+            studentId: freshProfile.user?.student_id || '',
+            emergencyContact: freshProfile.rider_profile?.emergency_contact || '',
+          });
+
+          // Also update authService user data
+          try {
+            if (authService.saveUserToStorage) {
+              await authService.saveUserToStorage(freshProfile);
+            }
+          } catch (authError) {
+            console.warn('Could not update authService user data:', authError);
+          }
+        }
+      } catch (refreshError) {
+        console.warn('Could not refresh profile after avatar update:', refreshError);
       }
+
       setSelectedAvatar(null);
       Alert.alert('Thành công', 'Ảnh đại diện đã được cập nhật.');
     } catch (error) {
+      console.error('Upload avatar error:', error);
+      console.error('Error details:', {
+        message: error.message,
+        status: error.status,
+        data: error.data,
+        stack: error.stack,
+      });
+
       let errorMessage = 'Không thể cập nhật ảnh đại diện';
+      
       if (error instanceof ApiError) {
-        errorMessage = error.message || errorMessage;
+        if (error.status === 400) {
+          errorMessage = error.message || 'File ảnh không hợp lệ. Vui lòng chọn ảnh khác.';
+        } else if (error.status === 401) {
+          errorMessage = 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
+        } else if (error.status >= 500) {
+          errorMessage = 'Lỗi máy chủ. Vui lòng thử lại sau.';
+        } else {
+          errorMessage = error.message || errorMessage;
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
       }
+
       Alert.alert('Lỗi', errorMessage);
     } finally {
       setUploadingAvatar(false);
@@ -152,6 +225,7 @@ const EditProfileScreen = ({ navigation }) => {
   };
 
   const saveProfile = async () => {
+    // Validation
     if (!formData.fullName.trim()) {
       Alert.alert('Lỗi', 'Vui lòng nhập họ và tên');
       return;
@@ -167,21 +241,108 @@ const EditProfileScreen = ({ navigation }) => {
 
     setSaving(true);
     try {
+      // Prepare payload with camelCase format (backend expects camelCase)
+      // Backend UpdateProfileRequest uses camelCase: fullName, phone, studentId, emergencyContact
       const payload = {
-        fullName: formData.fullName,
-        phone: formData.phone,
-        studentId: formData.studentId,
-        emergencyContact: formData.emergencyContact,
+        fullName: formData.fullName.trim(),
       };
-      await profileService.updateProfile(payload);
+
+      // Email is typically not updatable via profile endpoint, but include if backend needs it
+      // Note: Email updates usually require separate verification flow
+      
+      // Add optional fields only if they have values (backend handles null/empty)
+      if (formData.phone && formData.phone.trim()) {
+        payload.phone = formData.phone.trim();
+      }
+
+      if (formData.studentId && formData.studentId.trim()) {
+        payload.studentId = formData.studentId.trim();
+      }
+
+      if (formData.emergencyContact && formData.emergencyContact.trim()) {
+        payload.emergencyContact = formData.emergencyContact.trim();
+      }
+
+      console.log('Updating profile with payload:', JSON.stringify(payload, null, 2));
+      
+      const response = await profileService.updateProfile(payload);
+      console.log('Profile update response:', response);
+
+      // Refresh profile to get latest data and sync with authService
+      try {
+        const freshProfile = await profileService.getCurrentUserProfile();
+        if (freshProfile) {
+          setUser(freshProfile);
+          setFormData({
+            fullName: freshProfile.user?.full_name || '',
+            email: freshProfile.user?.email || '',
+            phone: freshProfile.user?.phone || '',
+            studentId: freshProfile.user?.student_id || '',
+            emergencyContact: freshProfile.rider_profile?.emergency_contact || '',
+          });
+          
+          // Also update authService currentUser if available
+          try {
+            if (authService.saveUserToStorage) {
+              await authService.saveUserToStorage(freshProfile);
+            }
+          } catch (authError) {
+            console.warn('Could not update authService user data:', authError);
+          }
+        }
+      } catch (refreshError) {
+        console.warn('Could not refresh profile after update:', refreshError);
+      }
+
       Alert.alert('Thành công', 'Thông tin hồ sơ đã được cập nhật.', [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
     } catch (error) {
+      console.error('Save profile error:', error);
+      console.error('Error details:', {
+        message: error.message,
+        status: error.status,
+        data: error.data,
+        stack: error.stack,
+      });
+      
       let message = 'Không thể cập nhật hồ sơ';
+      
       if (error instanceof ApiError) {
-        message = error.message || message;
+        // Handle specific error cases
+        if (error.status === 400) {
+          // Check for specific validation errors
+          if (error.data?.message) {
+            message = error.data.message;
+          } else if (error.message) {
+            message = error.message;
+          } else {
+            message = 'Thông tin không hợp lệ. Vui lòng kiểm tra lại.';
+          }
+        } else if (error.status === 401) {
+          message = 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
+        } else if (error.status === 403) {
+          message = 'Bạn không có quyền thực hiện thao tác này.';
+        } else if (error.status === 404) {
+          message = 'Không tìm thấy tài khoản.';
+        } else if (error.status === 409) {
+          // Conflict - phone or student ID already exists
+          if (error.data?.message) {
+            message = error.data.message;
+          } else if (error.message) {
+            message = error.message;
+          } else {
+            message = 'Số điện thoại hoặc mã sinh viên đã được sử dụng bởi tài khoản khác.';
+          }
+        } else if (error.status >= 500) {
+          message = 'Lỗi máy chủ. Vui lòng thử lại sau.';
+        } else {
+          message = error.message || message;
+        }
+      } else if (error.message) {
+        message = error.message;
       }
+      
       Alert.alert('Lỗi', message);
     } finally {
       setSaving(false);

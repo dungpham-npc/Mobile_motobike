@@ -124,13 +124,35 @@ class ApiService {
   // Generic API request method with auto token refresh
   async request(endpoint, options = {}) {
     const url = `${this.baseURL}${endpoint}`;
+    
+    // Prepare headers - don't set Content-Type for FormData (let React Native handle it)
+    let headers = {};
+    const isFormData = options.body instanceof FormData;
+    
+    if (!isFormData) {
+      headers = this.getAuthHeaders();
+    } else {
+      // For FormData, only set Accept and Authorization
+      headers['Accept'] = 'application/json';
+      if (this.token) {
+        headers['Authorization'] = `Bearer ${this.token}`;
+      }
+    }
+    
     let config = {
-      headers: this.getAuthHeaders(),
       ...options,
+      headers: {
+        ...headers,
+        ...(options.headers || {}),
+      },
     };
 
     try {
-      console.log(`API Request: ${config.method || 'GET'} ${url}`);
+      console.log(`API Request: ${config.method || 'GET'} ${url}`, {
+        isFormData,
+        hasBody: !!config.body,
+        headers: Object.keys(config.headers),
+      });
       
       let response = await fetch(url, config);
       let data = await this.parseResponse(response);
@@ -144,7 +166,15 @@ class ApiService {
           await this.refreshAccessToken();
           
           // Retry the original request with new token
-          config.headers = this.getAuthHeaders();
+          // Handle FormData headers correctly
+          if (isFormData) {
+            config.headers = {
+              'Accept': 'application/json',
+              'Authorization': `Bearer ${this.token}`,
+            };
+          } else {
+            config.headers = this.getAuthHeaders();
+          }
           response = await fetch(url, config);
           data = await this.parseResponse(response);
           
