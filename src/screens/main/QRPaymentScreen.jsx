@@ -74,15 +74,17 @@ const QRPaymentScreen = ({ navigation, route }) => {
 
     try {
       // Use new API - no userId needed, uses authentication
-      const result = await paymentService.initiateTopUp(
-        validAmount,
-        'PAYOS',
-        'mssus://payment/success', // Mobile deep link for success
-        'mssus://payment/cancel'   // Mobile deep link for cancel
-      );
+      const result = await paymentService.initiateTopUp(validAmount);
 
       if (result.success) {
-        setPaymentData(result.data);
+        // Merge backend response với các field tiện dụng cho UI
+        setPaymentData({
+          ...result.data,
+          qrCode: result.qrCode,
+          paymentUrl: result.paymentUrl,
+          orderCode: result.orderCode,
+          amount: validAmount,
+        });
         
         // Mở PayOS checkout URL
         const supported = await Linking.canOpenURL(result.paymentUrl);

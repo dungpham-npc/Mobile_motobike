@@ -6,7 +6,7 @@ import { createBottomTabNavigator, useBottomTabBarHeight } from '@react-navigati
 import { PaperProvider } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts, Inter_400Regular, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
-import { View, ActivityIndicator, Platform } from 'react-native';
+import { View, ActivityIndicator, Platform, Linking } from 'react-native';
 import { colors } from './src/theme/designTokens';
 import authService from './src/services/authService';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -159,6 +159,49 @@ export default function App() {
 
   useEffect(() => {
     initializeApp();
+  }, []);
+
+  // Handle PayOS deep links: mssus-iat-rs-app://wallet/topup/success|cancel
+  useEffect(() => {
+    const handleDeepLink = (eventOrUrl) => {
+      const url = typeof eventOrUrl === 'string' ? eventOrUrl : eventOrUrl?.url;
+      if (!url) return;
+
+      try {
+        if (url.includes('wallet/topup/success')) {
+          // Điều hướng về tab Wallet, có thể truyền trạng thái nếu cần
+          navigationRef.current?.navigate('Main', {
+            screen: 'Wallet',
+            params: { topupStatus: 'success' },
+          });
+        } else if (url.includes('wallet/topup/cancel')) {
+          navigationRef.current?.navigate('Main', {
+            screen: 'Wallet',
+            params: { topupStatus: 'cancel' },
+          });
+        }
+      } catch (e) {
+        console.error('Deep link handling error:', e);
+      }
+    };
+
+    // Xử lý URL khi app được mở từ trạng thái đóng (cold start)
+    (async () => {
+      try {
+        const initialUrl = await Linking.getInitialURL();
+        if (initialUrl) {
+          handleDeepLink(initialUrl);
+        }
+      } catch (e) {
+        console.error('Error getting initial URL:', e);
+      }
+    })();
+
+    // Lắng nghe URL khi app đang mở
+    const subscription = Linking.addEventListener('url', handleDeepLink);
+    return () => {
+      subscription?.remove?.();
+    };
   }, []);
 
   const initializeApp = async () => {

@@ -9,15 +9,26 @@ class PaymentService {
   // Initiate wallet top-up (New API)
   async initiateTopUp(amount, paymentMethod = 'PAYOS', returnUrl = null, cancelUrl = null) {
     try {
-      // For mobile app, we can use deep links or custom schemes
-      const mobileReturnUrl = returnUrl || 'mssus://payment/success';
-      const mobileCancelUrl = cancelUrl || 'mssus://payment/cancel';
+      // For mobile app, we use deep links based on the Expo scheme in app.json
+      // app.json → expo.scheme = "mssus-iat-rs-app"
+      const APP_SCHEME = 'mssus-iat-rs-app';
+
+      const mobileReturnUrl =
+        returnUrl || `${APP_SCHEME}://wallet/topup/success`;
+      const mobileCancelUrl =
+        cancelUrl || `${APP_SCHEME}://wallet/topup/cancel`;
+
+      // Simple client-side idempotency key (backend will also validate)
+      const idempotencyKey = `topup-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2)}`;
 
       const requestBody = {
         amount: amount,
         paymentMethod: paymentMethod,
         returnUrl: mobileReturnUrl,
-        cancelUrl: mobileCancelUrl
+        cancelUrl: mobileCancelUrl,
+        idempotencyKey,
       };
 
       const response = await this.apiService.post(
@@ -27,12 +38,13 @@ class PaymentService {
 
       return {
         success: true,
-        data: response,
-        paymentUrl: response.checkoutUrl || response.paymentUrl,
-        qrCode: response.qrCode,
-        orderCode: response.orderCode,
-        amount: response.amount,
-        status: response.status,
+        data: response, // TopUpInitResponse from backend
+        // Backend fields: transactionRef, paymentUrl, qrCodeUrl, deepLink, status, expirySeconds
+        paymentUrl: response.paymentUrl || response.checkoutUrl,
+        qrCode: response.qrCodeUrl || response.qrCode,
+        orderCode: response.transactionRef || response.orderCode,
+        status: response.status || 'PENDING',
+        expirySeconds: response.expirySeconds ?? null,
         message: response.message || 'Đã tạo link thanh toán thành công'
       };
     } catch (error) {
