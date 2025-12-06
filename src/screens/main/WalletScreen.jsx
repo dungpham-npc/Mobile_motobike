@@ -19,6 +19,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Animatable from 'react-native-animatable';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useFocusEffect } from '@react-navigation/native';
 
 import ModernButton from '../../components/ModernButton.jsx';
@@ -26,35 +27,19 @@ import CleanCard from '../../components/ui/CleanCard.jsx';
 import GlassHeader from '../../components/ui/GlassHeader.jsx';
 import AppBackground from '../../components/layout/AppBackground.jsx';
 import paymentService from '../../services/paymentService';
-import bankService from '../../services/bankService';
 import authService from '../../services/authService';
 import { ApiError } from '../../services/api';
 import { colors } from '../../theme/designTokens';
 
 const WalletScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
+  const tabBarHeight = useBottomTabBarHeight();
   const [user, setUser] = useState(null);
   const [walletData, setWalletData] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [showTopUpModal, setShowTopUpModal] = useState(false);
-  const [topUpAmount, setTopUpAmount] = useState('');
   const [loadingTransactions, setLoadingTransactions] = useState(false);
-  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
-  const [withdrawData, setWithdrawData] = useState({
-    amount: '',
-    bankName: '',
-    bankBin: '',
-    bankAccountNumber: '',
-    accountHolderName: '',
-    mode: 'AUTOMATIC', // AUTOMATIC or MANUAL
-  });
-  const [banks, setBanks] = useState([]);
-  const [loadingBanks, setLoadingBanks] = useState(false);
-  const [showBankPicker, setShowBankPicker] = useState(false);
-
-  const quickTopUpAmounts = [50000, 100000, 200000, 500000, 1000000];
 
   useEffect(() => {
     loadWalletData();
@@ -67,26 +52,6 @@ const WalletScreen = ({ navigation }) => {
     }, [])
   );
 
-  // Load banks when withdraw modal opens
-  useEffect(() => {
-    if (showWithdrawModal && banks.length === 0) {
-      loadBanks();
-    }
-  }, [showWithdrawModal]);
-
-  const loadBanks = async () => {
-    try {
-      setLoadingBanks(true);
-      const supportedBanks = await bankService.getSupportedBanks();
-      setBanks(supportedBanks || []);
-    } catch (error) {
-      console.error('Error loading banks:', error);
-      // Fallback to empty array
-      setBanks([]);
-    } finally {
-      setLoadingBanks(false);
-    }
-  };
 
   const loadWalletData = async () => {
     try {
@@ -157,140 +122,6 @@ const WalletScreen = ({ navigation }) => {
     }
   };
 
-  const handleQuickTopUp = (amount) => {
-    navigation.navigate('QRPayment', { amount, type: 'topup' });
-  };
-
-  const handleCustomTopUp = () => {
-    const amount = parseInt(topUpAmount, 10);
-
-    if (!amount || amount <= 0) {
-      Alert.alert('Lỗi', 'Vui lòng nhập số tiền hợp lệ');
-      return;
-    }
-
-    try {
-      paymentService.validateAmount(amount);
-      setShowTopUpModal(false);
-      setTopUpAmount('');
-      navigation.navigate('QRPayment', { amount, type: 'topup' });
-    } catch (error) {
-      Alert.alert('Lỗi', error.message);
-    }
-  };
-
-  const handleWithdraw = async () => {
-    const { amount, bankName, bankBin, bankAccountNumber, accountHolderName, mode } = withdrawData;
-
-    if (!amount || !bankName || !bankBin || !bankAccountNumber || !accountHolderName) {
-      Alert.alert('Lỗi', 'Vui lòng nhập đầy đủ thông tin');
-      return;
-    }
-
-    const withdrawAmount = parseInt(amount, 10);
-    if (!withdrawAmount || withdrawAmount <= 0) {
-      Alert.alert('Lỗi', 'Vui lòng nhập số tiền hợp lệ');
-      return;
-    }
-
-    if (withdrawAmount < 50000) {
-      Alert.alert('Lỗi', 'Số tiền rút tối thiểu là 50.000 VNĐ');
-      return;
-    }
-
-    const availableBalance = walletData?.availableBalance ?? walletData?.available_balance ?? 0;
-    if (withdrawAmount > availableBalance) {
-      Alert.alert('Lỗi', 'Số dư không đủ để thực hiện giao dịch');
-      return;
-    }
-
-    if (!/^\d{6}$/.test(bankBin)) {
-      Alert.alert('Lỗi', 'Mã BIN ngân hàng phải là 6 chữ số');
-      return;
-    }
-
-    if (!/^\d{9,16}$/.test(bankAccountNumber)) {
-      Alert.alert('Lỗi', 'Số tài khoản ngân hàng không hợp lệ (9-16 chữ số)');
-      return;
-    }
-
-    if (accountHolderName.length < 2) {
-      Alert.alert('Lỗi', 'Tên chủ tài khoản phải có ít nhất 2 ký tự');
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const result = await paymentService.initiatePayout(
-        withdrawAmount,
-        bankName,
-        bankBin,
-        bankAccountNumber,
-        accountHolderName,
-        mode
-      );
-
-      if (result.success) {
-        Alert.alert(
-          'Thành công',
-          result.message || 'Đã gửi yêu cầu rút tiền. Giao dịch sẽ được xử lý trong 1-3 ngày làm việc.',
-          [{
-            text: 'OK',
-            onPress: async () => {
-              setShowWithdrawModal(false);
-              setWithdrawData({
-                amount: '',
-                bankName: '',
-                bankBin: '',
-                bankAccountNumber: '',
-                accountHolderName: '',
-                mode: 'AUTOMATIC',
-              });
-              // Refresh wallet data to update pending balance
-              await loadWalletData();
-            },
-          }]
-        );
-      }
-    } catch (error) {
-      console.error('Withdraw error:', error);
-      let errorMessage = 'Không thể thực hiện giao dịch rút tiền';
-      if (error instanceof ApiError) {
-        switch (error.status) {
-          case 400:
-            errorMessage = 'Thông tin không hợp lệ';
-            break;
-          case 403:
-            errorMessage = 'Chỉ tài xế mới có thể rút tiền';
-            break;
-          case 401:
-            errorMessage = 'Phiên đăng nhập đã hết hạn';
-            break;
-          default:
-            errorMessage = error.message || errorMessage;
-        }
-      }
-      Alert.alert('Lỗi', errorMessage);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleWithdrawInputChange = (field, value) => {
-    setWithdrawData((prev) => {
-      const updated = { ...prev, [field]: value };
-      return updated;
-    });
-  };
-
-  const handleBankSelect = (bank) => {
-    setWithdrawData((prev) => ({
-      ...prev,
-      bankName: bank.name || bank.shortName || bank.short_name || '',
-      bankBin: bank.bin || '',
-    }));
-    setShowBankPicker(false);
-  };
 
   const getTransactionIcon = (type, direction) => {
     const normalized = normalizeDirection(direction);
@@ -594,7 +425,7 @@ const WalletScreen = ({ navigation }) => {
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
             contentContainerStyle={[
               styles.scrollContent,
-              { paddingBottom: 160 + Math.max(insets.bottom, 0) },
+              { paddingBottom: (tabBarHeight || 80) + 40 + Math.max(insets.bottom, 0) },
             ]}
           >
             <View style={styles.headerSpacing}>
@@ -637,34 +468,23 @@ const WalletScreen = ({ navigation }) => {
                   )}
 
                   <View style={styles.actionButtons}>
-                    <TouchableOpacity style={styles.actionButton} onPress={() => setShowTopUpModal(true)}>
+                    <TouchableOpacity 
+                      style={styles.actionButton} 
+                      onPress={() => navigation.navigate('QRPayment', { type: 'topup' })}
+                    >
                       <Icon name="add" size={20} color="#0F172A" />
                       <Text style={styles.actionButtonText}>Nạp tiền</Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity style={styles.actionButton} onPress={() => setShowWithdrawModal(true)}>
+                    <TouchableOpacity 
+                      style={styles.actionButton} 
+                      onPress={() => navigation.navigate('Withdraw', { walletData })}
+                    >
                       <Icon name="send" size={20} color="#0F172A" />
                       <Text style={styles.actionButtonText}>Rút tiền</Text>
                     </TouchableOpacity>
                   </View>
                 </LinearGradient>
-              </CleanCard>
-            </Animatable.View>
-
-            <Animatable.View animation="fadeInUp" duration={500} delay={80}>
-              <CleanCard style={styles.cardSpacing} contentStyle={styles.quickCardContent}>
-                <Text style={styles.sectionTitle}>Nạp nhanh</Text>
-                <View style={styles.quickAmountsList}>
-                  {quickTopUpAmounts.map((amount) => (
-                    <TouchableOpacity
-                      key={amount}
-                      style={styles.quickAmountItem}
-                      onPress={() => handleQuickTopUp(amount)}
-                    >
-                      <Text style={styles.quickAmountText}>{paymentService.formatCurrency(amount)}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
               </CleanCard>
             </Animatable.View>
 
@@ -766,161 +586,11 @@ const WalletScreen = ({ navigation }) => {
             </Animatable.View>
           </ScrollView>
 
-          {renderTopUpModal()}
-          {renderWithdrawModal()}
         </SafeAreaView>
       </KeyboardAvoidingView>
     </AppBackground>
   );
 
-  function renderTopUpModal() {
-    return (
-      <Modal
-        visible={showTopUpModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowTopUpModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={{ width: '100%' }}
-          >
-            <Animatable.View animation="fadeInUp" duration={300} style={styles.modalContainer}>
-            <Text style={styles.modalTitle}>Nạp tiền ví</Text>
-            <Text style={styles.modalSubtitle}>Nhập số tiền muốn nạp</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Ví dụ: 100000"
-              placeholderTextColor={colors.textMuted}
-              keyboardType="number-pad"
-              value={topUpAmount}
-              onChangeText={setTopUpAmount}
-            />
-
-            <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.modalCancel} onPress={() => setShowTopUpModal(false)}>
-                <Text style={styles.modalCancelText}>Hủy</Text>
-              </TouchableOpacity>
-              <ModernButton title="Tiếp tục" size="small" onPress={handleCustomTopUp} />
-            </View>
-            </Animatable.View>
-          </KeyboardAvoidingView>
-        </View>
-      </Modal>
-    );
-  }
-
-  function renderWithdrawModal() {
-    return (
-      <Modal
-        visible={showWithdrawModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowWithdrawModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          
-          <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-            style={{ flex: 1, justifyContent: "flex-end" }}
-            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 50}
-          >
-            <Animatable.View animation="fadeInUp" duration={300} style={styles.modalContainer}>
-  
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Rút tiền</Text>
-                <TouchableOpacity onPress={() => setShowWithdrawModal(false)}>
-                  <Icon name="close" size={24} color={colors.textSecondary} />
-                </TouchableOpacity>
-              </View>
-  
-              <Text style={styles.modalSubtitle}>Nhập thông tin chuyển khoản</Text>
-  
-              {/* 👇 CHỖ QUAN TRỌNG — sửa ScrollView thành KeyboardAwareScrollView */}
-              <ScrollView
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-                contentContainerStyle={{ paddingBottom: 40 }}
-              >
-  
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder="Số tiền muốn rút"
-                  placeholderTextColor={colors.textMuted}
-                  keyboardType="number-pad"
-                  value={withdrawData.amount}
-                  onChangeText={(value) => handleWithdrawInputChange("amount", value)}
-                />
-  
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Ngân hàng *</Text>
-  
-                  <TouchableOpacity
-                    style={styles.bankSelector}
-                    onPress={() => setShowBankPicker(true)}
-                  >
-                    <Text
-                      style={[
-                        styles.bankSelectorText,
-                        !withdrawData.bankName && styles.bankSelectorPlaceholder,
-                      ]}
-                    >
-                      {withdrawData.bankName || "Chọn ngân hàng"}
-                    </Text>
-                    <Icon name="arrow-drop-down" size={24} color={colors.textSecondary} />
-                  </TouchableOpacity>
-  
-                  {withdrawData.bankBin ? (
-                    <Text style={styles.helperText}>✓ Mã BIN: {withdrawData.bankBin}</Text>
-                  ) : null}
-                </View>
-  
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder="Số tài khoản"
-                  placeholderTextColor={colors.textMuted}
-                  keyboardType="number-pad"
-                  value={withdrawData.bankAccountNumber}
-                  onChangeText={(value) => handleWithdrawInputChange("bankAccountNumber", value)}
-                />
-  
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder="Tên chủ tài khoản"
-                  placeholderTextColor={colors.textMuted}
-                  value={withdrawData.accountHolderName}
-                  onChangeText={(value) =>
-                    handleWithdrawInputChange("accountHolderName", value)
-                  }
-                />
-  
-                {/* Mode selection giữ nguyên */}
-                <View style={styles.modeSelector}>
-                  {/** ... unchanged ... */}
-                </View>
-              </ScrollView>
-  
-              <View style={styles.modalButtons}>
-                <TouchableOpacity
-                  style={styles.modalCancel}
-                  onPress={() => setShowWithdrawModal(false)}
-                >
-                  <Text style={styles.modalCancelText}>Hủy</Text>
-                </TouchableOpacity>
-                <ModernButton title="Xác nhận" size="small" onPress={handleWithdraw} />
-              </View>
-  
-            </Animatable.View>
-          </KeyboardAvoidingView>
-        </View>
-  
-        {/* Bank Picker giữ nguyên */}
-        {/* ... */}
-      </Modal>
-    );
-  }
-  
 };
 
 const styles = StyleSheet.create({
@@ -999,34 +669,11 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_600SemiBold',
     color: '#0F172A',
   },
-  quickCardContent: {
-    paddingVertical: 20,
-    paddingHorizontal: 20,
-  },
   sectionTitle: {
     fontSize: 16,
     fontFamily: 'Inter_600SemiBold',
     color: colors.textPrimary,
     marginBottom: 16,
-  },
-  quickAmountsList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  quickAmountItem: {
-    minWidth: 110,
-    paddingVertical: 12,
-    borderRadius: 16,
-    alignItems: 'center',
-    backgroundColor: colors.glassLight,
-    borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.25)',
-  },
-  quickAmountText: {
-    fontSize: 14,
-    fontFamily: 'Inter_600SemiBold',
-    color: colors.textPrimary,
   },
   statsCardContent: {
     paddingVertical: 22,

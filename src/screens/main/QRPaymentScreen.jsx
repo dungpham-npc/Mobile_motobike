@@ -12,6 +12,7 @@ import {
   Image,
   Dimensions,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -20,9 +21,13 @@ import QRCode from 'react-native-qrcode-svg';
 import * as Animatable from 'react-native-animatable';
 
 import ModernButton from '../../components/ModernButton.jsx';
+import GlassHeader, { SoftBackHeader } from '../../components/ui/GlassHeader.jsx';
+import AppBackground from '../../components/layout/AppBackground.jsx';
+import CleanCard from '../../components/ui/CleanCard.jsx';
 import paymentService from '../../services/paymentService';
 import authService from '../../services/authService';
 import { ApiError } from '../../services/api';
+import { colors } from '../../theme/designTokens';
 
 const { width } = Dimensions.get('window');
 
@@ -42,6 +47,57 @@ const QRPaymentScreen = ({ navigation, route }) => {
   useEffect(() => {
     loadUserProfile();
   }, []);
+
+  // Tự động tạo payment link khi có amount từ route params
+  useEffect(() => {
+    // Kiểm tra xem có amount từ route params không (không phải giá trị mặc định)
+    // Nếu route.params có amount và khác undefined, nghĩa là được truyền từ TopUpScreen
+    const hasAmountFromRoute = route.params?.amount !== undefined && route.params?.amount !== null;
+    
+    if (hasAmountFromRoute && paymentStatus === 'input' && !paymentData) {
+      // Delay một chút để đảm bảo component đã mount
+      const timer = setTimeout(() => {
+        handleAutoCreatePayment(route.params.amount);
+      }, 500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [route.params?.amount]);
+
+  const handleAutoCreatePayment = async (amountValue) => {
+    const validAmount = validateAndSetAmount(amountValue.toString());
+    if (!validAmount) return;
+
+    setAmount(validAmount.toString());
+    setLoading(true);
+    setPaymentStatus('pending');
+
+    try {
+      const result = await paymentService.initiateTopUp(validAmount);
+
+      if (result.success) {
+        setPaymentData({
+          ...result.data,
+          qrCode: result.qrCode,
+          paymentUrl: result.paymentUrl,
+          orderCode: result.orderCode,
+          amount: validAmount,
+        });
+        
+        // Mở PayOS checkout URL
+        const supported = await Linking.canOpenURL(result.paymentUrl);
+        if (supported) {
+          await Linking.openURL(result.paymentUrl);
+        } else {
+          Alert.alert('Lỗi', 'Không thể mở link thanh toán');
+        }
+      }
+    } catch (error) {
+      console.error('Auto create payment link error:', error);
+      setPaymentStatus('failed');
+      setLoading(false);
+    }
+  };
 
   const loadUserProfile = async () => {
     try {
@@ -152,7 +208,11 @@ const QRPaymentScreen = ({ navigation, route }) => {
   };
 
   const renderAmountInput = () => {
-    if (paymentStatus !== 'input') return null;
+    // Chỉ hiển thị UI chọn số tiền khi:
+    // 1. paymentStatus là 'input' VÀ
+    // 2. Không có amount từ route params
+    const hasAmountFromRoute = route.params?.amount !== undefined && route.params?.amount !== null;
+    if (paymentStatus !== 'input' || hasAmountFromRoute) return null;
 
     return (
       <View style={styles.amountSection}>
@@ -409,56 +469,57 @@ const QRPaymentScreen = ({ navigation, route }) => {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <LinearGradient
-        colors={['#10412F', '#000000']}
-        style={styles.header}
+    <AppBackground>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
       >
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Icon name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Nạp tiền ví</Text>
-        <View style={styles.placeholder} />
-      </LinearGradient>
+        <SafeAreaView style={styles.container}>
+          <SoftBackHeader
+            title="Nạp tiền ví"
+            subtitle={paymentStatus === 'input' ? 'Chọn số tiền muốn nạp' : 'Thanh toán PayOS'}
+            onBackPress={() => navigation.goBack()}
+          />
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
-        {renderAmountInput()}
-        {renderPaymentContent()}
+          <ScrollView 
+            style={styles.content} 
+            showsVerticalScrollIndicator={false} 
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            {renderAmountInput()}
+            {renderPaymentContent()}
         
-        {/* Payment Instructions */}
-        {paymentStatus === 'pending' && (
-          <View style={styles.instructionsCard}>
-            <View style={styles.instructionsCardInner}>
-              <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, padding: 20 }}>
-                <Text style={styles.instructionsTitle}>Hướng dẫn thanh toán:</Text>
-                <View style={styles.instruction}>
-                  <Icon name="looks-one" size={20} color="#4CAF50" />
-                  <Text style={styles.instructionText}>Mở ứng dụng ngân hàng hoặc ví điện tử</Text>
-                </View>
-                <View style={styles.instruction}>
-                  <Icon name="looks-two" size={20} color="#4CAF50" />
-                  <Text style={styles.instructionText}>Quét mã QR PayOS phía trên</Text>
-                </View>
-                <View style={styles.instruction}>
-                  <Icon name="looks-3" size={20} color="#4CAF50" />
-                  <Text style={styles.instructionText}>Xác nhận thông tin và thanh toán</Text>
-                </View>
-                <View style={styles.instruction}>
-                  <Icon name="looks-4" size={20} color="#4CAF50" />
-                  <Text style={styles.instructionText}>Chờ hệ thống cập nhật số dư</Text>
-                </View>
-              </View>
-            </View>
-          </View>
-        )}
-
-        {renderActionButtons()}
-      </ScrollView>
-    </SafeAreaView>
+            {/* Payment Instructions */}
+            {paymentStatus === 'pending' && (
+              <Animatable.View animation="fadeInUp" duration={300} delay={200}>
+                <CleanCard style={styles.instructionsCard} contentStyle={styles.instructionsCardContent}>
+                  <Text style={styles.instructionsTitle}>Hướng dẫn thanh toán:</Text>
+                  <View style={styles.instruction}>
+                    <Icon name="looks-one" size={20} color="#4CAF50" />
+                    <Text style={styles.instructionText}>Mở ứng dụng ngân hàng hoặc ví điện tử</Text>
+                  </View>
+                  <View style={styles.instruction}>
+                    <Icon name="looks-two" size={20} color="#4CAF50" />
+                    <Text style={styles.instructionText}>Quét mã QR PayOS phía trên</Text>
+                  </View>
+                  <View style={styles.instruction}>
+                    <Icon name="looks-3" size={20} color="#4CAF50" />
+                    <Text style={styles.instructionText}>Xác nhận thông tin và thanh toán</Text>
+                  </View>
+                  <View style={styles.instruction}>
+                    <Icon name="looks-4" size={20} color="#4CAF50" />
+                    <Text style={styles.instructionText}>Chờ hệ thống cập nhật số dư</Text>
+                  </View>
+                </CleanCard>
+              </Animatable.View>
+            )}
+            
+            {renderActionButtons()}
+          </ScrollView>
+        </SafeAreaView>
+      </KeyboardAvoidingView>
+    </AppBackground>
   );
 };
 
@@ -487,7 +548,10 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  scrollContent: {
     padding: 20,
+    paddingBottom: 40,
   },
   sectionTitle: {
     fontSize: 18,

@@ -596,8 +596,7 @@ const HomeScreen = ({ navigation }) => {
                 <TouchableOpacity
                   style={styles.topUpButton}
                   onPress={() => {
-                    // Wallet functionality moved to profile or removed
-                    Alert.alert('Thông báo', 'Chức năng nạp tiền đang được cập nhật');
+                    navigation.navigate('QRPayment', { type: 'topup' });
                   }}
                 >
                   <Text style={styles.topUpButtonText}>Nạp tiền</Text>

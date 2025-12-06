@@ -25,6 +25,8 @@ import ProfileScreen from './src/screens/main/ProfileScreen.jsx';
 import RideHistoryScreen from './src/screens/main/RideHistoryScreen.jsx';
 import RideDetailsScreen from './src/screens/RideDetailsScreen.jsx';
 import QRPaymentScreen from './src/screens/main/QRPaymentScreen.jsx';
+import TopUpScreen from './src/screens/main/TopUpScreen.jsx';
+import WithdrawScreen from './src/screens/main/WithdrawScreen.jsx';
 import SwitchModeScreen from './src/screens/profile/SwitchModeScreen.jsx';
 import AccountVerificationScreen from './src/screens/profile/AccountVerificationScreen.jsx';
 import RideBookingScreen from './src/screens/ride/RideBookingScreen.jsx';
@@ -249,6 +251,8 @@ export default function App() {
             <Stack.Screen name="RideDetails" component={RideDetailsScreen} />
             <Stack.Screen name="RideRating" component={RideRatingScreen} />
             <Stack.Screen name="QRPayment" component={QRPaymentScreen} />
+            <Stack.Screen name="TopUp" component={TopUpScreen} />
+            <Stack.Screen name="Withdraw" component={WithdrawScreen} />
             <Stack.Screen name="SwitchMode" component={SwitchModeScreen} />
             <Stack.Screen name="AccountVerification" component={AccountVerificationScreen} />
             <Stack.Screen name="StudentVerification" component={StudentVerificationScreen} />
