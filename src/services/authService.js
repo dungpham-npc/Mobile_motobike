@@ -494,17 +494,48 @@ class AuthService {
            this.currentUser?.rider_profile !== null;
   }
 
+  // Normalize verification status strings
+  normalizeStatus(status) {
+    return typeof status === 'string' ? status.trim().toLowerCase() : '';
+  }
+
   // Check if user has active rider profile (verified)
   isRiderVerified() {
-    return this.currentUser?.rider_profile?.status === 'ACTIVE' ||
-           this.currentUser?.rider_profile?.status === 'active';
+    // 1) Check rider_profile status (if backend returns it)
+    const riderProfileStatus =
+      this.currentUser?.rider_profile?.status ||
+      this.currentUser?.riderProfile?.status ||
+      this.currentUser?.verification?.rider_profile_status ||
+      this.currentUser?.verification?.riderProfileStatus;
+
+    if (this.normalizeStatus(riderProfileStatus) && ['active', 'verified', 'approved'].includes(this.normalizeStatus(riderProfileStatus))) {
+      return true;
+    }
+
+    // 2) Check campus verification flags
+    const campusVerified =
+      this.currentUser?.verification?.is_campus_verified ??
+      this.currentUser?.verification?.campus_verified ??
+      this.currentUser?.user?.campus_verified;
+
+    if (campusVerified === true) {
+      return true;
+    }
+
+    // 3) Check student verification status
+    const studentStatus = this.currentUser?.verification?.student?.status;
+    if (this.normalizeStatus(studentStatus) && ['approved', 'verified', 'active'].includes(this.normalizeStatus(studentStatus))) {
+      return true;
+    }
+
+    // 4) Fallback: check if rider_profile exists (legacy behavior)
+    return this.currentUser?.rider_profile !== null;
   }
 
   // Check if user needs rider verification
   needsRiderVerification() {
-    // User has rider profile but it's not active (needs verification)
-    return this.currentUser?.rider_profile !== null && 
-           !this.isRiderVerified();
+    const hasRiderProfile = this.currentUser?.rider_profile !== null || this.currentUser?.verification?.rider_profile_status;
+    return hasRiderProfile && !this.isRiderVerified();
   }
 
   // Check if user can use rider features

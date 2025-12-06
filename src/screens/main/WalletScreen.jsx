@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Animatable from 'react-native-animatable';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 
 import ModernButton from '../../components/ModernButton.jsx';
 import CleanCard from '../../components/ui/CleanCard.jsx';
@@ -58,6 +59,13 @@ const WalletScreen = ({ navigation }) => {
   useEffect(() => {
     loadWalletData();
   }, []);
+
+  // Reload ví mỗi khi màn hình được focus (ví dụ sau khi quay lại từ PayOS deep link)
+  useFocusEffect(
+    useCallback(() => {
+      loadWalletData();
+    }, [])
+  );
 
   // Load banks when withdraw modal opens
   useEffect(() => {
@@ -574,9 +582,9 @@ const WalletScreen = ({ navigation }) => {
   return (
     <AppBackground>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : -40}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 40}
       >
         <SafeAreaView style={[styles.safe, { paddingBottom: Math.max(insets.bottom, 16) }]}>
           <StatusBar barStyle="dark-content" />

@@ -10,8 +10,7 @@ import {
   ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Icon from 'react-native-vector-icons/MaterialIcons';
-import { LinearGradient } from 'expo-linear-gradient';
+import Feather from 'react-native-vector-icons/Feather';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Animatable from 'react-native-animatable';
@@ -20,9 +19,12 @@ import ModernButton from '../../components/ModernButton.jsx';
 import verificationService from '../../services/verificationService';
 import AppBackground from '../../components/layout/AppBackground.jsx';
 import CleanCard from '../../components/ui/CleanCard.jsx';
-import { colors, gradients } from '../../theme/designTokens';
+import { SoftBackHeader } from '../../components/ui/GlassHeader.jsx';
+import useSoftHeaderSpacing from '../../hooks/useSoftHeaderSpacing.js';
+import { colors, spacing, typography } from '../../theme/designTokens';
 
 const StudentVerificationScreen = ({ navigation, route }) => {
+  const { headerOffset, contentPaddingTop } = useSoftHeaderSpacing({ contentExtra: 24 });
   const [frontImage, setFrontImage] = useState(null);
   const [backImage, setBackImage] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -31,6 +33,7 @@ const StudentVerificationScreen = ({ navigation, route }) => {
   const guardMode = route?.params?.guardMode === true;
   const verificationStatus = currentVerification?.status?.toLowerCase();
   const isPending = verificationStatus === 'pending';
+  const isVerified = ['approved', 'verified', 'active'].includes(verificationStatus || '');
 
   const getStatusColor = (verification) => {
     const status = verification?.status?.toLowerCase();
@@ -354,252 +357,229 @@ const StudentVerificationScreen = ({ navigation, route }) => {
     }
   };
 
+  const handleBackPress = () => {
+    if (guardMode) {
+      navigation.replace('Login');
+    } else if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.replace('Main');
+    }
+  };
+
   return (
     <AppBackground>
       <SafeAreaView style={styles.safe}>
+        <SoftBackHeader
+          floating
+          topOffset={headerOffset}
+          title="Xác minh thẻ sinh viên"
+          onBackPress={handleBackPress}
+        />
+
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, { paddingTop: contentPaddingTop }]}
         >
-        {guardMode && (
-          <CleanCard contentStyle={[styles.cardWrapper, styles.statusCard]}>
-            <View style={styles.statusRow}>
-              <View style={[styles.statusDot, { backgroundColor: getStatusColor(currentVerification) }]} />
-              <View style={{ flex: 1 }}>
+          {/* Status Card (Guard Mode) */}
+          {guardMode && currentVerification && (
+            <Animatable.View animation="fadeInDown" duration={400} useNativeDriver>
+              <CleanCard contentStyle={styles.statusCard}>
+                <View style={styles.statusHeader}>
+                  <View style={styles.statusIconContainer}>
+                    <Feather 
+                      name={isPending ? "clock" : currentVerification?.status?.toLowerCase() === 'rejected' ? "x-circle" : "check-circle"} 
+                      size={20} 
+                      color={getStatusColor(currentVerification)} 
+                    />
+                  </View>
+                  <View style={styles.statusInfo}>
                 <Text style={styles.statusLabel}>Trạng thái xác minh</Text>
                 <Text style={[styles.statusValue, { color: getStatusColor(currentVerification) }]}>
                   {getStatusText(currentVerification)}
                 </Text>
               </View>
               <TouchableOpacity onPress={loadCurrentVerification} style={styles.refreshBtn}>
-                <Icon name="refresh" size={16} color={colors.textPrimary} />
-                <Text style={styles.refreshText}>Làm mới</Text>
+                    <Feather name="refresh-cw" size={16} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
             {currentVerification?.status?.toLowerCase() === 'rejected' && (
+                  <View style={styles.rejectionContainer}>
+                    <Text style={styles.rejectionLabel}>Lý do từ chối:</Text>
               <Text style={styles.rejectionText}>
-                Lý do: {currentVerification.rejection_reason || currentVerification.rejectionReason || 'Không rõ lý do'}
+                      {currentVerification.rejection_reason || currentVerification.rejectionReason || 'Không rõ lý do'}
               </Text>
+                  </View>
             )}
-            {['approved', 'verified', 'active'].includes((currentVerification?.status || '').toLowerCase()) && (
+            {isVerified && (
               <ModernButton
-                title="Tiếp tục sử dụng ứng dụng"
+                title="Tiếp tục"
                 onPress={() => navigation.replace('Main')}
-                style={{ marginTop: 12 }}
+                style={styles.continueButton}
+                icon="arrow-forward"
               />
             )}
           </CleanCard>
-        )}
-
-        {/* Header */}
-        <LinearGradient
-          colors={gradients.hero}
-          style={styles.header}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-        >
-          <View style={styles.headerContent}>
-            <TouchableOpacity 
-              style={styles.backButton}
-              onPress={() => {
-                if (guardMode) {
-                  navigation.replace('Login');
-                } else if (navigation.canGoBack()) {
-                  navigation.goBack();
-                } else {
-                  navigation.replace('Main');
-                }
-              }}
-            >
-              <Icon name="arrow-back" size={24} color="#fff" />
-            </TouchableOpacity>
-            <Text style={styles.headerTitle}>Xác minh sinh viên</Text>
-            <View style={styles.placeholder} />
-          </View>
-        </LinearGradient>
-
-        <View style={styles.content}>
-          {isPending && (
-            <CleanCard style={styles.cardWrapper} contentStyle={styles.pendingCard}>
-              <Icon name="hourglass-top" size={24} color={colors.primary} />
-              <Text style={styles.pendingTitle}>Đang chờ duyệt</Text>
-              <Text style={styles.pendingText}>
-                Hồ sơ của bạn đã được gửi và đang được quản trị viên kiểm tra. Vui lòng chờ 1-2 ngày làm việc. Bạn sẽ nhận thông báo khi kết quả có sẵn.
-              </Text>
-              <TouchableOpacity onPress={loadCurrentVerification} style={styles.refreshBtn}>
-                <Icon name="refresh" size={18} color={colors.textPrimary} />
-                <Text style={styles.refreshText}>Làm mới trạng thái</Text>
-              </TouchableOpacity>
-            </CleanCard>
+            </Animatable.View>
           )}
 
-          {!isPending && (
-            <>
-              {/* Instructions */}
-              <Animatable.View animation="fadeInUp" style={styles.cardWrapper}>
-                <CleanCard contentStyle={styles.instructionsCard}>
-                  <View style={styles.instructionsIcon}>
-                    <Icon name="school" size={40} color={colors.primary} />
-                  </View>
-                  <Text style={styles.instructionsTitle}>Xác minh tài khoản sinh viên</Text>
-                  <Text style={styles.instructionsText}>
-                    Để sử dụng dịch vụ, bạn cần xác minh là sinh viên của trường. 
-                    Vui lòng chụp ảnh thẻ sinh viên rõ nét.
+          {/* Hero Card - Only show if not verified and not pending */}
+          {!isPending && !isVerified && (
+            <Animatable.View animation="fadeInDown" duration={500} useNativeDriver>
+              <CleanCard contentStyle={styles.heroCard}>
+                <View style={styles.heroIcon}>
+                  <Feather name="credit-card" size={28} color={colors.primary} />
+                </View>
+                <View style={styles.heroContent}>
+                  <Text style={styles.heroTitle}>Xác minh tài khoản sinh viên</Text>
+                  <Text style={styles.heroSubtitle}>
+                    Để sử dụng dịch vụ, bạn cần xác minh là sinh viên của trường. Vui lòng chụp ảnh thẻ sinh viên rõ nét cả hai mặt.
                   </Text>
+                </View>
+              </CleanCard>
+            </Animatable.View>
+          )}
+
+          {/* Pending Status Card */}
+          {isPending && (
+            <Animatable.View animation="fadeInUp" duration={500} useNativeDriver>
+              <CleanCard variant="accent" contentStyle={styles.pendingCard}>
+                <View style={styles.pendingIcon}>
+                  <Feather name="hourglass" size={32} color={colors.accent} />
+                </View>
+                <Text style={styles.pendingTitle}>Đang chờ duyệt</Text>
+                <Text style={styles.pendingText}>
+                  Hồ sơ của bạn đã được gửi và đang được quản trị viên kiểm tra. Vui lòng chờ 1-2 ngày làm việc. Bạn sẽ nhận thông báo khi kết quả có sẵn.
+                </Text>
+                <TouchableOpacity onPress={loadCurrentVerification} style={styles.refreshStatusBtn}>
+                  <Feather name="refresh-cw" size={16} color={colors.accent} />
+                  <Text style={styles.refreshStatusText}>Làm mới trạng thái</Text>
+                </TouchableOpacity>
+              </CleanCard>
+            </Animatable.View>
+          )}
+
+          {/* Requirements Card - Only show if not verified and not pending */}
+          {!isPending && !isVerified && (
+            <Animatable.View animation="fadeInUp" delay={100} duration={500} useNativeDriver>
+              <CleanCard contentStyle={styles.requirementsCard}>
+                <View style={styles.cardHeader}>
+                  <Feather name="info" size={18} color={colors.primary} />
+                  <Text style={styles.cardTitle}>Yêu cầu ảnh thẻ sinh viên</Text>
+                </View>
+                <View style={styles.requirementsList}>
+                  {[
+                    'Ảnh rõ nét, không bị mờ',
+                    'Hiển thị đầy đủ thông tin trên thẻ',
+                    'Thẻ còn hiệu lực',
+                    'Định dạng JPG, PNG (tối đa 5MB)'
+                  ].map((req, index) => (
+                    <View key={index} style={styles.requirementItem}>
+                      <Feather name="check-circle" size={16} color={colors.primary} />
+                      <Text style={styles.requirementText}>{req}</Text>
+                    </View>
+                  ))}
+                </View>
+              </CleanCard>
+            </Animatable.View>
+          )}
+
+          {/* Upload Sections - Only show if not verified and not pending */}
+          {!isPending && !isVerified && (
+            <>
+              {/* Front Image Card */}
+              <Animatable.View animation="fadeInUp" delay={200} duration={500} useNativeDriver>
+                <CleanCard contentStyle={styles.uploadCard}>
+                  <Text style={styles.uploadCardTitle}>Mặt trước thẻ sinh viên</Text>
+                  {frontImage ? (
+                    <View style={styles.imagePreviewContainer}>
+                      <Image source={{ uri: frontImage.uri }} style={styles.imagePreview} />
+                      <TouchableOpacity 
+                        style={styles.changeImageBtn}
+                        onPress={() => showImagePicker('front')}
+                      >
+                        <Feather name="edit-2" size={16} color={colors.accent} />
+                        <Text style={styles.changeImageText}>Đổi ảnh</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+            <TouchableOpacity 
+                      style={styles.uploadButton}
+                      onPress={() => showImagePicker('front')}
+                    >
+                      <View style={styles.uploadButtonContent}>
+                        <Feather name="camera" size={32} color={colors.primary} />
+                        <Text style={styles.uploadButtonText}>Chụp mặt trước</Text>
+                        <Text style={styles.uploadButtonSubtext}>Chụp ảnh hoặc chọn từ thư viện</Text>
+                      </View>
+            </TouchableOpacity>
+                  )}
                 </CleanCard>
               </Animatable.View>
 
-              {/* Requirements */}
-              <CleanCard style={styles.cardWrapper} contentStyle={styles.requirementsCard}>
-                <Text style={styles.cardTitle}>Yêu cầu ảnh thẻ sinh viên</Text>
-                <View style={styles.requirementsList}>
-                  <View style={styles.requirementItem}>
-                    <Icon name="check-circle" size={20} color={colors.primary} />
-                    <Text style={styles.requirementText}>Ảnh rõ nét, không bị mờ</Text>
-                  </View>
-                  <View style={styles.requirementItem}>
-                    <Icon name="check-circle" size={20} color={colors.primary} />
-                    <Text style={styles.requirementText}>Hiển thị đầy đủ thông tin trên thẻ</Text>
-                  </View>
-                  <View style={styles.requirementItem}>
-                    <Icon name="check-circle" size={20} color={colors.primary} />
-                    <Text style={styles.requirementText}>Thẻ còn hiệu lực</Text>
-                  </View>
-                  <View style={styles.requirementItem}>
-                    <Icon name="check-circle" size={20} color={colors.primary} />
-                    <Text style={styles.requirementText}>Định dạng JPG, PNG (tối đa 5MB)</Text>
-                  </View>
-                </View>
-              </CleanCard>
-
-              {/* Front Image Upload Section */}
-              <CleanCard style={styles.cardWrapper} contentStyle={styles.uploadSection}>
-                <Text style={styles.cardTitle}>Mặt trước thẻ sinh viên</Text>
-                
-                {frontImage ? (
-                  <Animatable.View animation="fadeIn" style={styles.selectedImageContainer}>
-                    <Image source={{ uri: frontImage.uri }} style={styles.selectedImage} />
+              {/* Back Image Card */}
+              <Animatable.View animation="fadeInUp" delay={300} duration={500} useNativeDriver>
+                <CleanCard contentStyle={styles.uploadCard}>
+                  <Text style={styles.uploadCardTitle}>Mặt sau thẻ sinh viên</Text>
+                  {backImage ? (
+                    <View style={styles.imagePreviewContainer}>
+                      <Image source={{ uri: backImage.uri }} style={styles.imagePreview} />
+                      <TouchableOpacity 
+                        style={styles.changeImageBtn}
+                        onPress={() => showImagePicker('back')}
+                      >
+                        <Feather name="edit-2" size={16} color={colors.accent} />
+                        <Text style={styles.changeImageText}>Đổi ảnh</Text>
+                      </TouchableOpacity>
+          </View>
+                  ) : (
                     <TouchableOpacity 
-                      style={styles.changeImageButton}
-                      onPress={() => showImagePicker('front')}
-                    >
-                      <Icon name="edit" size={20} color={colors.primary} />
-                      <Text style={styles.changeImageText}>Đổi ảnh</Text>
-                    </TouchableOpacity>
-                  </Animatable.View>
-                ) : (
-                  <TouchableOpacity 
-                    style={styles.uploadButton}
-                    onPress={() => showImagePicker('front')}
-                  >
-                    <LinearGradient
-                      colors={gradients.pillActive}
-                      style={styles.uploadButtonGradient}
-                    >
-                      <Icon name="camera-alt" size={48} color="#fff" />
-                      <Text style={styles.uploadButtonText}>Chụp mặt trước</Text>
-                      <Text style={styles.uploadButtonSubtext}>Chụp ảnh hoặc chọn từ thư viện</Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                )}
-              </CleanCard>
-
-              {/* Back Image Upload Section */}
-              <CleanCard style={styles.cardWrapper} contentStyle={styles.uploadSection}>
-                <Text style={styles.cardTitle}>Mặt sau thẻ sinh viên</Text>
-                
-                {backImage ? (
-                  <Animatable.View animation="fadeIn" style={styles.selectedImageContainer}>
-                    <Image source={{ uri: backImage.uri }} style={styles.selectedImage} />
-                    <TouchableOpacity 
-                      style={styles.changeImageButton}
+                      style={styles.uploadButton}
                       onPress={() => showImagePicker('back')}
                     >
-                      <Icon name="edit" size={20} color={colors.primary} />
-                      <Text style={styles.changeImageText}>Đổi ảnh</Text>
+                      <View style={styles.uploadButtonContent}>
+                        <Feather name="camera" size={32} color={colors.primary} />
+                        <Text style={styles.uploadButtonText}>Chụp mặt sau</Text>
+                        <Text style={styles.uploadButtonSubtext}>Chụp ảnh hoặc chọn từ thư viện</Text>
+                      </View>
                     </TouchableOpacity>
-                  </Animatable.View>
-                ) : (
-                  <TouchableOpacity 
-                    style={styles.uploadButton}
-                    onPress={() => showImagePicker('back')}
-                  >
-                    <LinearGradient
-                      colors={gradients.pillActive}
-                      style={styles.uploadButtonGradient}
-                    >
-                      <Icon name="camera-alt" size={48} color="#fff" />
-                      <Text style={styles.uploadButtonText}>Chụp mặt sau</Text>
-                      <Text style={styles.uploadButtonSubtext}>Chụp ảnh hoặc chọn từ thư viện</Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                )}
-              </CleanCard>
-
-              {/* Sample Image */}
-              <CleanCard style={styles.cardWrapper} contentStyle={styles.sampleSection}>
-                <Text style={styles.cardTitle}>Ảnh mẫu</Text>
-                  <View style={styles.sampleImageContainer}>
-                  <View style={styles.sampleImagePlaceholder}>
-                    <Icon name="credit-card" size={64} color="rgba(148,163,184,0.6)" />
-                    <Text style={styles.sampleImageText}>Mẫu thẻ sinh viên</Text>
-                  </View>
-                  <Text style={styles.sampleDescription}>
-                    Chụp ảnh thẻ sinh viên như mẫu trên, đảm bảo thông tin rõ ràng và đầy đủ
-                  </Text>
-                </View>
-              </CleanCard>
+                  )}
+                </CleanCard>
+              </Animatable.View>
 
               {/* Submit Button */}
-              <ModernButton
-                title={uploading ? "Đang gửi..." : "Gửi để xác minh"}
-                onPress={submitVerification}
-                disabled={!frontImage || !backImage || uploading}
-                icon={uploading ? null : "send"}
-                style={styles.submitButton}
-              />
-
-              {/* Skip Button for Testing */}
-              {__DEV__ && !guardMode && (
-                <TouchableOpacity 
-                  style={styles.skipButton}
-                  onPress={() => {
-                    Alert.alert(
-                      'Bỏ qua xác minh',
-                      'Bạn có chắc chắn muốn bỏ qua xác minh? (Chỉ để test)',
-                      [
-                        { text: 'Hủy', style: 'cancel' },
-                        { 
-                          text: 'Bỏ qua', 
-                          onPress: () => navigation.replace('Main')
-                        }
-                      ]
-                    );
-                  }}
-                >
-                  <Text style={styles.skipButtonText}>Bỏ qua tạm thời (Test)</Text>
-                </TouchableOpacity>
-              )}
+              <Animatable.View animation="fadeInUp" delay={400} duration={500} useNativeDriver>
+                <ModernButton
+                  title={uploading ? "Đang gửi..." : "Gửi để xác minh"}
+                  onPress={submitVerification}
+                  disabled={!frontImage || !backImage || uploading}
+                  icon={uploading ? null : "send"}
+                  style={styles.submitButton}
+                />
+              </Animatable.View>
             </>
           )}
 
+          {/* Info Card - Only show if not verified and not pending */}
+          {!isPending && !isVerified && (
+            <Animatable.View animation="fadeInUp" delay={500} duration={500} useNativeDriver>
+              <CleanCard variant="accent" contentStyle={styles.infoCard}>
+                <Feather name="info" size={18} color={colors.accent} />
+                <Text style={styles.infoText}>
+                  Quá trình xác minh có thể mất 1-2 ngày làm việc. Chúng tôi sẽ thông báo kết quả qua email.
+                </Text>
+              </CleanCard>
+            </Animatable.View>
+          )}
+
+          {/* Loading Overlay */}
           {uploading && (
-            <View style={styles.uploadingContainer}>
-              <ActivityIndicator size="small" color={colors.primary} />
+            <View style={styles.uploadingOverlay}>
+              <ActivityIndicator size="large" color={colors.primary} />
               <Text style={styles.uploadingText}>Đang tải lên và xử lý...</Text>
             </View>
           )}
-
-          {/* Info */}
-          <CleanCard style={styles.cardWrapper} contentStyle={styles.infoCard}>
-            <Icon name="info" size={20} color="#F59E0B" />
-            <Text style={styles.infoText}>
-              Quá trình xác minh có thể mất 1-2 ngày làm việc. 
-              Chúng tôi sẽ thông báo kết quả qua email.
-            </Text>
-          </CleanCard>
-        </View>
-      </ScrollView>
+        </ScrollView>
       </SafeAreaView>
     </AppBackground>
   );
@@ -610,270 +590,270 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingTop: 12,
-    paddingBottom: 140,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.xl * 2,
+    gap: spacing.md,
   },
-  header: {
-    marginHorizontal: 20,
-    marginTop: 16,
-    marginBottom: 24,
-    borderRadius: 28,
-    paddingVertical: 22,
-    paddingHorizontal: 20,
+  // Status Card (Guard Mode)
+  statusCard: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    gap: spacing.sm,
   },
-  headerContent: {
+  statusHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  statusIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: 'rgba(16,65,47,0.1)',
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  backButton: {
-    padding: 8,
-    backgroundColor: colors.glassLight,
-    borderRadius: 16,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#F8FAFC',
-  },
-  placeholder: {
-    width: 36,
-  },
-  content: {
+  statusInfo: {
     flex: 1,
-    paddingHorizontal: 20,
+    gap: 4,
   },
-  cardWrapper: {
-    marginBottom: 20,
+  statusLabel: {
+    fontSize: typography.small,
+    color: colors.textMuted,
+    fontFamily: 'Inter_400Regular',
   },
-  instructionsCard: {
+  statusValue: {
+    fontSize: typography.body,
+    fontFamily: 'Inter_700Bold',
+  },
+  refreshBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: colors.glassLight,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 24,
   },
-  instructionsIcon: {
+  rejectionContainer: {
+    marginTop: spacing.sm,
+    padding: spacing.sm,
+    backgroundColor: 'rgba(239,68,68,0.08)',
+    borderRadius: 12,
+    gap: 4,
+  },
+  rejectionLabel: {
+    fontSize: typography.small,
+    color: '#EF4444',
+    fontFamily: 'Inter_600SemiBold',
+  },
+  rejectionText: {
+    fontSize: typography.small,
+    color: colors.textSecondary,
+    fontFamily: 'Inter_400Regular',
+    lineHeight: 18,
+  },
+  continueButton: {
+    marginTop: spacing.sm,
+  },
+  // Hero Card
+  heroCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.md,
+  },
+  heroIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    backgroundColor: 'rgba(16,65,47,0.12)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  heroContent: {
+    flex: 1,
+    gap: spacing.xs,
+  },
+  heroTitle: {
+    fontSize: typography.subheading,
+    fontFamily: 'Inter_700Bold',
+    color: colors.textPrimary,
+  },
+  heroSubtitle: {
+    fontSize: typography.body,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textSecondary,
+    lineHeight: 22,
+  },
+  // Pending Card
+  pendingCard: {
+    alignItems: 'center',
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.md,
+    gap: spacing.sm,
+  },
+  pendingIcon: {
     width: 64,
     height: 64,
     borderRadius: 20,
-    backgroundColor: 'rgba(24,78,63,0.6)',
+    backgroundColor: 'rgba(59,130,246,0.12)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 18,
   },
-  instructionsTitle: {
-    fontSize: 22,
-    fontWeight: '700',
+  pendingTitle: {
+    fontSize: typography.subheading,
+    fontFamily: 'Inter_700Bold',
     color: colors.textPrimary,
-    marginBottom: 12,
-    textAlign: 'center',
+    marginTop: spacing.xs,
   },
-  instructionsText: {
-    fontSize: 15,
+  pendingText: {
+    fontSize: typography.body,
+    fontFamily: 'Inter_400Regular',
     color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
   },
+  refreshStatusBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+  },
+  refreshStatusText: {
+    fontSize: typography.small,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.accent,
+  },
+  // Requirements Card
   requirementsCard: {
-    paddingHorizontal: 20,
-    paddingVertical: 24,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    gap: spacing.sm,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.xs,
   },
   cardTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: typography.body,
+    fontFamily: 'Inter_700Bold',
     color: colors.textPrimary,
-    marginBottom: 18,
   },
-  requirementsList: {},
+  requirementsList: {
+    gap: spacing.sm,
+  },
   requirementItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 14,
+    gap: spacing.sm,
   },
   requirementText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginLeft: 12,
     flex: 1,
+    fontSize: typography.small,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textSecondary,
+    lineHeight: 20,
   },
-  uploadSection: {
-    paddingHorizontal: 20,
-    paddingVertical: 24,
+  // Upload Card
+  uploadCard: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    gap: spacing.sm,
+  },
+  uploadCardTitle: {
+    fontSize: typography.body,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
   },
   uploadButton: {
-    borderRadius: 18,
-    overflow: 'hidden',
-  },
-  uploadButtonGradient: {
-    padding: 32,
-    alignItems: 'center',
-    borderWidth: 1.5,
+    borderRadius: 16,
+    borderWidth: 2,
     borderColor: colors.border,
     borderStyle: 'dashed',
-    borderRadius: 18,
+    backgroundColor: colors.glassLight,
+    overflow: 'hidden',
+  },
+  uploadButtonContent: {
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.md,
+    alignItems: 'center',
+    gap: spacing.xs,
   },
   uploadButtonText: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: typography.body,
+    fontFamily: 'Inter_600SemiBold',
     color: colors.textPrimary,
-    marginTop: 14,
+    marginTop: spacing.xs,
   },
   uploadButtonSubtext: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginTop: 4,
+    fontSize: typography.small,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textMuted,
   },
-  selectedImageContainer: {
-    alignItems: 'center',
+  imagePreviewContainer: {
+    gap: spacing.sm,
   },
-  selectedImage: {
+  imagePreview: {
     width: '100%',
     height: 200,
     borderRadius: 16,
     resizeMode: 'cover',
+    backgroundColor: colors.glassLight,
   },
-  changeImageButton: {
+  changeImageBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 12,
-    paddingVertical: 6,
-    paddingHorizontal: 8,
+    alignSelf: 'flex-start',
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
   },
   changeImageText: {
-    fontSize: 15,
+    fontSize: typography.small,
+    fontFamily: 'Inter_600SemiBold',
     color: colors.accent,
-    marginLeft: 8,
-    fontWeight: '600',
   },
-  sampleSection: {
-    paddingHorizontal: 20,
-    paddingVertical: 22,
-  },
-  sampleImageContainer: {
-    alignItems: 'center',
-  },
-  sampleImagePlaceholder: {
-    width: '100%',
-    height: 160,
-    backgroundColor: colors.glassLight,
-    borderRadius: 18,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    borderStyle: 'dashed',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  sampleImageText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginTop: 8,
-  },
-  sampleDescription: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 21,
-  },
+  // Submit Button
   submitButton: {
-    marginBottom: 16,
+    marginTop: spacing.xs,
   },
-  uploadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-  uploadingText: {
-    fontSize: 14,
-    color: colors.primary,
-    marginLeft: 8,
-  },
-  statusCard: {
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    marginBottom: 12,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  statusDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  statusLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  statusValue: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  refreshBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    backgroundColor: 'rgba(148,163,184,0.18)',
-  },
-  refreshText: {
-    fontSize: 12,
-    color: colors.textPrimary,
-    fontWeight: '600',
-  },
-  rejectionText: {
-    marginTop: 8,
-    color: '#EF4444',
-    fontSize: 13,
-  },
-  pendingCard: {
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-    alignItems: 'flex-start',
-    gap: 10,
-  },
-  pendingTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: colors.textPrimary,
-  },
-  pendingText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    lineHeight: 20,
-  },
+  // Info Card
   infoCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    paddingHorizontal: 18,
-    paddingVertical: 18,
-    backgroundColor: 'rgba(59,130,246,0.12)',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
   },
   infoText: {
     flex: 1,
-    fontSize: 14,
+    fontSize: typography.small,
+    fontFamily: 'Inter_400Regular',
     color: colors.textSecondary,
-    marginLeft: 12,
     lineHeight: 20,
   },
-  skipButton: {
-    backgroundColor: colors.glassLight,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
+  // Uploading Overlay
+  uploadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 10,
+    gap: spacing.sm,
   },
-  skipButtonText: {
+  uploadingText: {
+    fontSize: typography.body,
+    fontFamily: 'Inter_500Medium',
     color: colors.textPrimary,
-    fontSize: 14,
-    fontWeight: '600',
   },
 });
 

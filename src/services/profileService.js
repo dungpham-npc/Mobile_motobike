@@ -1,8 +1,25 @@
 import apiService,{ApiError} from './api';
 import { ENDPOINTS } from '../config/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
+
+// Storage keys
+const STORAGE_KEYS = {
+  USER_DATA: 'user_data',
+};
+
 class ProfileService {
   constructor() {
     this.apiService = apiService;
+  }
+
+  // Save user data to storage
+  async saveUserToStorage(userData) {
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(userData));
+    } catch (error) {
+      console.error('Error saving user to storage:', error);
+    }
   }
 
   async getCurrentUserProfile() {
@@ -19,8 +36,16 @@ class ProfileService {
   // Update profile
   async updateProfile(profileData) {
     try {
-      const response = await apiService.put('/me', profileData);
+      console.log('Updating profile with data:', profileData);
+      // Backend endpoint is /me/profile, not /me
+      const response = await apiService.put('/me/profile', profileData);
+      console.log('Profile update response:', response);
+      
+      // Save updated user data to storage
+      if (response) {
       await this.saveUserToStorage(response);
+      }
+      
       return response;
     } catch (error) {
       console.error('Update profile error:', error);
@@ -45,26 +70,72 @@ class ProfileService {
   // Update avatar
   async updateAvatar(avatarFile) {
     try {
+      console.log('Updating avatar with file:', {
+        uri: avatarFile.uri,
+        type: avatarFile.type,
+        name: avatarFile.name,
+        platform: Platform.OS,
+      });
+
       // Create FormData with correct field name for backend
       const formData = new FormData();
       
+      // Prepare file object - handle URI differently for iOS vs Android
+      let fileUri = avatarFile.uri;
+      
+      // For iOS, remove file:// prefix
+      // For Android, keep file:// prefix (React Native handles it)
+      if (Platform.OS === 'ios' && fileUri.startsWith('file://')) {
+        fileUri = fileUri.replace('file://', '');
+      }
+      // Android: keep file:// as React Native fetch handles it correctly
+      
+      // Ensure MIME type is valid
+      let mimeType = avatarFile.type || 'image/jpeg';
+      if (mimeType === 'image') {
+        // If type is just "image", determine from extension
+        const uri = avatarFile.uri.toLowerCase();
+        if (uri.endsWith('.png')) {
+          mimeType = 'image/png';
+        } else if (uri.endsWith('.jpg') || uri.endsWith('.jpeg')) {
+          mimeType = 'image/jpeg';
+        } else {
+          mimeType = 'image/jpeg'; // default
+        }
+      }
+      
       const fileObject = {
-        uri: avatarFile.uri,
-        type: avatarFile.type || 'image/jpeg',
+        uri: fileUri,
+        type: mimeType,
         name: avatarFile.name || 'avatar.jpg',
       };
       
-      // For React Native iOS, we might need to use different format
-      if (Platform.OS === 'ios') {
-        fileObject.uri = avatarFile.uri.replace('file://', '');
-      }
+      console.log('File object prepared:', fileObject);
       
+      // Backend expects field name 'avatar'
       formData.append('avatar', fileObject);
       
+      console.log('FormData created, calling uploadFile...');
+      
+      // Backend endpoint accepts both PUT and POST
       const response = await apiService.uploadFile('/me/update-avatar', null, formData);
+      
+      console.log('Avatar update response:', response);
+      
+      // Save updated user data to storage
+      if (response) {
+        await this.saveUserToStorage(response);
+      }
+      
       return response;
     } catch (error) {
       console.error('Update avatar error:', error);
+      console.error('Error details:', {
+        message: error.message,
+        status: error.status,
+        data: error.data,
+        stack: error.stack,
+      });
       throw error;
     }
   }

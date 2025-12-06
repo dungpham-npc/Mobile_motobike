@@ -2,7 +2,7 @@ import React from 'react';
 import { TouchableOpacity, Text, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import { colors, gradients, radii } from '../theme/designTokens';
+import { colors, gradients, radii, spacing, typography, shadows } from '../theme/designTokens';
 
 const ModernButton = ({ 
   title, 
@@ -63,11 +63,15 @@ const ModernButton = ({
       <TouchableOpacity
         onPress={onPress}
         disabled={disabled || loading}
-        style={[styles.primaryWrapper, getSizeStyle(), style]}
+        style={[styles.primaryWrapper, style]}
         {...props}
       >
         <LinearGradient
-          colors={disabled ? ['rgba(148,163,184,0.4)', 'rgba(148,163,184,0.25)'] : gradients.pillActive}
+          colors={
+            disabled
+              ? ['rgba(148,163,184,0.4)', 'rgba(148,163,184,0.25)']
+              : gradients.pillActive
+          }
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={[styles.gradientButton, getSizeStyle()]}
@@ -104,17 +108,14 @@ const ModernButton = ({
 
 const styles = StyleSheet.create({
   primaryWrapper: {
-    borderRadius: radii.lg,
+    alignSelf: 'stretch',
+    borderRadius: radii.xl,
     overflow: 'hidden',
-    shadowColor: 'rgba(163,177,198,0.65)',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.4,
-    shadowRadius: 18,
-    elevation: 6,
+    ...shadows.floating,
   },
   secondaryButton: {
     backgroundColor: colors.glassLight,
-    borderRadius: radii.lg,
+    borderRadius: radii.xl,
     borderWidth: 1,
     borderColor: colors.border,
     shadowColor: 'rgba(163,177,198,0.45)',
@@ -124,32 +125,32 @@ const styles = StyleSheet.create({
   },
   outlineButton: {
     backgroundColor: 'transparent',
-    borderRadius: radii.lg,
+    borderRadius: radii.xl,
     borderWidth: 2,
     borderColor: colors.primary,
   },
   ghostButton: {
     backgroundColor: 'transparent',
-    borderRadius: radii.lg,
+    borderRadius: radii.xl,
   },
   gradientButton: {
-    borderRadius: radii.lg,
+    borderRadius: radii.xl,
     justifyContent: 'center',
     alignItems: 'center',
   },
   smallButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    minHeight: 36,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    minHeight: 40,
   },
   mediumButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 24,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
     minHeight: 48,
   },
   largeButton: {
-    paddingVertical: 16,
-    paddingHorizontal: 32,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
     minHeight: 56,
   },
   buttonContent: {
@@ -159,26 +160,26 @@ const styles = StyleSheet.create({
   },
   primaryText: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: typography.body,
+    fontFamily: 'Inter_600SemiBold',
     textAlign: 'center',
   },
   secondaryText: {
     color: colors.textPrimary,
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: typography.body,
+    fontFamily: 'Inter_600SemiBold',
     textAlign: 'center',
   },
   outlineText: {
     color: colors.primary,
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: typography.body,
+    fontFamily: 'Inter_600SemiBold',
     textAlign: 'center',
   },
   ghostText: {
     color: colors.primary,
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: typography.body,
+    fontFamily: 'Inter_600SemiBold',
     textAlign: 'center',
   },
   textWithIcon: {

@@ -79,8 +79,11 @@ const LoginScreen = ({ navigation, route }) => {
     try {
       const result = await authService.login(trimmedEmail, password, targetProfile);
       if (result.success) {
-        const verification = result.user?.verification;
-        const campusVerified = verification?.is_campus_verified === true || verification?.campus_verified === true;
+        const userProfile = result.user;
+        const verification = userProfile?.verification;
+        const campusVerified =
+          verification?.is_campus_verified === true ||
+          verification?.campus_verified === true;
         const studentStatus = verification?.student?.status;
         const rejectionReason = verification?.student?.rejection_reason || verification?.student?.rejectionReason;
         const driverStatus =
@@ -111,7 +114,24 @@ const LoginScreen = ({ navigation, route }) => {
           return;
         }
 
-        // After email + campus verification, continue to main flows
+        // If user selects driver login but doesn't have driver profile, block navigation
+        if (targetProfile === 'driver') {
+          const hasDriverProfile =
+            !!userProfile?.driver_profile ||
+            !!userProfile?.driverProfile ||
+            Array.isArray(userProfile?.availableProfiles) &&
+              userProfile.availableProfiles.includes('driver');
+
+          if (!hasDriverProfile) {
+            Alert.alert(
+              'Chưa đăng ký tài khoản tài xế',
+              'Tài khoản của bạn hiện chỉ có hồ sơ hành khách. Vui lòng sử dụng chế độ hành khách hoặc hoàn tất đăng ký tài khoản tài xế trước khi đăng nhập với tư cách tài xế.'
+            );
+            return; // Stay on Login screen
+          }
+        }
+
+        // After email + campus verification and role checks, continue to main flows
         navigation.replace(targetProfile === 'driver' ? 'DriverMain' : 'Main');
       }
     } catch (error) {

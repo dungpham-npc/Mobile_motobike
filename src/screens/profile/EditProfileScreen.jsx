@@ -38,6 +38,12 @@ const EditProfileScreen = ({ navigation }) => {
     studentId: '',
     emergencyContact: '',
   });
+  const [errors, setErrors] = useState({
+    fullName: '',
+    phone: '',
+    studentId: '',
+    emergencyContact: '',
+  });
 
   useEffect(() => {
     loadUserProfile();
@@ -65,6 +71,9 @@ const EditProfileScreen = ({ navigation }) => {
 
   const updateFormData = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
+    if (errors[field]) {
+      setErrors((prev) => ({ ...prev, [field]: '' }));
+    }
   };
 
   const pickAvatar = async () => {
@@ -118,15 +127,55 @@ const EditProfileScreen = ({ navigation }) => {
   };
 
   const uploadAvatar = async () => {
-    if (!selectedAvatar) return;
+    if (!selectedAvatar) {
+      Alert.alert('Lỗi', 'Vui lòng chọn ảnh đại diện');
+      return;
+    }
+
     setUploadingAvatar(true);
     try {
+      console.log('Starting avatar upload...', {
+        uri: selectedAvatar.uri,
+        width: selectedAvatar.width,
+        height: selectedAvatar.height,
+        type: selectedAvatar.type,
+        mimeType: selectedAvatar.mimeType,
+        fileName: selectedAvatar.fileName,
+      });
+
+      // Determine MIME type from file extension or mimeType
+      let mimeType = 'image/jpeg'; // default
+      if (selectedAvatar.mimeType) {
+        mimeType = selectedAvatar.mimeType;
+      } else if (selectedAvatar.uri) {
+        const uri = selectedAvatar.uri.toLowerCase();
+        if (uri.endsWith('.png')) {
+          mimeType = 'image/png';
+        } else if (uri.endsWith('.jpg') || uri.endsWith('.jpeg')) {
+          mimeType = 'image/jpeg';
+        } else if (uri.endsWith('.webp')) {
+          mimeType = 'image/webp';
+        }
+      }
+
+      // Generate file name
+      const fileName = selectedAvatar.fileName || 
+                      selectedAvatar.uri.split('/').pop() || 
+                      `avatar_${Date.now()}.${mimeType.split('/')[1]}`;
+
       const avatarFile = {
         uri: selectedAvatar.uri,
-        type: 'image/jpeg',
-        name: 'avatar.jpg',
+        type: mimeType,
+        name: fileName,
       };
-      await profileService.updateAvatar(avatarFile);
+
+      console.log('Avatar file prepared:', avatarFile);
+
+      const response = await profileService.updateAvatar(avatarFile);
+      console.log('Avatar upload response:', response);
+
+      // Refresh profile to get updated avatar URL
+      try {
       const freshProfile = await profileService.getCurrentUserProfile();
       if (freshProfile) {
         setUser(freshProfile);
@@ -137,25 +186,109 @@ const EditProfileScreen = ({ navigation }) => {
           studentId: freshProfile.user?.student_id || '',
           emergencyContact: freshProfile.rider_profile?.emergency_contact || '',
         });
+
+          // Also update authService user data
+          try {
+            if (authService.saveUserToStorage) {
+              await authService.saveUserToStorage(freshProfile);
+            }
+          } catch (authError) {
+            console.warn('Could not update authService user data:', authError);
+          }
+        }
+      } catch (refreshError) {
+        console.warn('Could not refresh profile after avatar update:', refreshError);
       }
+
       setSelectedAvatar(null);
       Alert.alert('Thành công', 'Ảnh đại diện đã được cập nhật.');
     } catch (error) {
+      console.error('Upload avatar error:', error);
+      console.error('Error details:', {
+        message: error.message,
+        status: error.status,
+        data: error.data,
+        stack: error.stack,
+      });
+
       let errorMessage = 'Không thể cập nhật ảnh đại diện';
+      
       if (error instanceof ApiError) {
+        if (error.status === 400) {
+          errorMessage = error.message || 'File ảnh không hợp lệ. Vui lòng chọn ảnh khác.';
+        } else if (error.status === 401) {
+          errorMessage = 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
+        } else if (error.status >= 500) {
+          errorMessage = 'Lỗi máy chủ. Vui lòng thử lại sau.';
+        } else {
         errorMessage = error.message || errorMessage;
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
       }
+
       Alert.alert('Lỗi', errorMessage);
     } finally {
       setUploadingAvatar(false);
     }
   };
 
-  const saveProfile = async () => {
-    if (!formData.fullName.trim()) {
-      Alert.alert('Lỗi', 'Vui lòng nhập họ và tên');
-      return;
+  const validateProfile = () => {
+    const { fullName, phone, studentId, emergencyContact } = formData;
+    const newErrors = {
+      fullName: '',
+      phone: '',
+      studentId: '',
+      emergencyContact: '',
+    };
+    let isValid = true;
+
+    const trimmedName = fullName.trim();
+    if (!trimmedName) {
+      newErrors.fullName = 'Vui lòng nhập họ và tên';
+      isValid = false;
+    } else {
+      if (trimmedName.length < 2) {
+        newErrors.fullName = 'Họ và tên phải có ít nhất 2 ký tự';
+        isValid = false;
+      } else if (trimmedName.length > 100) {
+        newErrors.fullName = 'Họ và tên không được vượt quá 100 ký tự';
+        isValid = false;
+      } else if (
+        !/^[a-zA-ZàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđĐ\s'-]+$/.test(
+          trimmedName,
+        )
+      ) {
+        newErrors.fullName =
+          'Họ và tên chỉ được chứa chữ cái, khoảng trắng, dấu gạch ngang và ký tự tiếng Việt';
+        isValid = false;
+      }
     }
+
+    const trimmedPhone = phone.trim();
+    if (trimmedPhone && !/^[0-9]{9,11}$/.test(trimmedPhone)) {
+      newErrors.phone = 'Số điện thoại không hợp lệ (9-11 chữ số)';
+      isValid = false;
+    }
+
+    const trimmedEmergency = emergencyContact.trim();
+    if (trimmedEmergency && !/^[0-9]{9,11}$/.test(trimmedEmergency)) {
+      newErrors.emergencyContact = 'Số điện thoại khẩn cấp phải từ 9 đến 11 chữ số';
+      isValid = false;
+    }
+
+    const trimmedStudentId = studentId.trim();
+    if (trimmedStudentId && !/^[A-Za-z]{2}[0-9]{6}$/.test(trimmedStudentId)) {
+      newErrors.studentId = 'Mã số sinh viên phải gồm 2 chữ cái đầu và 6 chữ số (VD: SE123456)';
+      isValid = false;
+    }
+
+    setErrors(newErrors);
+    return isValid;
+  };
+
+  const saveProfile = async () => {
+    // Basic email presence/format check (email chỉ đọc nhưng vẫn đảm bảo hợp lệ)
     if (!formData.email.trim()) {
       Alert.alert('Lỗi', 'Vui lòng nhập email');
       return;
@@ -165,23 +298,116 @@ const EditProfileScreen = ({ navigation }) => {
       return;
     }
 
+    // Frontend validation for other fields
+    const isValid = validateProfile();
+    if (!isValid) {
+      return;
+    }
+
     setSaving(true);
     try {
+      // Prepare payload with camelCase format (backend expects camelCase)
+      // Backend UpdateProfileRequest uses camelCase: fullName, phone, studentId, emergencyContact
       const payload = {
-        fullName: formData.fullName,
-        phone: formData.phone,
-        studentId: formData.studentId,
-        emergencyContact: formData.emergencyContact,
+        fullName: formData.fullName.trim(),
       };
-      await profileService.updateProfile(payload);
+
+      // Email is typically not updatable via profile endpoint, but include if backend needs it
+      // Note: Email updates usually require separate verification flow
+      
+      // Add optional fields only if they have values (backend handles null/empty)
+      if (formData.phone && formData.phone.trim()) {
+        payload.phone = formData.phone.trim();
+      }
+
+      if (formData.studentId && formData.studentId.trim()) {
+        payload.studentId = formData.studentId.trim();
+      }
+
+      if (formData.emergencyContact && formData.emergencyContact.trim()) {
+        payload.emergencyContact = formData.emergencyContact.trim();
+      }
+
+      console.log('Updating profile with payload:', JSON.stringify(payload, null, 2));
+      
+      const response = await profileService.updateProfile(payload);
+      console.log('Profile update response:', response);
+
+      // Refresh profile to get latest data and sync with authService
+      try {
+        const freshProfile = await profileService.getCurrentUserProfile();
+        if (freshProfile) {
+          setUser(freshProfile);
+          setFormData({
+            fullName: freshProfile.user?.full_name || '',
+            email: freshProfile.user?.email || '',
+            phone: freshProfile.user?.phone || '',
+            studentId: freshProfile.user?.student_id || '',
+            emergencyContact: freshProfile.rider_profile?.emergency_contact || '',
+          });
+          
+          // Also update authService currentUser if available
+          try {
+            if (authService.saveUserToStorage) {
+              await authService.saveUserToStorage(freshProfile);
+            }
+          } catch (authError) {
+            console.warn('Could not update authService user data:', authError);
+          }
+        }
+      } catch (refreshError) {
+        console.warn('Could not refresh profile after update:', refreshError);
+      }
+
       Alert.alert('Thành công', 'Thông tin hồ sơ đã được cập nhật.', [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
     } catch (error) {
+      console.error('Save profile error:', error);
+      console.error('Error details:', {
+        message: error.message,
+        status: error.status,
+        data: error.data,
+        stack: error.stack,
+      });
+      
       let message = 'Không thể cập nhật hồ sơ';
+      
       if (error instanceof ApiError) {
+        // Handle specific error cases
+        if (error.status === 400) {
+          // Check for specific validation errors
+          if (error.data?.message) {
+            message = error.data.message;
+          } else if (error.message) {
+            message = error.message;
+          } else {
+            message = 'Thông tin không hợp lệ. Vui lòng kiểm tra lại.';
+          }
+        } else if (error.status === 401) {
+          message = 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
+        } else if (error.status === 403) {
+          message = 'Bạn không có quyền thực hiện thao tác này.';
+        } else if (error.status === 404) {
+          message = 'Không tìm thấy tài khoản.';
+        } else if (error.status === 409) {
+          // Conflict - phone or student ID already exists
+          if (error.data?.message) {
+            message = error.data.message;
+          } else if (error.message) {
+            message = error.message;
+          } else {
+            message = 'Số điện thoại hoặc mã sinh viên đã được sử dụng bởi tài khoản khác.';
+          }
+        } else if (error.status >= 500) {
+          message = 'Lỗi máy chủ. Vui lòng thử lại sau.';
+        } else {
         message = error.message || message;
+        }
+      } else if (error.message) {
+        message = error.message;
       }
+      
       Alert.alert('Lỗi', message);
     } finally {
       setSaving(false);
@@ -242,42 +468,82 @@ const EditProfileScreen = ({ navigation }) => {
 
             <CleanCard contentStyle={styles.formCard}>
               <Text style={styles.sectionHeading}>Thông tin cơ bản</Text>
-              <InputRow
-                icon="user"
-                placeholder="Họ và tên"
-                value={formData.fullName}
-                onChangeText={(v) => updateFormData('fullName', v)}
-              />
-              <InputRow
-                icon="mail"
-                placeholder="Email"
-                value={formData.email}
-                editable={false}
-              />
-              <InputRow
-                icon="phone"
-                placeholder="Số điện thoại"
-                value={formData.phone}
-                onChangeText={(v) => updateFormData('phone', v)}
-                keyboardType="phone-pad"
-              />
-              <InputRow
-                icon="id-card"
-                placeholder="Mã số sinh viên"
-                value={formData.studentId}
-                onChangeText={(v) => updateFormData('studentId', v)}
-              />
+
+              <View style={styles.fieldGroup}>
+                <InputRow
+                  icon="user"
+                  placeholder="Họ và tên"
+                  value={formData.fullName}
+                  onChangeText={(v) => updateFormData('fullName', v)}
+                  error={errors.fullName}
+                />
+                <Text style={[styles.errorText, !errors.fullName && styles.errorTextHidden]}>
+                  {errors.fullName || 'placeholder'}
+                </Text>
+              </View>
+
+              <View style={styles.fieldGroup}>
+                <InputRow
+                  icon="mail"
+                  placeholder="Email"
+                  value={formData.email}
+                  editable={false}
+                />
+                <Text style={[styles.errorText, styles.errorTextHidden]}>
+                  placeholder
+                </Text>
+              </View>
+
+              <View style={styles.fieldGroup}>
+                <InputRow
+                  icon="phone"
+                  placeholder="Số điện thoại"
+                  value={formData.phone}
+                  onChangeText={(v) => updateFormData('phone', v)}
+                  keyboardType="phone-pad"
+                  error={errors.phone}
+                />
+                <Text style={[styles.errorText, !errors.phone && styles.errorTextHidden]}>
+                  {errors.phone || 'placeholder'}
+                </Text>
+              </View>
+
+              <View style={styles.fieldGroup}>
+                <InputRow
+                  icon="credit-card"
+                  placeholder="Mã số sinh viên"
+                  value={formData.studentId}
+                  onChangeText={(v) => updateFormData('studentId', v)}
+                  error={errors.studentId}
+                />
+                <Text style={[styles.errorText, !errors.studentId && styles.errorTextHidden]}>
+                  {errors.studentId || 'placeholder'}
+                </Text>
+              </View>
             </CleanCard>
 
             <CleanCard contentStyle={styles.formCard}>
               <Text style={styles.sectionHeading}>Liên hệ khẩn cấp</Text>
-              <InputRow
-                icon="phone-call"
-                placeholder="Số điện thoại khẩn cấp"
-                value={formData.emergencyContact}
-                onChangeText={(v) => updateFormData('emergencyContact', v)}
-                keyboardType="phone-pad"
-              />
+
+              <View style={styles.fieldGroup}>
+                <InputRow
+                  icon="phone-call"
+                  placeholder="Số điện thoại khẩn cấp"
+                  value={formData.emergencyContact}
+                  onChangeText={(v) => updateFormData('emergencyContact', v)}
+                  keyboardType="phone-pad"
+                  error={errors.emergencyContact}
+                />
+                <Text
+                  style={[
+                    styles.errorText,
+                    !errors.emergencyContact && styles.errorTextHidden,
+                  ]}
+                >
+                  {errors.emergencyContact || 'placeholder'}
+                </Text>
+              </View>
+
               <Text style={styles.helperText}>
                 Thông tin này sẽ được sử dụng trong trường hợp khẩn cấp.
               </Text>
@@ -296,10 +562,15 @@ const EditProfileScreen = ({ navigation }) => {
 };
 
 const InputRow = (props) => {
-  const { icon, editable = true, style, ...rest } = props;
+  const { icon, editable = true, style, error, ...rest } = props;
   return (
-    <View style={[styles.inputRow, style]}>
-      <Feather name={icon} size={18} color="#8E8E93" style={{ marginRight: 12 }} />
+    <View style={[styles.inputRow, error && styles.inputRowError, style]}>
+      <Feather
+        name={icon}
+        size={18}
+        color={error ? '#EF4444' : '#8E8E93'}
+        style={{ marginRight: 12 }}
+      />
       <TextInput
         style={[styles.input, !editable && styles.inputDisabled]}
         placeholderTextColor="#B0B0B3"
@@ -363,14 +634,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   formCard: {
-    gap: 14,
     paddingVertical: 22,
     paddingHorizontal: 20,
+    gap: 0,
   },
   sectionHeading: {
     fontSize: 16,
     fontWeight: '700',
     color: '#0A0A0A',
+    marginBottom: 4,
+  },
+  fieldGroup: {
+    marginBottom: 16,
   },
   inputRow: {
     flexDirection: 'row',
@@ -381,6 +656,10 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderWidth: 1,
     borderColor: '#E6E6EA',
+  },
+  inputRowError: {
+    borderColor: '#EF4444',
+    borderWidth: 2,
   },
   input: {
     flex: 1,
@@ -394,6 +673,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#9CA3AF',
     lineHeight: 18,
+  },
+  errorText: {
+    color: '#EF4444',
+    fontSize: 13,
+    fontWeight: '500',
+    marginLeft: 16,
+    marginTop: 3,
+    minHeight: 18,
+    lineHeight: 18,
+  },
+  errorTextHidden: {
+    opacity: 0,
   },
 });
 
