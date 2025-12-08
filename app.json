@@ -2,7 +2,8 @@
   "expo": {
     "name": "MSSUS",
     "scheme": "mssus-iat-rs-app",
-    "slug": "mssus-iat-rs",
+    "slug": "mssus",
+    "owner": "defaultgfbg",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/motorcycle-vector.png",
@@ -59,11 +60,27 @@
     },
     "extra": {
       "eas": {
-        "projectId": "01e2e762-35a2-4a2d-b8de-6f20d91b77bf"
+        "projectId": "2ace6196-39b7-4a3a-ba48-53454b83156a"
       }
     },
     "plugins": [
-      "expo-font", "expo-dev-client", "expo-notifications", ["expo-location", { "isAndroidBackgroundLocationEnabled": true }]
+      "expo-font",
+      "expo-dev-client",
+      "expo-notifications",
+      [
+        "expo-location",
+        {
+          "isAndroidBackgroundLocationEnabled": true
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
     ]
   }
 }
