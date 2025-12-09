@@ -85,9 +85,24 @@ const LoginScreen = ({ navigation, route }) => {
           verification?.is_campus_verified === true ||
           verification?.campus_verified === true;
         const studentStatus = verification?.student?.status;
-        const rejectionReason =
-          verification?.student?.rejection_reason ||
-          verification?.student?.rejectionReason;
+        const rejectionReason = verification?.student?.rejection_reason || verification?.student?.rejectionReason;
+        const driverStatus =
+          verification?.driver_profile_status ||
+          verification?.driverProfileStatus ||
+          result.user?.driver_profile?.status ||
+          result.user?.driverProfile?.status;
+        const hasDriverProfile =
+          !!driverStatus ||
+          (result.user?.available_profiles || []).some(p => p?.toUpperCase?.() === 'DRIVER') ||
+          !!result.user?.driver_profile ||
+          !!result.user?.driverProfile;
+        const wantsDriver = targetProfile === 'driver';
+
+        // Driver login: if user already has a driver profile, bypass campus guard
+        if (wantsDriver && hasDriverProfile) {
+          navigation.replace('DriverMain');
+          return;
+        }
 
         // If not verified yet, push to student verification guard
         if (!campusVerified) {

@@ -54,7 +54,14 @@ const DriverVerificationScreen = ({ navigation }) => {
 
   const loadCurrentVerification = async () => {
     try {
-      // First check if user has rider verification (required for driver verification)
+      // If a driver verification/profile already exists, use it directly
+      const existingDriverVerification = await verificationService.getCurrentDriverVerification();
+      if (existingDriverVerification?.status) {
+        setCurrentVerification(existingDriverVerification);
+        return;
+      }
+
+      // Otherwise ensure rider verification is approved before allowing submission
       const riderVerification = await verificationService.getCurrentStudentVerification();
       if (!riderVerification || riderVerification.status?.toLowerCase() !== 'approved') {
         Alert.alert(

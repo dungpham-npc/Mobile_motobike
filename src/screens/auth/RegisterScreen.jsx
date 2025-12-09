@@ -304,10 +304,6 @@ const RegisterScreen = (props) => {
               purpose: 'VERIFY_EMAIL',
               fromLogin: false,
             })
-          },
-          {
-            text: 'Đăng nhập',
-            onPress: () => navigation.navigate('Login', { prefillEmail: formData.email })
           }
         ]
       );
@@ -578,12 +574,6 @@ const RegisterScreen = (props) => {
               disabled={loading}
             />
 
-            <View style={styles.footer}>
-              <Text style={styles.footerText}>Đã có tài khoản?</Text>
-              <TouchableOpacity onPress={navigateToLogin}>
-                <Text style={styles.footerLink}> Đăng nhập ngay</Text>
-              </TouchableOpacity>
-            </View>
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>

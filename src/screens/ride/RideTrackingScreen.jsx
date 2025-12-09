@@ -809,6 +809,9 @@ const RideTrackingScreen = ({ navigation, route }) => {
         return;
       }
       
+      const statusUpper = (rideStatus || '').toUpperCase();
+      const isToDropoff = statusUpper === 'ONGOING' || statusUpper === 'COMPLETED';
+      
       console.log('📍 [RideTracking] Fitting map to route...');
       console.log('📍 [RideTracking] routePolyline:', routePolyline?.length, 'points');
       console.log('📍 [RideTracking] requestDetails:', requestDetails ? 'available' : 'null');
@@ -849,17 +852,19 @@ const RideTrackingScreen = ({ navigation, route }) => {
         coords.push({ latitude: driverInfo.pickupLat, longitude: driverInfo.pickupLng });
       }
       
-      if (requestDetails?.dropoff_location) {
-        const dropoff = requestDetails.dropoff_location;
-        coords.push({
-          latitude: dropoff.lat || dropoff.latitude,
-          longitude: dropoff.lng || dropoff.longitude,
-        });
-        console.log('📍 [RideTracking] Added dropoff from requestDetails:', dropoff.lat, dropoff.lng);
-      } else if (quote?.dropoff) {
-        coords.push(quote.dropoff);
-      } else if (driverInfo?.dropoffLat && driverInfo?.dropoffLng) {
-        coords.push({ latitude: driverInfo.dropoffLat, longitude: driverInfo.dropoffLng });
+      if (isToDropoff) {
+        if (requestDetails?.dropoff_location) {
+          const dropoff = requestDetails.dropoff_location;
+          coords.push({
+            latitude: dropoff.lat || dropoff.latitude,
+            longitude: dropoff.lng || dropoff.longitude,
+          });
+          console.log('📍 [RideTracking] Added dropoff from requestDetails:', dropoff.lat, dropoff.lng);
+        } else if (quote?.dropoff) {
+          coords.push(quote.dropoff);
+        } else if (driverInfo?.dropoffLat && driverInfo?.dropoffLng) {
+          coords.push({ latitude: driverInfo.dropoffLat, longitude: driverInfo.dropoffLng });
+        }
       }
       
       // Add driver location if available
@@ -1533,67 +1538,92 @@ const RideTrackingScreen = ({ navigation, route }) => {
         }
         showsUserLocation={true}
         polyline={routePolyline}
-        markers={React.useMemo(() => [
-          // Pickup location
-          ...(quote?.pickup ? [{
-            coordinate: quote.pickup,
-            title: "Điểm đón",
-            pinColor: "#4CAF50"
-          }] : driverInfo?.pickupLat && driverInfo?.pickupLng ? [{
-            coordinate: {
-              latitude: driverInfo.pickupLat,
-              longitude: driverInfo.pickupLng
-            },
-            title: "Điểm đón",
-            pinColor: "#4CAF50"
-          }] : requestDetails?.pickup_location ? [{
-            coordinate: {
-              latitude: requestDetails.pickup_location.lat || requestDetails.pickup_location.latitude,
-              longitude: requestDetails.pickup_location.lng || requestDetails.pickup_location.longitude
-            },
-            title: requestDetails.pickup_location.name || "Điểm đón",
-            pinColor: "#4CAF50"
-          }] : []),
-          // Dropoff location  
-          ...(quote?.dropoff ? [{
-            coordinate: quote.dropoff,
-            title: "Điểm đến",
-            pinColor: "#F44336"
-          }] : driverInfo?.dropoffLat && driverInfo?.dropoffLng ? [{
-            coordinate: {
-              latitude: driverInfo.dropoffLat,
-              longitude: driverInfo.dropoffLng
-            },
-            title: "Điểm đến",
-            pinColor: "#F44336"
-          }] : requestDetails?.dropoff_location ? [{
-            coordinate: {
-              latitude: requestDetails.dropoff_location.lat || requestDetails.dropoff_location.latitude,
-              longitude: requestDetails.dropoff_location.lng || requestDetails.dropoff_location.longitude
-            },
-            title: requestDetails.dropoff_location.name || "Điểm đến",
-            pinColor: "#F44336"
-          }] : []),
-          // Rider location (real-time if available, else fallback to device location)
-          ...(() => {
-            const riderCoord = driverLocation || currentLocation;
-            return riderCoord
-              ? [{
-                  id: 'rider',
-                  coordinate: riderCoord,
-                  title: "Vị trí của bạn",
-                  pinColor: "#FF9800",
-                  description: driverLocation ? "Đang chia sẻ vị trí" : "Vị trí thiết bị"
-                }]
-              : [];
-          })()
-        ], [
+        markers={React.useMemo(() => {
+          const markers = [];
+          const statusUpper = (rideStatus || '').toUpperCase();
+          const isToPickup = statusUpper === 'CONFIRMED' || statusUpper === 'PENDING';
+          const isToDropoff = statusUpper === 'ONGOING' || statusUpper === 'COMPLETED';
+
+          const pickupCoord =
+            quote?.pickup ||
+            (driverInfo?.pickupLat && driverInfo?.pickupLng
+              ? { latitude: driverInfo.pickupLat, longitude: driverInfo.pickupLng }
+              : null) ||
+            (requestDetails?.pickup_location
+              ? {
+                  latitude: requestDetails.pickup_location.lat || requestDetails.pickup_location.latitude,
+                  longitude: requestDetails.pickup_location.lng || requestDetails.pickup_location.longitude,
+                }
+              : null);
+
+          const dropoffCoord =
+            quote?.dropoff ||
+            (driverInfo?.dropoffLat && driverInfo?.dropoffLng
+              ? { latitude: driverInfo.dropoffLat, longitude: driverInfo.dropoffLng }
+              : null) ||
+            (requestDetails?.dropoff_location
+              ? {
+                  latitude: requestDetails.dropoff_location.lat || requestDetails.dropoff_location.latitude,
+                  longitude: requestDetails.dropoff_location.lng || requestDetails.dropoff_location.longitude,
+                }
+              : null);
+
+          const driverCoord =
+            driverLocation ||
+            selectedProposal?.driverLocation ||
+            null;
+
+          const riderCoord = currentLocation || null;
+
+          // Always show pickup pin
+          if (pickupCoord) {
+            markers.push({
+              coordinate: pickupCoord,
+              title: 'Điểm đón',
+              pinColor: '#4CAF50',
+            });
+          }
+
+          // Show dropoff only once heading to dropoff
+          if (isToDropoff && dropoffCoord) {
+            markers.push({
+              coordinate: dropoffCoord,
+              title: 'Điểm đến',
+              pinColor: '#F44336',
+            });
+          }
+
+          // Driver marker (track driver path)
+          if (driverCoord) {
+            markers.push({
+              id: 'driver',
+              coordinate: driverCoord,
+              title: 'Tài xế',
+              pinColor: '#2196F3',
+              description: 'Vị trí tài xế',
+            });
+          }
+
+          // Rider marker shown only from toDropoff phase onward
+          if (isToDropoff && riderCoord) {
+            markers.push({
+              id: 'rider',
+              coordinate: riderCoord,
+              title: 'Vị trí của bạn',
+              pinColor: '#FF9800',
+              description: 'Vị trí hiện tại',
+            });
+          }
+
+          return markers;
+        }, [
           quote,
           driverInfo,
           requestDetails,
           driverLocation,
           currentLocation,
-          selectedProposal
+          selectedProposal,
+          rideStatus
         ])}
       />
 

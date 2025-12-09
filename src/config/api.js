@@ -20,7 +20,8 @@ export const API_CONFIG = {
 
   // Current environment
   get CURRENT() {
-    return __DEV__ ? this.DEV : this.PROD;
+    console.log("API BASE URL =", this.DEV.BASE_URL);
+    return __DEV__ ? this.DEV : this.PROD || this.DEV;
   },
 };
 
