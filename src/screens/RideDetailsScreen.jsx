@@ -16,15 +16,18 @@ import ModernButton from '../components/ModernButton';
 import CleanCard from '../components/ui/CleanCard';
 import rideService from '../services/rideService';
 import websocketService from '../services/websocketService';
+import ratingService from '../services/ratingService';
 import { colors } from '../theme/designTokens';
 import { parseBackendDate } from '../utils/time';
 
 const RideDetailsScreen = ({ navigation, route }) => {
-  const { rideId } = route?.params || {};
-  const [ride, setRide] = useState(null);
+  const { rideId, requestId: routeRequestId, ride: routeRide } = route?.params || {};
+  const [ride, setRide] = useState(routeRide || null);
   const [loading, setLoading] = useState(true);
+  const [isRated, setIsRated] = useState(false);
+  const [checkingRating, setCheckingRating] = useState(true);
   
-  console.log('RideDetailsScreen mounted with rideId:', rideId);
+  console.log('RideDetailsScreen mounted with rideId:', rideId, 'requestId:', routeRequestId);
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [joining, setJoining] = useState(false);
   const [quote, setQuote] = useState(null);
@@ -47,6 +50,47 @@ const RideDetailsScreen = ({ navigation, route }) => {
       // Cleanup WebSocket subscription if needed
     };
   }, [rideId]);
+
+  useEffect(() => {
+    const checkRating = async () => {
+      if (!ride || ride.status !== 'COMPLETED') {
+        setCheckingRating(false);
+        return;
+      }
+
+      try {
+        // Get requestId from ride or route params
+        const requestId = routeRequestId || 
+          ride.shared_ride_request_id || 
+          ride.sharedRideRequestId || 
+          ride.requestId;
+        
+        if (!requestId) {
+          setCheckingRating(false);
+          return;
+        }
+
+        // Check if already rated
+        const ratingsResponse = await ratingService.getRiderRatingsHistory(0, 100);
+        const ratings = ratingsResponse?.data || [];
+        const rated = ratings.some(
+          (rating) => 
+            rating.shared_ride_request_id === requestId || 
+            rating.requestId === requestId
+        );
+        setIsRated(rated);
+      } catch (error) {
+        console.warn('Could not check rating status:', error);
+        setIsRated(false);
+      } finally {
+        setCheckingRating(false);
+      }
+    };
+
+    if (ride) {
+      checkRating();
+    }
+  }, [ride, routeRequestId]);
   
   const setupWebSocketListener = () => {
     // Only subscribe if WebSocket is not already connected (to avoid duplicate subscriptions)
@@ -151,6 +195,27 @@ const RideDetailsScreen = ({ navigation, route }) => {
       const response = await rideService.getRideDetails(rideId);
       console.log('Ride details loaded:', response);
       setRide(response);
+
+      // If no requestId in route params, try to get it from ride requests
+      if (!routeRequestId && response) {
+        try {
+          const requestsResponse = await rideService.getRideRequests(rideId);
+          const requests = Array.isArray(requestsResponse)
+            ? requestsResponse
+            : requestsResponse?.data || requestsResponse?.content || [];
+          
+          // Get the first request (or find by current user)
+          if (requests.length > 0) {
+            const firstRequest = requests[0];
+            // Store requestId in ride object for later use
+            if (firstRequest.shared_ride_request_id || firstRequest.sharedRideRequestId) {
+              response.requestId = firstRequest.shared_ride_request_id || firstRequest.sharedRideRequestId;
+            }
+          }
+        } catch (reqError) {
+          console.warn('Could not load ride requests:', reqError);
+        }
+      }
     } catch (error) {
       console.error('Error loading ride details:', error);
       Alert.alert('Lỗi', 'Không thể tải thông tin chuyến xe. Vui lòng thử lại.');
@@ -264,6 +329,48 @@ const RideDetailsScreen = ({ navigation, route }) => {
     }
   };
 
+  const handleRateRide = async () => {
+    try {
+      const requestId = routeRequestId || 
+        ride?.shared_ride_request_id || 
+        ride?.sharedRideRequestId || 
+        ride?.requestId;
+
+      if (!requestId) {
+        Alert.alert('Lỗi', 'Không tìm thấy mã yêu cầu chuyến đi.');
+        return;
+      }
+
+      // Load request details for rating
+      let requestData = null;
+      try {
+        const requestResponse = await rideService.getRequestDetails(requestId);
+        requestData = requestResponse?.data || requestResponse;
+      } catch (error) {
+        console.warn('Could not load request details, using ride data:', error);
+      }
+
+      const driverId = ride?.driver_id || ride?.driverId || requestData?.driver_id || null;
+      const driverName = ride?.driver_name || ride?.driverName || requestData?.driver_name || 'Tài xế';
+      const totalFare = ride?.total_fare || ride?.totalFare || requestData?.fare_amount || requestData?.total_fare || null;
+      const actualDistance = ride?.actual_distance || ride?.actualDistance || requestData?.actual_distance || null;
+      const actualDuration = ride?.actual_duration || ride?.actualDuration || requestData?.actual_duration || null;
+
+      navigation.navigate('RideRating', {
+        rideId: rideIdValue,
+        requestId: requestId,
+        driverId,
+        driverName,
+        totalFare,
+        actualDistance,
+        actualDuration,
+      });
+    } catch (error) {
+      console.error('Error loading ride data for rating:', error);
+      Alert.alert('Lỗi', 'Không thể tải thông tin chuyến đi. Vui lòng thử lại.');
+    }
+  };
+
   const formatDate = (dateString) => {
     if (!dateString) return 'Ngay lập tức';
     const date = parseBackendDate(dateString);
@@ -346,6 +453,8 @@ const RideDetailsScreen = ({ navigation, route }) => {
   const rideIdValue = ride?.shared_ride_id || ride?.sharedRideId || rideId || 'N/A';
   const driverName = ride?.driver_name || ride?.driverName || 'Tài xế';
   const driverRating = ride?.driver_rating || ride?.driverRating || 4.8;
+  const vehicleModel = ride?.vehicle_model || ride?.vehicleModel || '';
+  const vehiclePlate = ride?.vehicle_plate || ride?.vehiclePlate || '';
   const startLocation = ride?.start_location || ride?.startLocation || {};
   const endLocation = ride?.end_location || ride?.endLocation || {};
   const startLocationName = startLocation?.name || 'Điểm đi';
@@ -358,8 +467,10 @@ const RideDetailsScreen = ({ navigation, route }) => {
 
   // Allow joining SCHEDULED and ONGOING rides
   const canJoin = rideStatus === 'SCHEDULED' || rideStatus === 'ONGOING';
+  // Show rating button for completed rides that haven't been rated
+  const canRate = rideStatus === 'COMPLETED' && !isRated && !checkingRating;
   
-  console.log('Ride status:', rideStatus, 'canJoin:', canJoin);
+  console.log('Ride status:', rideStatus, 'canJoin:', canJoin, 'canRate:', canRate);
   console.log('Start location:', startLocation);
   console.log('End location:', endLocation);
 
@@ -409,6 +520,22 @@ const RideDetailsScreen = ({ navigation, route }) => {
               </View>
             </View>
           </View>
+          {(vehicleModel || vehiclePlate) && (
+            <View style={styles.vehicleInfo}>
+              <View style={styles.vehicleInfoRow}>
+                <Icon name="two-wheeler" size={18} color="#666" />
+                <Text style={styles.vehicleText}>
+                  {vehicleModel || 'N/A'}
+                </Text>
+              </View>
+              {vehiclePlate && (
+                <View style={styles.vehicleInfoRow}>
+                  <Icon name="confirmation-number" size={18} color="#666" />
+                  <Text style={styles.vehicleText}>{vehiclePlate}</Text>
+                </View>
+              )}
+            </View>
+          )}
         </View>
 
         {/* Route Card */}
@@ -452,10 +579,6 @@ const RideDetailsScreen = ({ navigation, route }) => {
                 <Text style={styles.statText}>{estimatedDuration} phút</Text>
               </View>
             )}
-            <View style={styles.statItem}>
-              <Icon name="schedule" size={16} color="#666" />
-              <Text style={styles.statText}>{formatDate(scheduledTime)}</Text>
-            </View>
           </View>
         </View>
 
@@ -498,6 +621,25 @@ const RideDetailsScreen = ({ navigation, route }) => {
               loading={joining}
               disabled={joining || !(ride?.route?.route_id || ride?.route?.routeId || ride?.routeId)}
             />
+          </View>
+        )}
+
+        {/* Rating Button for Completed Rides */}
+        {canRate && (
+          <View style={styles.ratingButtonContainer}>
+            <ModernButton
+              title="Đánh giá chuyến đi"
+              icon="star"
+              onPress={handleRateRide}
+              variant="primary"
+            />
+          </View>
+        )}
+
+        {rideStatus === 'COMPLETED' && isRated && (
+          <View style={styles.ratedContainer}>
+            <Icon name="check-circle" size={24} color="#4CAF50" />
+            <Text style={styles.ratedText}>Bạn đã đánh giá chuyến đi này</Text>
           </View>
         )}
       </ScrollView>
@@ -690,6 +832,23 @@ const styles = StyleSheet.create({
     color: '#666',
     marginLeft: 5,
   },
+  vehicleInfo: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+    gap: 10,
+  },
+  vehicleInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  vehicleText: {
+    fontSize: 14,
+    color: '#333',
+    fontWeight: '500',
+  },
   routeCard: {
     backgroundColor: '#fff',
     marginHorizontal: 20,
@@ -811,6 +970,27 @@ const styles = StyleSheet.create({
   joinButtonContainer: {
     paddingHorizontal: 20,
     paddingBottom: 20,
+  },
+  ratingButtonContainer: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+  },
+  ratedContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    marginHorizontal: 20,
+    marginBottom: 20,
+    backgroundColor: '#E8F5E9',
+    borderRadius: 12,
+    gap: 8,
+  },
+  ratedText: {
+    fontSize: 14,
+    color: '#4CAF50',
+    fontWeight: '500',
   },
   modalOverlay: {
     flex: 1,

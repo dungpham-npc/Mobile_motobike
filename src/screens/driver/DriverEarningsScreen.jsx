@@ -75,12 +75,25 @@ const DriverEarningsScreen = () => {
       setError(null);
 
       try {
-        const [earningsRes, txRes] = await Promise.all([
+        const [earningsRes, txRes, walletInfo] = await Promise.all([
           paymentService.getDriverEarnings(),
           paymentService.getTransactionHistory(0, 100, 'CAPTURE_FARE', 'SUCCESS'),
+          paymentService.getWalletInfo().catch(() => null), // Fallback if fails
         ]);
 
-        setSummary(earningsRes || {});
+        // Log for debugging
+        console.log('Driver earnings response:', earningsRes);
+        console.log('Wallet info response:', walletInfo);
+
+        // Merge earnings response with wallet info to ensure availableBalance is present
+        const mergedSummary = {
+          ...earningsRes,
+          // If availableBalance is missing from earnings response, use wallet info
+          availableBalance: earningsRes?.availableBalance ?? walletInfo?.availableBalance ?? 0,
+          pendingEarnings: earningsRes?.pendingEarnings ?? walletInfo?.pendingBalance ?? 0,
+        };
+
+        setSummary(mergedSummary);
 
         const txList = Array.isArray(txRes?.content)
           ? txRes.content

@@ -20,7 +20,15 @@ import ratingService from '../../services/ratingService';
 import rideService from '../../services/rideService';
 
 const RideRatingScreen = ({ navigation, route }) => {
-  const { ride: initialRide, requestId } = route.params || {};
+  const { 
+    ride: initialRide, 
+    requestId,
+    rideId,
+    driverId,
+    driverName: paramDriverName,
+    totalFare: paramTotalFare,
+    actualDistance: paramActualDistance,
+  } = route.params || {};
   const [ride, setRide] = useState(initialRide);
   const [loading, setLoading] = useState(false);
   const [rating, setRating] = useState(0);
@@ -169,11 +177,12 @@ const RideRatingScreen = ({ navigation, route }) => {
     return texts[rating] || '';
   };
 
-  // Extract display values with fallbacks
-  const driverName = ride?.driverInfo?.driverName || ride?.driverName || 'Tài xế';
+  // Extract display values with fallbacks - prioritize route params
+  const driverName = paramDriverName || ride?.driverInfo?.driverName || ride?.driverName || 'Tài xế';
   const pickupLocationName = ride?.pickupLocation?.name || ride?.pickup_location_name || 'Điểm đón';
   const dropoffLocationName = ride?.dropoffLocation?.name || ride?.dropoff_location_name || 'Điểm đến';
-  const totalFare = ride?.driverInfo?.totalFare || ride?.totalFare || 0;
+  const totalFare = paramTotalFare || ride?.driverInfo?.totalFare || ride?.totalFare || 0;
+  const actualDistance = paramActualDistance || ride?.actualDistance || ride?.actual_distance || null;
 
   // Show loading indicator while fetching request details
   if (loading) {
@@ -208,7 +217,7 @@ const RideRatingScreen = ({ navigation, route }) => {
         {/* Ride Summary Card */}
         <Animatable.View animation="fadeInUp" duration={400} useNativeDriver>
           <CleanCard style={styles.summaryCard} contentStyle={styles.summaryContent}>
-            <View style={styles.driverInfo}>
+            <View style={styles.driverSection}>
               <View style={styles.driverAvatar}>
                 <Icon name="person" size={32} color={colors.primary} />
               </View>
@@ -222,8 +231,29 @@ const RideRatingScreen = ({ navigation, route }) => {
                 </View>
               </View>
             </View>
-            <View style={styles.fareInfo}>
-              <Text style={styles.fareText}>{rideService.formatCurrency(totalFare)}</Text>
+
+            <View style={styles.rideStats}>
+              <View style={styles.statItem}>
+                <Icon name="attach-money" size={20} color={colors.primary} />
+                <View style={styles.statContent}>
+                  <Text style={styles.statLabel}>Tổng cước</Text>
+                  <Text style={styles.statValue}>
+                    {totalFare > 0 ? rideService.formatCurrency(totalFare) : 'Chưa có'}
+                  </Text>
+                </View>
+              </View>
+
+              {actualDistance && actualDistance > 0 && (
+                <View style={styles.statItem}>
+                  <Icon name="straighten" size={20} color={colors.primary} />
+                  <View style={styles.statContent}>
+                    <Text style={styles.statLabel}>Khoảng cách</Text>
+                    <Text style={styles.statValue}>{actualDistance.toFixed(1)} km</Text>
+                  </View>
+                </View>
+              )}
+
+
             </View>
           </CleanCard>
         </Animatable.View>
@@ -315,10 +345,10 @@ const styles = StyleSheet.create({
   summaryContent: {
     padding: 20,
   },
-  driverInfo: {
+  driverSection: {
     flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
+    marginBottom: 20,
     gap: 12,
   },
   driverAvatar: {
@@ -348,13 +378,27 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     flex: 1,
   },
-  fareInfo: {
-    alignItems: 'flex-end',
+  rideStats: {
+    gap: 16,
   },
-  fareText: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: colors.primary,
+  statItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 8,
+  },
+  statContent: {
+    flex: 1,
+  },
+  statLabel: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginBottom: 4,
+  },
+  statValue: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
   },
   ratingCard: {
     marginBottom: 20,

@@ -16,6 +16,7 @@ import AppBackground from '../../components/layout/AppBackground.jsx';
 import MiniMap from '../../components/MiniMap';
 import rideService from '../../services/rideService';
 import goongService from '../../services/goongService';
+import paymentService from '../../services/paymentService';
 import { colors } from '../../theme/designTokens';
 import { parseBackendDate } from '../../utils/time';
 import { SoftBackHeader } from '../../components/ui/GlassHeader.jsx';
@@ -27,11 +28,13 @@ const DriverRideDetailsScreen = ({ navigation, route }) => {
   const [routePolyline, setRoutePolyline] = useState(null);
   const [rideRequests, setRideRequests] = useState([]);
   const [completing, setCompleting] = useState(false);
+  const [totalEarnings, setTotalEarnings] = useState(null);
 
   useEffect(() => {
     if (rideId) {
       loadRideDetails();
       loadRideRequests();
+      loadEarnings();
     }
   }, [rideId]);
 
@@ -68,6 +71,37 @@ const DriverRideDetailsScreen = ({ navigation, route }) => {
       setRideRequests(requests);
     } catch (error) {
       console.error('❌ [DriverRideDetails] Error loading ride requests:', error);
+    }
+  };
+
+  const loadEarnings = async () => {
+    try {
+      const transactionsResponse = await paymentService.getTransactionHistory(0, 100, 'CAPTURE_FARE', 'SUCCESS');
+      const txList = Array.isArray(transactionsResponse?.content)
+        ? transactionsResponse.content
+        : Array.isArray(transactionsResponse?.data)
+        ? transactionsResponse.data
+        : Array.isArray(transactionsResponse?.items)
+        ? transactionsResponse.items
+        : Array.isArray(transactionsResponse)
+        ? transactionsResponse
+        : [];
+
+      // Calculate earnings for this ride
+      let earnings = 0;
+      txList.forEach((tx) => {
+        if (
+          tx.type === 'CAPTURE_FARE' &&
+          tx.direction === 'IN' &&
+          tx.status === 'SUCCESS' &&
+          (tx.sharedRideId === rideId || tx.shared_ride_id === rideId || tx.rideId === rideId)
+        ) {
+          earnings += parseFloat(tx.amount) || 0;
+        }
+      });
+      setTotalEarnings(earnings > 0 ? earnings : null);
+    } catch (error) {
+      console.warn('Could not load earnings:', error);
     }
   };
 
@@ -232,6 +266,14 @@ const DriverRideDetailsScreen = ({ navigation, route }) => {
   const startLocation = ride.start_location || ride.startLocation;
   const endLocation = ride.end_location || ride.endLocation;
   const scheduledTime = ride.scheduled_time || ride.scheduledTime;
+  const actualStartTime = ride.started_at || ride.startedAt || ride.actual_start_time || ride.actualStartTime;
+  const actualEndTime = ride.completed_at || ride.completedAt || ride.actual_end_time || ride.actualEndTime;
+  const vehicleModel = ride.vehicle_model || ride.vehicleModel || '';
+  const vehiclePlate = ride.vehicle_plate || ride.vehiclePlate || '';
+  const driverName = ride.driver_name || ride.driverName || '';
+  const driverRating = ride.driver_rating || ride.driverRating || null;
+  const actualDistance = ride.actual_distance || ride.actualDistance || null;
+  const actualDuration = ride.actual_duration || ride.actualDuration || null;
 
   return (
     <AppBackground>
@@ -250,6 +292,15 @@ const DriverRideDetailsScreen = ({ navigation, route }) => {
               {getStatusText(ride.status)}
             </Text>
           </View>
+          {actualEndTime && (
+            <View style={styles.completedTimeContainer}>
+              <Icon name="flag" size={18} color="#4CAF50" />
+              <View style={styles.completedTimeInfo}>
+                <Text style={styles.completedTimeLabel}>Thời gian kết thúc</Text>
+                <Text style={styles.completedTimeValue}>{formatDateTime(actualEndTime)}</Text>
+              </View>
+            </View>
+          )}
         </CleanCard>
 
         {/* Mini Map (Grab-style) */}
@@ -293,6 +344,53 @@ const DriverRideDetailsScreen = ({ navigation, route }) => {
           </View>
         </CleanCard>
 
+        {/* Driver & Vehicle Info */}
+        {(driverName || vehicleModel || vehiclePlate) && (
+          <CleanCard style={styles.card}>
+            <Text style={styles.cardTitle}>Thông tin tài xế & xe</Text>
+            
+            {driverName && (
+              <View style={styles.detailRow}>
+                <Icon name="person" size={20} color="#666" />
+                <View style={styles.detailInfo}>
+                  <Text style={styles.detailLabel}>Tài xế</Text>
+                  <Text style={styles.detailValue}>{driverName}</Text>
+                </View>
+              </View>
+            )}
+
+            {driverRating && (
+              <View style={styles.detailRow}>
+                <Icon name="star" size={20} color="#FFD700" />
+                <View style={styles.detailInfo}>
+                  <Text style={styles.detailLabel}>Đánh giá</Text>
+                  <Text style={styles.detailValue}>{driverRating.toFixed(1)} ⭐</Text>
+                </View>
+              </View>
+            )}
+
+            {vehicleModel && (
+              <View style={styles.detailRow}>
+                <Icon name="two-wheeler" size={20} color="#666" />
+                <View style={styles.detailInfo}>
+                  <Text style={styles.detailLabel}>Loại xe</Text>
+                  <Text style={styles.detailValue}>{vehicleModel}</Text>
+                </View>
+              </View>
+            )}
+
+            {vehiclePlate && (
+              <View style={styles.detailRow}>
+                <Icon name="confirmation-number" size={20} color="#666" />
+                <View style={styles.detailInfo}>
+                  <Text style={styles.detailLabel}>Biển số xe</Text>
+                  <Text style={styles.detailValue}>{vehiclePlate}</Text>
+                </View>
+              </View>
+            )}
+          </CleanCard>
+        )}
+
         {/* Ride Details */}
         <CleanCard style={styles.card}>
           <Text style={styles.cardTitle}>Thông tin chuyến xe</Text>
@@ -315,6 +413,16 @@ const DriverRideDetailsScreen = ({ navigation, route }) => {
                 <Text style={styles.detailValue}>
                   {(ride.estimated_distance || ride.estimatedDistance || 0).toFixed(1)} km
                 </Text>
+              </View>
+            </View>
+          )}     
+
+          {rideRequests.length > 0 && (
+            <View style={styles.detailRow}>
+              <Icon name="people" size={20} color="#666" />
+              <View style={styles.detailInfo}>
+                <Text style={styles.detailLabel}>Số hành khách</Text>
+                <Text style={styles.detailValue}>{rideRequests.length} người</Text>
               </View>
             </View>
           )}
@@ -477,6 +585,28 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: 14,
+    fontWeight: '600',
+  },
+  completedTimeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  completedTimeInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  completedTimeLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 4,
+  },
+  completedTimeValue: {
+    fontSize: 16,
+    color: '#333',
     fontWeight: '600',
   },
   mapCard: {

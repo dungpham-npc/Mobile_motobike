@@ -17,6 +17,7 @@ import { useFocusEffect } from '@react-navigation/native';
 
 import rideService from '../../services/rideService';
 import authService from '../../services/authService';
+import paymentService from '../../services/paymentService';
 import GlassHeader from '../../components/ui/GlassHeader.jsx';
 import CleanCard from '../../components/ui/CleanCard.jsx';
 import AppBackground from '../../components/layout/AppBackground.jsx';
@@ -53,6 +54,40 @@ const DriverRideHistoryScreen = ({ navigation }) => {
         return;
       }
 
+      // Load transactions once for all rides
+      let earningsByRideId = {};
+      try {
+        const transactionsResponse = await paymentService.getTransactionHistory(0, 100, 'CAPTURE_FARE', 'SUCCESS');
+        const txList = Array.isArray(transactionsResponse?.content)
+          ? transactionsResponse.content
+          : Array.isArray(transactionsResponse?.data)
+          ? transactionsResponse.data
+          : Array.isArray(transactionsResponse?.items)
+          ? transactionsResponse.items
+          : Array.isArray(transactionsResponse)
+          ? transactionsResponse
+          : [];
+
+        // Calculate earnings per ride from transactions
+        txList.forEach((tx) => {
+          if (
+            tx.type === 'CAPTURE_FARE' &&
+            tx.direction === 'IN' &&
+            tx.status === 'SUCCESS' &&
+            (tx.sharedRideId || tx.shared_ride_id || tx.rideId)
+          ) {
+            const rideId = tx.sharedRideId || tx.shared_ride_id || tx.rideId;
+            const amount = parseFloat(tx.amount) || 0;
+            if (!earningsByRideId[rideId]) {
+              earningsByRideId[rideId] = 0;
+            }
+            earningsByRideId[rideId] += amount;
+          }
+        });
+      } catch (txError) {
+        console.warn('Could not load transactions for earnings calculation:', txError);
+      }
+
       // Load ongoing rides (ONGOING, SCHEDULED status)
       try {
         const ongoingResponse = await rideService.getMyRides('ONGOING', 0, 50);
@@ -62,6 +97,12 @@ const DriverRideHistoryScreen = ({ navigation }) => {
         const scheduledData = scheduledResponse?.data || [];
 
         const allOngoing = [...ongoingData, ...scheduledData].map((ride) => {
+          const rideId = ride.shared_ride_id || ride.ride_id || ride.id;
+          const totalEarnings = 
+            ride.total_earnings || 
+            ride.totalEarnings || 
+            earningsByRideId[rideId] || 
+            null;
           const startAddr =
             ride.start_location?.address ||
             ride.start_location?.name ||
@@ -80,12 +121,12 @@ const DriverRideHistoryScreen = ({ navigation }) => {
           }
 
           return {
-            rideId: ride.shared_ride_id || ride.ride_id || ride.id,
+            rideId: rideId,
             status: ride.status,
             userType: 'driver',
             pickupAddress: startAddr,
             dropoffAddress: endAddr,
-            totalEarnings: ride.total_earnings || ride.totalEarnings || null,
+            totalEarnings: totalEarnings,
             passengerCount: ride.passenger_count || ride.passengerCount || 0,
             distance:
               ride.actual_distance ||
@@ -130,13 +171,21 @@ const DriverRideHistoryScreen = ({ navigation }) => {
             endAddr = ride.end_location_name;
           }
 
+          const rideId = ride.shared_ride_id || ride.ride_id || ride.id;
+          // Calculate totalEarnings from transactions if not in response
+          const totalEarnings = 
+            ride.total_earnings || 
+            ride.totalEarnings || 
+            earningsByRideId[rideId] || 
+            null;
+
           return {
-            rideId: ride.shared_ride_id || ride.ride_id || ride.id,
+            rideId: rideId,
             status: ride.status,
             userType: 'driver',
             pickupAddress: startAddr,
             dropoffAddress: endAddr,
-            totalEarnings: ride.total_earnings || ride.totalEarnings || null,
+            totalEarnings: totalEarnings,
             passengerCount: ride.passenger_count || ride.passengerCount || 0,
             distance:
               ride.actual_distance ||
@@ -237,15 +286,26 @@ const DriverRideHistoryScreen = ({ navigation }) => {
     const date = parseBackendDate(dateString);
     if (!date) return 'N/A';
 
-    return date.toLocaleString('vi-VN', {
-      timeZone: 'Asia/Ho_Chi_Minh',
-      hour: '2-digit',
-      minute: '2-digit',
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      weekday: 'long',
-    });
+    const months = [
+      'Th 1',
+      'Th 2',
+      'Th 3',
+      'Th 4',
+      'Th 5',
+      'Th 6',
+      'Th 7',
+      'Th 8',
+      'Th 9',
+      'Th 10',
+      'Th 11',
+      'Th 12',
+    ];
+    const day = date.getDate();
+    const month = months[date.getMonth()];
+    const hours = date.getHours() % 12 || 12;
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const period = date.getHours() >= 12 ? 'PM' : 'AM';
+    return `${day} ${month}, ${hours}:${minutes} ${period}`;
   };
 
   const renderRideCard = (ride, index) => {

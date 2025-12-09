@@ -18,6 +18,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import rideService from '../../services/rideService';
 import authService from '../../services/authService';
 import ratingService from '../../services/ratingService';
+import paymentService from '../../services/paymentService';
 import GlassHeader from '../../components/ui/GlassHeader.jsx';
 import CleanCard from '../../components/ui/CleanCard.jsx';
 import AppBackground from '../../components/layout/AppBackground.jsx';
@@ -62,6 +63,64 @@ const RideHistoryScreen = ({ navigation }) => {
         return;
       }
 
+      // Load transactions to calculate totalFare
+      let fareByRequestId = {};
+      let fareByRideId = {};
+      try {
+        const transactionsResponse = await paymentService.getTransactionHistory(0, 100);
+        const txList = Array.isArray(transactionsResponse?.content)
+          ? transactionsResponse.content
+          : Array.isArray(transactionsResponse?.data)
+          ? transactionsResponse.data
+          : Array.isArray(transactionsResponse?.items)
+          ? transactionsResponse.items
+          : Array.isArray(transactionsResponse)
+          ? transactionsResponse
+          : [];
+
+        // Calculate fare per request/ride from transactions
+        // Rider pays: CAPTURE_FARE with direction OUT, or HOLD_CREATE
+        txList.forEach((tx) => {
+          const amount = parseFloat(tx.amount) || 0;
+          
+          // CAPTURE_FARE (final payment)
+          if (tx.type === 'CAPTURE_FARE' && tx.direction === 'OUT' && tx.status === 'SUCCESS') {
+            const requestId = tx.sharedRideRequestId || tx.shared_ride_request_id || tx.requestId;
+            const rideId = tx.sharedRideId || tx.shared_ride_id || tx.rideId;
+            
+            if (requestId) {
+              if (!fareByRequestId[requestId]) {
+                fareByRequestId[requestId] = 0;
+              }
+              fareByRequestId[requestId] += amount;
+            }
+            
+            if (rideId) {
+              if (!fareByRideId[rideId]) {
+                fareByRideId[rideId] = 0;
+              }
+              fareByRideId[rideId] += amount;
+            }
+          }
+          
+          // HOLD_CREATE (temporary hold, might be the actual fare)
+          if (tx.type === 'HOLD_CREATE' && tx.direction === 'OUT' && tx.status === 'SUCCESS') {
+            const requestId = tx.sharedRideRequestId || tx.shared_ride_request_id || tx.requestId;
+            const rideId = tx.sharedRideId || tx.shared_ride_id || tx.rideId;
+            
+            if (requestId && !fareByRequestId[requestId]) {
+              fareByRequestId[requestId] = amount;
+            }
+            
+            if (rideId && !fareByRideId[rideId]) {
+              fareByRideId[rideId] = amount;
+            }
+          }
+        });
+      } catch (txError) {
+        console.warn('Could not load transactions for fare calculation:', txError);
+      }
+
       try {
         const ratingsResponse = await ratingService.getRiderRatingsHistory(0, 100);
         const ratings = ratingsResponse?.data || [];
@@ -99,19 +158,25 @@ const RideHistoryScreen = ({ navigation }) => {
             dropoffAddr = request.dropoff_location_name;
           }
 
+          const requestId = request.shared_ride_request_id || request.requestId;
+          const rideId = request.shared_ride_id;
+          
+          // Calculate totalFare: priority: response -> transactions by requestId -> transactions by rideId
+          const totalFare =
+            request.fare_amount !== undefined && request.fare_amount !== null
+              ? request.fare_amount
+              : request.total_fare !== undefined && request.total_fare !== null
+              ? request.total_fare
+              : fareByRequestId[requestId] || fareByRideId[rideId] || null;
+
           return {
-            rideId: request.shared_ride_id,
-            requestId: request.shared_ride_request_id,
+            rideId: rideId,
+            requestId: requestId,
             status: request.status,
             userType: 'rider',
             pickupAddress: pickupAddr,
             dropoffAddress: dropoffAddr,
-            totalFare:
-              request.fare_amount !== undefined && request.fare_amount !== null
-                ? request.fare_amount
-                : request.total_fare !== undefined && request.total_fare !== null
-                ? request.total_fare
-                : null,
+            totalFare: totalFare,
             distance:
               request.distance_km || request.estimated_distance_km || request.actual_distance || null,
             driverInfo: {
@@ -155,19 +220,25 @@ const RideHistoryScreen = ({ navigation }) => {
             dropoffAddr = request.dropoff_location_name;
           }
 
+          const requestId = request.shared_ride_request_id || request.requestId;
+          const rideId = request.shared_ride_id;
+          
+          // Calculate totalFare: priority: response -> transactions by requestId -> transactions by rideId
+          const totalFare =
+            request.fare_amount !== undefined && request.fare_amount !== null
+              ? request.fare_amount
+              : request.total_fare !== undefined && request.total_fare !== null
+              ? request.total_fare
+              : fareByRequestId[requestId] || fareByRideId[rideId] || null;
+
           return {
-            rideId: request.shared_ride_id,
-            requestId: request.shared_ride_request_id,
+            rideId: rideId,
+            requestId: requestId,
             status: request.status,
             userType: 'rider',
             pickupAddress: pickupAddr,
             dropoffAddress: dropoffAddr,
-            totalFare:
-              request.fare_amount !== undefined && request.fare_amount !== null
-                ? request.fare_amount
-                : request.total_fare !== undefined && request.total_fare !== null
-                ? request.total_fare
-                : null,
+            totalFare: totalFare,
             distance:
               request.actual_distance ||
               request.distance_km ||
@@ -318,14 +389,13 @@ const RideHistoryScreen = ({ navigation }) => {
         actualDuration = raw.duration_minutes;
       }
 
-      navigation.navigate('RatingScreen', {
+      navigation.navigate('RideRating', {
         rideId: ride.rideId,
         requestId: ride.requestId,
         driverId,
         driverName,
         totalFare,
         actualDistance,
-        actualDuration,
       });
     } catch (error) {
       console.error('❌ Error loading ride data for rating:', error);
