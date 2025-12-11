@@ -95,6 +95,18 @@ const ProfileScreen = ({ navigation }) => {
         navigation.navigate('AccountVerification');
       },
     },
+    // SOS entries
+    {
+      icon: 'warning-amber',
+      title: 'Cảnh báo SOS của tôi',
+      onPress: () => navigation.navigate('MySOSAlerts'),
+    },
+    {
+      icon: 'contacts',
+      title: 'Liên hệ khẩn cấp',
+      onPress: () => navigation.navigate('EmergencyContacts'),
+    },
+    // Other
     { icon: 'help', title: 'Trợ giúp & Hỗ trợ', onPress: () => Alert.alert('Thông báo', 'Chức năng đang phát triển') },
     { icon: 'policy', title: 'Điều khoản sử dụng', onPress: () => Alert.alert('Thông báo', 'Chức năng đang phát triển') },
     { icon: 'info', title: 'Về chúng tôi', onPress: () => Alert.alert('Thông báo', 'Chức năng đang phát triển') },

@@ -264,6 +264,7 @@ export const ENDPOINTS = {
   SOS: {
     TRIGGER: "/sos/alerts",
     MY_ALERTS: "/sos/alerts/me",
+    CONTACTS: "/sos/contacts",
   },
 
   // Vehicle endpoints
