@@ -112,6 +112,8 @@ ios/.expo/
 ios/Podfile.lock
 
 # Android
+android/
+!android/.gitignore
 android/.gradle/
 android/app/build/
 android/.idea/
@@ -119,9 +121,6 @@ android/local.properties
 android/key.jks
 android/app/release
 android/app/debug
-android/build.gradle
-android/gradlew
-android/gradlew.bat
 
 # VSCode
 .vscode/
