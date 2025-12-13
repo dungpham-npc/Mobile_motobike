@@ -13,15 +13,15 @@ import {
   Dimensions,
   Platform,
   KeyboardAvoidingView,
+  StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { LinearGradient } from 'expo-linear-gradient';
-import QRCode from 'react-native-qrcode-svg';
 import * as Animatable from 'react-native-animatable';
 
 import ModernButton from '../../components/ModernButton.jsx';
-import GlassHeader, { SoftBackHeader } from '../../components/ui/GlassHeader.jsx';
+import { SoftBackHeader } from '../../components/ui/GlassHeader.jsx';
 import AppBackground from '../../components/layout/AppBackground.jsx';
 import CleanCard from '../../components/ui/CleanCard.jsx';
 import paymentService from '../../services/paymentService';
@@ -38,6 +38,7 @@ const QRPaymentScreen = ({ navigation, route }) => {
   const [amount, setAmount] = useState(initialAmount.toString());
   const [customAmount, setCustomAmount] = useState('');
   const [isCustomAmount, setIsCustomAmount] = useState(false);
+  const [customAmountError, setCustomAmountError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [paymentData, setPaymentData] = useState(null);
   const [paymentStatus, setPaymentStatus] = useState('input'); // input, pending, processing, success, failed
@@ -48,14 +49,38 @@ const QRPaymentScreen = ({ navigation, route }) => {
     loadUserProfile();
   }, []);
 
+  // Validate custom amount input
+  const validateCustomAmountInput = (value) => {
+    // Clear error if empty
+    if (!value || value.trim() === '') {
+      setCustomAmountError(null);
+      return true;
+    }
+
+    // Check if it's a valid number format (only digits)
+    const numberRegex = /^\d+$/;
+    if (!numberRegex.test(value)) {
+      setCustomAmountError('Vui lòng nhập ký tự số');
+      return false;
+    }
+
+    // Check minimum amount
+    const numAmount = parseInt(value, 10);
+    if (numAmount < 10000) {
+      setCustomAmountError('Mệnh giá phải trên 10.000 ₫');
+      return false;
+    }
+
+    // Valid
+    setCustomAmountError(null);
+    return true;
+  };
+
   // Tự động tạo payment link khi có amount từ route params
   useEffect(() => {
-    // Kiểm tra xem có amount từ route params không (không phải giá trị mặc định)
-    // Nếu route.params có amount và khác undefined, nghĩa là được truyền từ TopUpScreen
     const hasAmountFromRoute = route.params?.amount !== undefined && route.params?.amount !== null;
     
     if (hasAmountFromRoute && paymentStatus === 'input' && !paymentData) {
-      // Delay một chút để đảm bảo component đã mount
       const timer = setTimeout(() => {
         handleAutoCreatePayment(route.params.amount);
       }, 500);
@@ -84,7 +109,6 @@ const QRPaymentScreen = ({ navigation, route }) => {
           amount: validAmount,
         });
         
-        // Mở PayOS checkout URL
         const supported = await Linking.canOpenURL(result.paymentUrl);
         if (supported) {
           await Linking.openURL(result.paymentUrl);
@@ -119,6 +143,17 @@ const QRPaymentScreen = ({ navigation, route }) => {
   };
 
   const createPaymentLink = async () => {
+    // Validate custom amount if using custom input
+    if (isCustomAmount) {
+      if (!customAmount || customAmount.trim() === '') {
+        setCustomAmountError('Vui lòng nhập số tiền');
+        return;
+      }
+      const isValid = validateCustomAmountInput(customAmount);
+      if (!isValid) {
+        return;
+      }
+    }
 
     const finalAmount = isCustomAmount ? customAmount : amount;
     const validAmount = validateAndSetAmount(finalAmount);
@@ -129,11 +164,9 @@ const QRPaymentScreen = ({ navigation, route }) => {
     setPaymentStatus('pending');
 
     try {
-      // Use new API - no userId needed, uses authentication
       const result = await paymentService.initiateTopUp(validAmount);
 
       if (result.success) {
-        // Merge backend response với các field tiện dụng cho UI
         setPaymentData({
           ...result.data,
           qrCode: result.qrCode,
@@ -142,7 +175,6 @@ const QRPaymentScreen = ({ navigation, route }) => {
           amount: validAmount,
         });
         
-        // Mở PayOS checkout URL
         const supported = await Linking.canOpenURL(result.paymentUrl);
         if (supported) {
           await Linking.openURL(result.paymentUrl);
@@ -207,88 +239,170 @@ const QRPaymentScreen = ({ navigation, route }) => {
     setLoading(false);
   };
 
+  const getDisplayAmount = () => {
+    if (isCustomAmount && customAmount) {
+      return paymentService.formatCurrency(parseInt(customAmount) || 0);
+    }
+    return paymentService.formatCurrency(parseInt(amount) || 0);
+  };
+
   const renderAmountInput = () => {
-    // Chỉ hiển thị UI chọn số tiền khi:
-    // 1. paymentStatus là 'input' VÀ
-    // 2. Không có amount từ route params
     const hasAmountFromRoute = route.params?.amount !== undefined && route.params?.amount !== null;
     if (paymentStatus !== 'input' || hasAmountFromRoute) return null;
 
     return (
-      <View style={styles.amountSection}>
-        <Text style={styles.sectionTitle}>Chọn số tiền nạp</Text>
-        
-        {/* Preset Amounts */}
-        <View style={styles.presetAmounts}>
-          {presetAmounts.map((presetAmount) => (
-            <TouchableOpacity
-              key={presetAmount}
-              style={[
-                styles.presetAmountButton,
-                !isCustomAmount && parseInt(amount) === presetAmount && styles.selectedAmount
-              ]}
-              onPress={() => {
-                setAmount(presetAmount.toString());
-                setIsCustomAmount(false);
-              }}
-            >
-              <Text style={[
-                styles.presetAmountText,
-                !isCustomAmount && parseInt(amount) === presetAmount && styles.selectedAmountText
-              ]}>
-                {paymentService.formatCurrency(presetAmount)}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Custom Amount Toggle */}
-        <TouchableOpacity
-          style={styles.customAmountToggle}
-          onPress={() => setIsCustomAmount(!isCustomAmount)}
-        >
-          <Icon 
-            name={isCustomAmount ? 'radio-button-checked' : 'radio-button-unchecked'} 
-            size={20} 
-            color="#4CAF50" 
-          />
-          <Text style={styles.customAmountToggleText}>Nhập số tiền khác</Text>
-        </TouchableOpacity>
-
-        {/* Custom Amount Input */}
-        {isCustomAmount && (
-          <Animatable.View animation="slideInDown" style={styles.customAmountContainer}>
-            <View style={styles.inputContainer}>
-              <Icon name="monetization-on" size={20} color="#666" style={styles.inputIcon} />
-              <TextInput
-                style={styles.amountInput}
-                placeholder="Nhập số tiền (VNĐ)"
-                value={customAmount}
-                onChangeText={setCustomAmount}
-                keyboardType="numeric"
-              />
+      <>
+        {/* Hero Amount Display Card */}
+        <Animatable.View animation="fadeInUp" duration={400}>
+          <CleanCard style={styles.heroCard} contentStyle={styles.heroCardContent}>
+            <View style={styles.heroContent}>
+              <View style={styles.heroIconContainer}>
+                <Icon name="account-balance-wallet" size={36} color={colors.primary} />
+              </View>
+              <Text style={styles.heroLabel}>Số tiền nạp</Text>
+              <Text style={styles.heroAmount}>{getDisplayAmount()}</Text>
+              {((isCustomAmount && customAmount) || (!isCustomAmount && amount)) && (
+                <View style={styles.heroBadge}>
+                  <Icon name="check-circle" size={14} color={colors.primary} />
+                  <Text style={styles.heroBadgeText}>Sẵn sàng thanh toán</Text>
+                </View>
+              )}
             </View>
-            <Text style={styles.helperText}>
-              Tối thiểu: 10,000 VNĐ - Tối đa: 50,000,000 VNĐ
-            </Text>
-          </Animatable.View>
-        )}
+          </CleanCard>
+        </Animatable.View>
 
-        {/* Total Amount Display */}
-        <View style={styles.totalAmountCard}>
-          <View style={styles.totalAmountCardInner}>
-            <LinearGradient
-              colors={['#34D399', '#059669']}
-              style={styles.totalAmountGradient}
+        {/* Quick Amount Selection Card */}
+        <Animatable.View animation="fadeInUp" duration={400} delay={80}>
+          <CleanCard style={styles.sectionCard} contentStyle={styles.sectionCardContent}>
+            <View style={styles.sectionHeader}>
+              <Icon name="flash-on" size={20} color={colors.primary} />
+              <Text style={styles.sectionTitle}>Chọn số tiền nạp</Text>
+            </View>
+            <View style={styles.quickAmountsGrid}>
+              {presetAmounts.map((presetAmount, index) => {
+                const isSelected = !isCustomAmount && parseInt(amount) === presetAmount;
+                return (
+                  <View key={presetAmount} style={styles.quickAmountCardWrapper}>
+                    <Animatable.View
+                      animation="fadeInUp"
+                      duration={300}
+                      delay={100 + index * 50}
+                    >
+                      <TouchableOpacity
+                        style={[
+                          styles.quickAmountCard,
+                          isSelected && styles.quickAmountCardSelected,
+                          loading && styles.quickAmountCardDisabled,
+                        ]}
+                      onPress={() => {
+                        setAmount(presetAmount.toString());
+                        setIsCustomAmount(false);
+                        setCustomAmountError(null);
+                      }}
+                        disabled={loading}
+                        activeOpacity={0.7}
+                      >
+                        {isSelected && (
+                          <View style={styles.selectedIndicator}>
+                            <Icon name="check-circle" size={16} color={colors.primary} />
+                          </View>
+                        )}
+                        <Text
+                          style={[
+                            styles.quickAmountText,
+                            isSelected && styles.quickAmountTextSelected,
+                          ]}
+                        >
+                          {paymentService.formatCurrency(presetAmount)}
+                        </Text>
+                      </TouchableOpacity>
+                    </Animatable.View>
+                  </View>
+                );
+              })}
+            </View>
+          </CleanCard>
+        </Animatable.View>
+
+        {/* Custom Amount Card */}
+        <Animatable.View animation="fadeInUp" duration={400} delay={160}>
+          <CleanCard style={styles.sectionCard} contentStyle={styles.sectionCardContent}>
+            <TouchableOpacity
+              style={styles.customAmountHeader}
+              onPress={() => {
+                setIsCustomAmount(true);
+                setAmount('');
+                if (customAmount) {
+                  validateCustomAmountInput(customAmount);
+                }
+              }}
+              activeOpacity={0.7}
             >
-              <Text style={styles.totalAmountLabel}>Số tiền nạp</Text>
-              <Text style={styles.totalAmountValue}>
-                {paymentService.formatCurrency(isCustomAmount ? (customAmount || 0) : amount)}
-              </Text>
-            </LinearGradient>
-          </View>
-        </View>
-      </View>
+              <View style={styles.customAmountHeaderLeft}>
+                <View
+                  style={[
+                    styles.radioButton,
+                    isCustomAmount && styles.radioButtonSelected,
+                  ]}
+                >
+                  {isCustomAmount && <View style={styles.radioButtonInner} />}
+                </View>
+                <View style={styles.customAmountHeaderText}>
+                  <Text style={styles.customAmountTitle}>Nhập số tiền khác</Text>
+                  <Text style={styles.customAmountSubtitle}>
+                    Tối thiểu 10.000 ₫
+                  </Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+
+            {isCustomAmount && (
+              <Animatable.View animation="fadeInDown" duration={250}>
+                <View style={styles.inputWrapper}>
+                  <View style={[
+                    styles.inputCard,
+                    isCustomAmount && !customAmountError && styles.inputCardFocused,
+                    customAmountError && styles.inputCardError
+                  ]}>
+                    <Icon
+                      name="edit"
+                      size={20}
+                      color={customAmountError ? '#EF4444' : colors.textSecondary}
+                      style={styles.inputIcon}
+                    />
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Nhập số tiền"
+                      placeholderTextColor={colors.textMuted}
+                      keyboardType="number-pad"
+                      value={customAmount}
+                      onChangeText={(value) => {
+                        // Only allow numeric input
+                        const numericValue = value.replace(/[^0-9]/g, '');
+                        setCustomAmount(numericValue);
+                        validateCustomAmountInput(numericValue);
+                      }}
+                      editable={!loading}
+                      autoFocus={isCustomAmount}
+                    />
+                    {customAmount && (
+                      <Text style={[styles.inputSuffix, customAmountError && styles.inputSuffixError]}>₫</Text>
+                    )}
+                  </View>
+                  {customAmountError && (
+                    <Animatable.View animation="fadeInDown" duration={200}>
+                      <View style={styles.errorMessageContainer}>
+                        <Icon name="error-outline" size={16} color="#EF4444" />
+                        <Text style={styles.errorMessage}>{customAmountError}</Text>
+                      </View>
+                    </Animatable.View>
+                  )}
+                </View>
+              </Animatable.View>
+            )}
+          </CleanCard>
+        </Animatable.View>
+      </>
     );
   };
 
@@ -296,13 +410,12 @@ const QRPaymentScreen = ({ navigation, route }) => {
     switch (paymentStatus) {
       case 'pending':
         return (
-          <View style={styles.paymentSection}>
-            <Text style={styles.sectionTitle}>Thanh toán PayOS</Text>
-            
+          <>
+            {/* QR Code Card */}
             {paymentData?.qrCode && (
-              <View style={styles.qrContainer}>
-                <View style={styles.qrContainerInner}>
-                  <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, padding: 24, alignItems: 'center' }}>
+              <Animatable.View animation="fadeInUp" duration={400}>
+                <CleanCard style={styles.sectionCard} contentStyle={styles.qrCardContent}>
+                  <View style={styles.qrContainer}>
                     <Image
                       source={{ uri: paymentData.qrCode }}
                       style={styles.qrCodeImage}
@@ -312,86 +425,116 @@ const QRPaymentScreen = ({ navigation, route }) => {
                       Quét mã QR bằng ứng dụng ngân hàng để thanh toán
                     </Text>
                   </View>
-                </View>
-              </View>
+                </CleanCard>
+              </Animatable.View>
             )}
 
-            <View style={styles.paymentInfoCard}>
-              <View style={styles.paymentInfoCardInner}>
-                <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, padding: 20 }}>
-              <Text style={styles.paymentInfoTitle}>Thông tin thanh toán</Text>
-              <View style={styles.paymentInfoRow}>
-                <Text style={styles.paymentInfoLabel}>Mã đơn hàng:</Text>
-                <Text style={styles.paymentInfoValue}>#{paymentData?.orderCode}</Text>
-              </View>
-              <View style={styles.paymentInfoRow}>
-                <Text style={styles.paymentInfoLabel}>Số tiền:</Text>
-                <Text style={styles.paymentInfoValue}>
-                  {paymentService.formatCurrency(paymentData?.amount || 0)}
-                </Text>
-              </View>
-              <View style={styles.paymentInfoRow}>
-                <Text style={styles.paymentInfoLabel}>Trạng thái:</Text>
-                <Text style={[
-                  styles.paymentInfoValue,
-                  { color: paymentService.getPaymentStatusColor(paymentData?.status) }
-                ]}>
-                  {paymentService.getPaymentStatusText(paymentData?.status)}
-                </Text>
-              </View>
+            {/* Payment Info Card */}
+            <Animatable.View animation="fadeInUp" duration={400} delay={80}>
+              <CleanCard style={styles.sectionCard} contentStyle={styles.sectionCardContent}>
+                <Text style={styles.sectionTitle}>Thông tin thanh toán</Text>
+                <View style={styles.infoSection}>
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Mã đơn hàng</Text>
+                    <Text style={styles.infoValue}>#{paymentData?.orderCode}</Text>
+                  </View>
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Số tiền</Text>
+                    <Text style={styles.infoValue}>
+                      {paymentService.formatCurrency(paymentData?.amount || 0)}
+                    </Text>
+                  </View>
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Trạng thái</Text>
+                    <View style={styles.statusBadge}>
+                      <Text style={[
+                        styles.statusText,
+                        { color: paymentService.getPaymentStatusColor(paymentData?.status) }
+                      ]}>
+                        {paymentService.getPaymentStatusText(paymentData?.status)}
+                      </Text>
+                    </View>
+                  </View>
                 </View>
-              </View>
-            </View>
-          </View>
+              </CleanCard>
+            </Animatable.View>
+
+            {/* Instructions Card */}
+            <Animatable.View animation="fadeInUp" duration={400} delay={160}>
+              <CleanCard style={styles.sectionCard} contentStyle={styles.sectionCardContent}>
+                <Text style={styles.sectionTitle}>Hướng dẫn thanh toán</Text>
+                <View style={styles.instructionsList}>
+                  <View style={styles.instructionItem}>
+                    <View style={styles.instructionNumber}>
+                      <Text style={styles.instructionNumberText}>1</Text>
+                    </View>
+                    <Text style={styles.instructionText}>Mở ứng dụng ngân hàng hoặc ví điện tử</Text>
+                  </View>
+                  <View style={styles.instructionItem}>
+                    <View style={styles.instructionNumber}>
+                      <Text style={styles.instructionNumberText}>2</Text>
+                    </View>
+                    <Text style={styles.instructionText}>Quét mã QR PayOS phía trên</Text>
+                  </View>
+                  <View style={styles.instructionItem}>
+                    <View style={styles.instructionNumber}>
+                      <Text style={styles.instructionNumberText}>3</Text>
+                    </View>
+                    <Text style={styles.instructionText}>Xác nhận thông tin và thanh toán</Text>
+                  </View>
+                  <View style={styles.instructionItem}>
+                    <View style={styles.instructionNumber}>
+                      <Text style={styles.instructionNumberText}>4</Text>
+                    </View>
+                    <Text style={styles.instructionText}>Chờ hệ thống cập nhật số dư</Text>
+                  </View>
+                </View>
+              </CleanCard>
+            </Animatable.View>
+          </>
         );
 
       case 'processing':
         return (
-          <View style={styles.statusContainer}>
-            <View style={styles.statusContainerInner}>
-              <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, padding: 40, alignItems: 'center' }}>
-                <Animatable.View animation="pulse" iterationCount="infinite">
-                  <ActivityIndicator size={64} color="#FF9800" />
-                  <Text style={styles.statusText}>Đang xử lý thanh toán...</Text>
-                  <Text style={styles.statusSubtext}>Vui lòng không đóng ứng dụng</Text>
-                </Animatable.View>
-              </View>
-            </View>
-          </View>
+          <Animatable.View animation="fadeInUp" duration={300}>
+            <CleanCard style={styles.sectionCard} contentStyle={styles.statusCardContent}>
+              <Animatable.View animation="pulse" iterationCount="infinite">
+                <ActivityIndicator size={64} color="#FF9800" />
+                <Text style={styles.statusText}>Đang xử lý thanh toán...</Text>
+                <Text style={styles.statusSubtext}>Vui lòng không đóng ứng dụng</Text>
+              </Animatable.View>
+            </CleanCard>
+          </Animatable.View>
         );
 
       case 'success':
         return (
-          <View style={styles.statusContainer}>
-            <View style={styles.statusContainerInner}>
-              <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, padding: 40, alignItems: 'center' }}>
-                <Animatable.View animation="bounceIn">
-                  <Icon name="check-circle" size={64} color="#4CAF50" />
-                  <Text style={[styles.statusText, { color: '#4CAF50' }]}>Thanh toán thành công!</Text>
-                  <Text style={styles.statusSubtext}>
-                    Số dư ví của bạn đã được cập nhật
-                  </Text>
-                </Animatable.View>
-              </View>
-            </View>
-          </View>
+          <Animatable.View animation="fadeInUp" duration={300}>
+            <CleanCard style={styles.sectionCard} contentStyle={styles.statusCardContent}>
+              <Animatable.View animation="bounceIn">
+                <Icon name="check-circle" size={64} color={colors.primary} />
+                <Text style={[styles.statusText, { color: colors.primary }]}>Thanh toán thành công!</Text>
+                <Text style={styles.statusSubtext}>
+                  Số dư ví của bạn đã được cập nhật
+                </Text>
+              </Animatable.View>
+            </CleanCard>
+          </Animatable.View>
         );
 
       case 'failed':
         return (
-          <View style={styles.statusContainer}>
-            <View style={styles.statusContainerInner}>
-              <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, padding: 40, alignItems: 'center' }}>
-                <Animatable.View animation="shake">
-                  <Icon name="error" size={64} color="#F44336" />
-                  <Text style={[styles.statusText, { color: '#F44336' }]}>Thanh toán thất bại</Text>
-                  <Text style={styles.statusSubtext}>
-                    Vui lòng thử lại hoặc liên hệ hỗ trợ
-                  </Text>
-                </Animatable.View>
-              </View>
-            </View>
-          </View>
+          <Animatable.View animation="fadeInUp" duration={300}>
+            <CleanCard style={styles.sectionCard} contentStyle={styles.statusCardContent}>
+              <Animatable.View animation="shake">
+                <Icon name="error" size={64} color="#EF4444" />
+                <Text style={[styles.statusText, { color: '#EF4444' }]}>Thanh toán thất bại</Text>
+                <Text style={styles.statusSubtext}>
+                  Vui lòng thử lại hoặc liên hệ hỗ trợ
+                </Text>
+              </Animatable.View>
+            </CleanCard>
+          </Animatable.View>
         );
 
       default:
@@ -403,64 +546,78 @@ const QRPaymentScreen = ({ navigation, route }) => {
     switch (paymentStatus) {
       case 'input':
         return (
-          <View style={styles.buttonContainer}>
-            <ModernButton
-              title={loading ? "Đang tạo..." : "Tạo thanh toán"}
-              onPress={createPaymentLink}
-              disabled={loading || (!isCustomAmount && !amount) || (isCustomAmount && !customAmount)}
-              icon={loading ? null : "payment"}
-              size="large"
-            />
-            <ModernButton
-              title="Hủy"
-              variant="outline"
-              onPress={() => navigation.goBack()}
-              style={styles.cancelButton}
-            />
-          </View>
+          <Animatable.View animation="fadeInUp" duration={400} delay={240}>
+            <View style={styles.actionContainer}>
+              <ModernButton
+                title={loading ? "Đang tạo..." : "Tạo thanh toán"}
+                onPress={createPaymentLink}
+                disabled={!!(loading || (!isCustomAmount && !amount) || (isCustomAmount && (!customAmount || !!customAmountError)))}
+                icon={loading ? null : "payment"}
+                size="large"
+                style={styles.primaryActionButton}
+              />
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => navigation.goBack()}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.cancelButtonText}>Hủy</Text>
+              </TouchableOpacity>
+            </View>
+          </Animatable.View>
         );
 
       case 'pending':
         return (
-          <View style={styles.buttonContainer}>
-            <ModernButton
-              title="Mô phỏng thanh toán"
-              onPress={simulatePaymentSuccess}
-              icon="play-arrow"
-              variant="outline"
-              size="large"
-            />
-            <ModernButton
-              title="Hủy thanh toán"
-              variant="outline"
-              onPress={resetPayment}
-              style={styles.cancelButton}
-            />
-          </View>
+          <Animatable.View animation="fadeInUp" duration={400} delay={240}>
+            <View style={styles.actionContainer}>
+              <ModernButton
+                title="Mô phỏng thanh toán"
+                onPress={simulatePaymentSuccess}
+                icon="play-arrow"
+                variant="outline"
+                size="large"
+                style={styles.primaryActionButton}
+              />
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={resetPayment}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.cancelButtonText}>Hủy thanh toán</Text>
+              </TouchableOpacity>
+            </View>
+          </Animatable.View>
         );
 
       case 'failed':
         return (
-          <View style={styles.buttonContainer}>
-            <ModernButton
-              title="Thử lại"
-              onPress={resetPayment}
-              icon="refresh"
-              size="large"
-            />
-          </View>
+          <Animatable.View animation="fadeInUp" duration={400} delay={240}>
+            <View style={styles.actionContainer}>
+              <ModernButton
+                title="Thử lại"
+                onPress={resetPayment}
+                icon="refresh"
+                size="large"
+                style={styles.primaryActionButton}
+              />
+            </View>
+          </Animatable.View>
         );
 
       case 'success':
         return (
-          <View style={styles.buttonContainer}>
-            <ModernButton
-              title="Hoàn thành"
-              onPress={() => navigation.goBack()}
-              icon="check"
-              size="large"
-            />
-          </View>
+          <Animatable.View animation="fadeInUp" duration={400} delay={240}>
+            <View style={styles.actionContainer}>
+              <ModernButton
+                title="Hoàn thành"
+                onPress={() => navigation.goBack()}
+                icon="check"
+                size="large"
+                style={styles.primaryActionButton}
+              />
+            </View>
+          </Animatable.View>
         );
 
       default:
@@ -474,47 +631,34 @@ const QRPaymentScreen = ({ navigation, route }) => {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
       >
-        <SafeAreaView style={styles.container}>
-          <SoftBackHeader
-            title="Nạp tiền ví"
-            subtitle={paymentStatus === 'input' ? 'Chọn số tiền muốn nạp' : 'Thanh toán PayOS'}
-            onBackPress={() => navigation.goBack()}
-          />
+        <SafeAreaView style={styles.safe}>
+          <StatusBar barStyle="dark-content" />
+          {/* Floating Back Button */}
+          <TouchableOpacity
+            style={styles.floatingBackButton}
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.7}
+          >
+            <Icon name="arrow-back" size={24} color={colors.textPrimary} />
+          </TouchableOpacity>
 
-          <ScrollView 
-            style={styles.content} 
-            showsVerticalScrollIndicator={false} 
+          <ScrollView
+            style={styles.scrollView}
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
           >
+            {/* Header Section */}
+            <View style={styles.headerSection}>
+              <View style={styles.headerTextContainer}>
+                <Text style={styles.headerSubtitle}>
+                  {paymentStatus === 'input' ? 'Chọn số tiền muốn nạp' : 'Thanh toán PayOS'}
+                </Text>
+                <Text style={styles.headerTitle}>Nạp tiền ví</Text>
+              </View>
+            </View>
             {renderAmountInput()}
             {renderPaymentContent()}
-        
-            {/* Payment Instructions */}
-            {paymentStatus === 'pending' && (
-              <Animatable.View animation="fadeInUp" duration={300} delay={200}>
-                <CleanCard style={styles.instructionsCard} contentStyle={styles.instructionsCardContent}>
-                  <Text style={styles.instructionsTitle}>Hướng dẫn thanh toán:</Text>
-                  <View style={styles.instruction}>
-                    <Icon name="looks-one" size={20} color="#4CAF50" />
-                    <Text style={styles.instructionText}>Mở ứng dụng ngân hàng hoặc ví điện tử</Text>
-                  </View>
-                  <View style={styles.instruction}>
-                    <Icon name="looks-two" size={20} color="#4CAF50" />
-                    <Text style={styles.instructionText}>Quét mã QR PayOS phía trên</Text>
-                  </View>
-                  <View style={styles.instruction}>
-                    <Icon name="looks-3" size={20} color="#4CAF50" />
-                    <Text style={styles.instructionText}>Xác nhận thông tin và thanh toán</Text>
-                  </View>
-                  <View style={styles.instruction}>
-                    <Icon name="looks-4" size={20} color="#4CAF50" />
-                    <Text style={styles.instructionText}>Chờ hệ thống cập nhật số dư</Text>
-                  </View>
-                </CleanCard>
-              </Animatable.View>
-            )}
-            
             {renderActionButtons()}
           </ScrollView>
         </SafeAreaView>
@@ -524,329 +668,390 @@ const QRPaymentScreen = ({ navigation, route }) => {
 };
 
 const styles = StyleSheet.create({
-  container: {
+  safe: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-  },
-  backButton: {
-    padding: 5,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  placeholder: {
-    width: 34,
-  },
-  content: {
+  scrollView: {
     flex: 1,
   },
   scrollContent: {
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 16,
     paddingBottom: 40,
+    gap: 20,
+  },
+  // Floating Back Button
+  floatingBackButton: {
+    position: 'absolute',
+    top: 60,
+    left: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+    shadowColor: 'rgba(0,0,0,0.1)',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  // Header Section
+  headerSection: {
+    marginBottom: 8,
+    paddingVertical: 12,
+    paddingTop: 8,
+    alignItems: 'center',
+  },
+  headerTextContainer: {
+    alignItems: 'center',
+    width: '100%',
+  },
+  headerSubtitle: {
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textSecondary,
+    marginBottom: 2,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontFamily: 'Inter_700Bold',
+    color: colors.textPrimary,
+  },
+  // Hero Card
+  heroCard: {
+    marginBottom: 0,
+  },
+  heroCardContent: {
+    paddingVertical: 32,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+  },
+  heroContent: {
+    alignItems: 'center',
+    width: '100%',
+  },
+  heroIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(16,65,47,0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  heroLabel: {
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textSecondary,
+    marginBottom: 8,
+    letterSpacing: 0.3,
+  },
+  heroAmount: {
+    fontSize: 36,
+    fontFamily: 'Inter_700Bold',
+    color: colors.textPrimary,
+    letterSpacing: -0.5,
+    marginBottom: 12,
+  },
+  heroBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(16,65,47,0.08)',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 6,
+  },
+  heroBadgeText: {
+    fontSize: 12,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.primary,
+  },
+  // Section Card
+  sectionCard: {
+    marginBottom: 0,
+  },
+  sectionCardContent: {
+    paddingVertical: 24,
+    paddingHorizontal: 20,
+    gap: 20,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 4,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    marginBottom: 16,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
   },
-  amountSection: {
-    marginBottom: 24,
-  },
-  presetAmounts: {
+  // Quick Amount Grid
+  quickAmountsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 20,
+    width: '100%',
+    justifyContent: 'space-between',
   },
-  presetAmountButton: {
-    flex: 1,
-    minWidth: '45%',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
+  quickAmountCardWrapper: {
+    width: '48%',
+    marginBottom: 12,
+  },
+  quickAmountCardWrapperLast: {
+    marginRight: 0,
+  },
+  quickAmountCard: {
+    width: '100%',
+    paddingVertical: 18,
+    paddingHorizontal: 8,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
     borderWidth: 2,
-    borderColor: 'transparent',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
+    borderColor: 'rgba(148,163,184,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    shadowColor: 'rgba(0,0,0,0.05)',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 1,
     shadowRadius: 4,
+    elevation: 2,
   },
-  selectedAmount: {
-    borderColor: '#4CAF50',
-    backgroundColor: '#E8F5E8',
+  quickAmountCardSelected: {
+    backgroundColor: 'rgba(16,65,47,0.06)',
+    borderColor: colors.primary,
+    borderWidth: 2,
   },
-  presetAmountText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#1a1a1a',
+  quickAmountCardDisabled: {
+    opacity: 0.5,
   },
-  selectedAmountText: {
-    color: '#4CAF50',
-    fontWeight: 'bold',
+  selectedIndicator: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
   },
-  customAmountToggle: {
+  quickAmountText: {
+    fontSize: 15,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
+  },
+  quickAmountTextSelected: {
+    color: colors.primary,
+  },
+  // Custom Amount
+  customAmountHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    justifyContent: 'space-between',
   },
-  customAmountToggleText: {
+  customAmountHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    flex: 1,
+  },
+  radioButton: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2.5,
+    borderColor: 'rgba(148,163,184,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  radioButtonSelected: {
+    borderColor: colors.primary,
+    backgroundColor: 'rgba(16,65,47,0.08)',
+  },
+  radioButtonInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: colors.primary,
+  },
+  customAmountHeaderText: {
+    flex: 1,
+  },
+  customAmountTitle: {
     fontSize: 16,
-    color: '#1a1a1a',
-    marginLeft: 8,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
+    marginBottom: 2,
   },
-  customAmountContainer: {
-    marginBottom: 16,
+  customAmountSubtitle: {
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textSecondary,
   },
-  inputContainer: {
+  inputWrapper: {
+    marginTop: 16,
+  },
+  inputCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
+    backgroundColor: '#F8F9FA',
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: 'rgba(148,163,184,0.2)',
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+  },
+  inputCardFocused: {
+    borderColor: colors.primary,
+    backgroundColor: '#FFFFFF',
+  },
+  inputCardError: {
+    borderColor: '#EF4444',
+    backgroundColor: '#FEF2F2',
   },
   inputIcon: {
     marginRight: 12,
   },
-  amountInput: {
+  input: {
     flex: 1,
-    height: 50,
     fontSize: 16,
-    color: '#1a1a1a',
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
   },
-  helperText: {
-    fontSize: 12,
-    color: '#666',
+  inputSuffix: {
+    fontSize: 16,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textSecondary,
+    marginLeft: 8,
+  },
+  inputSuffixError: {
+    color: '#EF4444',
+  },
+  errorMessageContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginTop: 8,
-    fontStyle: 'italic',
+    gap: 6,
   },
-  totalAmountCard: {
-    borderRadius: 16,
-    backgroundColor: '#EBEBF0',
-    // Shadow soft (neumorphism style - giống CleanCard)
-    shadowColor: '#FFFFFF',
-    shadowOpacity: 0.75,
-    shadowRadius: 16,
-    shadowOffset: { width: -5, height: -5 },
+  errorMessage: {
+    fontSize: 13,
+    fontFamily: 'Inter_500Medium',
+    color: '#EF4444',
+    flex: 1,
   },
-  totalAmountCardInner: {
-    borderRadius: 16,
-    backgroundColor: '#EBEBF0',
-    overflow: 'hidden',
-    // Shadow depth (neumorphism style - giống CleanCard)
-    shadowColor: 'rgba(163, 177, 198, 0.65)',
-    shadowOpacity: 0.32,
-    shadowRadius: 18,
-    shadowOffset: { width: 8, height: 10 },
-    ...Platform.select({
-      android: {
-        elevation: 6,
-      },
-    }),
-  },
-  totalAmountGradient: {
+  // QR Code
+  qrCardContent: {
     padding: 24,
     alignItems: 'center',
-  },
-  totalAmountLabel: {
-    fontSize: 16,
-    color: 'rgba(255,255,255,0.8)',
-    marginBottom: 8,
-  },
-  totalAmountValue: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  paymentSection: {
-    marginBottom: 24,
   },
   qrContainer: {
-    backgroundColor: '#EBEBF0',
-    borderRadius: 16,
-    marginBottom: 20,
-    // Shadow soft (neumorphism style - giống CleanCard)
-    shadowColor: '#FFFFFF',
-    shadowOpacity: 0.75,
-    shadowRadius: 16,
-    shadowOffset: { width: -5, height: -5 },
-  },
-  qrContainerInner: {
-    borderRadius: 16,
-    backgroundColor: '#EBEBF0',
-    padding: 24,
     alignItems: 'center',
-    overflow: 'hidden',
-    // Shadow depth (neumorphism style - giống CleanCard)
-    shadowColor: 'rgba(163, 177, 198, 0.65)',
-    shadowOpacity: 0.32,
-    shadowRadius: 18,
-    shadowOffset: { width: 8, height: 10 },
-    ...Platform.select({
-      android: {
-        elevation: 6,
-      },
-    }),
+    width: '100%',
   },
   qrCodeImage: {
     width: width * 0.6,
     height: width * 0.6,
     marginBottom: 16,
+    borderRadius: 16,
   },
   qrDescription: {
     fontSize: 14,
-    color: '#666',
+    fontFamily: 'Inter_400Regular',
+    color: colors.textSecondary,
     textAlign: 'center',
   },
-  paymentInfoCard: {
-    backgroundColor: '#EBEBF0',
-    borderRadius: 16,
-    marginBottom: 20,
-    // Shadow soft (neumorphism style - giống CleanCard)
-    shadowColor: '#FFFFFF',
-    shadowOpacity: 0.75,
-    shadowRadius: 16,
-    shadowOffset: { width: -5, height: -5 },
+  // Info Section
+  infoSection: {
+    marginTop: 8,
+    gap: 16,
   },
-  paymentInfoCardInner: {
-    borderRadius: 16,
-    backgroundColor: '#EBEBF0',
-    padding: 20,
-    overflow: 'hidden',
-    // Shadow depth (neumorphism style - giống CleanCard)
-    shadowColor: 'rgba(163, 177, 198, 0.65)',
-    shadowOpacity: 0.32,
-    shadowRadius: 18,
-    shadowOffset: { width: 8, height: 10 },
-    ...Platform.select({
-      android: {
-        elevation: 6,
-      },
-    }),
-  },
-  paymentInfoTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    marginBottom: 16,
-  },
-  paymentInfoRow: {
+  infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(148,163,184,0.15)',
   },
-  paymentInfoLabel: {
-    fontSize: 14,
-    color: '#666',
+  infoLabel: {
+    fontSize: 15,
+    fontFamily: 'Inter_500Medium',
+    color: colors.textSecondary,
   },
-  paymentInfoValue: {
-    fontSize: 14,
-    color: '#1a1a1a',
-    fontWeight: '500',
+  infoValue: {
+    fontSize: 15,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
   },
-  statusContainer: {
-    backgroundColor: '#EBEBF0',
-    borderRadius: 16,
-    marginBottom: 24,
-    // Shadow soft (neumorphism style - giống CleanCard)
-    shadowColor: '#FFFFFF',
-    shadowOpacity: 0.75,
-    shadowRadius: 16,
-    shadowOffset: { width: -5, height: -5 },
-  },
-  statusContainerInner: {
-    borderRadius: 16,
-    backgroundColor: '#EBEBF0',
-    padding: 40,
-    alignItems: 'center',
-    overflow: 'hidden',
-    // Shadow depth (neumorphism style - giống CleanCard)
-    shadowColor: 'rgba(163, 177, 198, 0.65)',
-    shadowOpacity: 0.32,
-    shadowRadius: 18,
-    shadowOffset: { width: 8, height: 10 },
-    ...Platform.select({
-      android: {
-        elevation: 6,
-      },
-    }),
+  statusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: 'rgba(16,65,47,0.08)',
   },
   statusText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    marginTop: 16,
-    textAlign: 'center',
+    fontSize: 13,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  // Instructions
+  instructionsList: {
+    marginTop: 8,
+    gap: 16,
+  },
+  instructionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  instructionNumber: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(16,65,47,0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  instructionNumberText: {
+    fontSize: 16,
+    fontFamily: 'Inter_700Bold',
+    color: colors.primary,
+  },
+  instructionText: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textSecondary,
+  },
+  // Status Card
+  statusCardContent: {
+    paddingVertical: 48,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    gap: 16,
   },
   statusSubtext: {
     fontSize: 14,
-    color: '#666',
-    marginTop: 8,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textSecondary,
     textAlign: 'center',
+    marginTop: 8,
   },
-  instructionsCard: {
-    backgroundColor: '#EBEBF0',
-    borderRadius: 16,
-    marginBottom: 24,
-    // Shadow soft (neumorphism style - giống CleanCard)
-    shadowColor: '#FFFFFF',
-    shadowOpacity: 0.75,
-    shadowRadius: 16,
-    shadowOffset: { width: -5, height: -5 },
-  },
-  instructionsCardInner: {
-    borderRadius: 16,
-    backgroundColor: '#EBEBF0',
-    padding: 20,
-    overflow: 'hidden',
-    // Shadow depth (neumorphism style - giống CleanCard)
-    shadowColor: 'rgba(163, 177, 198, 0.65)',
-    shadowOpacity: 0.32,
-    shadowRadius: 18,
-    shadowOffset: { width: 8, height: 10 },
-    ...Platform.select({
-      android: {
-        elevation: 6,
-      },
-    }),
-  },
-  instructionsTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    marginBottom: 16,
-  },
-  instruction: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  instructionText: {
-    fontSize: 14,
-    color: '#666',
-    marginLeft: 12,
-    flex: 1,
-  },
-  buttonContainer: {
+  // Actions
+  actionContainer: {
     gap: 12,
-    marginBottom: 20,
+    marginTop: 8,
+  },
+  primaryActionButton: {
+    marginBottom: 0,
   },
   cancelButton: {
-    marginTop: 8,
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textSecondary,
   },
 });
 

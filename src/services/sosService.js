@@ -49,6 +49,17 @@ const sosService = {
       throw new ApiError('Không thể gửi SOS', 0, error);
     }
   },
+
+  async getMyAlerts() {
+    try {
+      return await apiService.get(ENDPOINTS.SOS.MY_ALERTS);
+    } catch (error) {
+      if (error instanceof ApiError) {
+        throw error;
+      }
+      throw new ApiError('Không thể tải lịch sử SOS', 0, error);
+    }
+  },
 };
 
 export default sosService;
