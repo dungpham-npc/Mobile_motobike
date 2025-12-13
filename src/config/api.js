@@ -264,6 +264,8 @@ export const ENDPOINTS = {
   SOS: {
     TRIGGER: "/sos/alerts",
     MY_ALERTS: "/sos/alerts/me",
+    GET_ALERT: (alertId) => `/sos/alerts/${alertId}`,
+    GET_TIMELINE: (alertId) => `/sos/alerts/${alertId}/timeline`,
   },
 
   // Vehicle endpoints

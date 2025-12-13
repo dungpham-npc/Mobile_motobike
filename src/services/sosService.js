@@ -60,6 +60,28 @@ const sosService = {
       throw new ApiError('Không thể tải lịch sử SOS', 0, error);
     }
   },
+
+  async getAlertDetail(alertId) {
+    try {
+      return await apiService.get(ENDPOINTS.SOS.GET_ALERT(alertId));
+    } catch (error) {
+      if (error instanceof ApiError) {
+        throw error;
+      }
+      throw new ApiError('Không thể tải chi tiết SOS', 0, error);
+    }
+  },
+
+  async getAlertTimeline(alertId) {
+    try {
+      return await apiService.get(ENDPOINTS.SOS.GET_TIMELINE(alertId));
+    } catch (error) {
+      if (error instanceof ApiError) {
+        throw error;
+      }
+      throw new ApiError('Không thể tải lịch sử sự kiện SOS', 0, error);
+    }
+  },
 };
 
 export default sosService;
