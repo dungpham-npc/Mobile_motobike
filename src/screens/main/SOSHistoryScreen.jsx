@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import * as Animatable from 'react-native-animatable';
 import { useFocusEffect } from '@react-navigation/native';
+import { Dropdown } from 'react-native-element-dropdown';
 import sosService from '../../services/sosService';
 import { SoftBackHeader } from '../../components/ui/GlassHeader.jsx';
 import CleanCard from '../../components/ui/CleanCard.jsx';
@@ -25,12 +26,24 @@ import useSoftHeaderSpacing from '../../hooks/useSoftHeaderSpacing.js';
 const SOSHistoryScreen = ({ navigation }) => {
   const { headerOffset, contentPaddingTop } = useSoftHeaderSpacing({ contentExtra: 24 });
   const [alerts, setAlerts] = useState([]);
+  const [filteredAlerts, setFilteredAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedAlert, setSelectedAlert] = useState(null);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [alertDetail, setAlertDetail] = useState(null);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [isFilterFocus, setIsFilterFocus] = useState(false);
+
+  const statusOptions = [
+    { value: 'all', label: 'Tất cả' },
+    { value: 'ACTIVE', label: 'Đang hoạt động' },
+    { value: 'ESCALATED', label: 'Đã báo cáo' },
+    { value: 'ACKNOWLEDGED', label: 'Đã xác nhận' },
+    { value: 'RESOLVED', label: 'Đã giải quyết' },
+    { value: 'FALSE_ALARM', label: 'Báo động giả' },
+  ];
 
   useEffect(() => {
     loadSOSHistory();
@@ -67,13 +80,33 @@ const SOSHistoryScreen = ({ navigation }) => {
       });
 
       setAlerts(alertsList);
+      applyFilter(alertsList, statusFilter);
     } catch (error) {
       console.error('Error loading SOS history:', error);
       setAlerts([]);
+      setFilteredAlerts([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
+  };
+
+  const applyFilter = (alertsList, filter) => {
+    if (filter === 'all') {
+      setFilteredAlerts(alertsList);
+    } else {
+      const filtered = alertsList.filter(alert => {
+        const alertStatus = alert.status || alert.status;
+        return alertStatus === filter || alertStatus?.toUpperCase() === filter;
+      });
+      setFilteredAlerts(filtered);
+    }
+  };
+
+  const handleFilterChange = (item) => {
+    setStatusFilter(item.value);
+    applyFilter(alerts, item.value);
+    setIsFilterFocus(false);
   };
 
   const onRefresh = async () => {
@@ -165,6 +198,25 @@ const SOSHistoryScreen = ({ navigation }) => {
     }
   };
 
+  const getStatusLabel = (status) => {
+    if (!status) return 'Đang xử lý';
+    const statusUpper = status.toUpperCase();
+    switch (statusUpper) {
+      case 'ACTIVE':
+        return 'Đang hoạt động';
+      case 'ESCALATED':
+        return 'Đã báo cáo';
+      case 'ACKNOWLEDGED':
+        return 'Đã xác nhận';
+      case 'RESOLVED':
+        return 'Đã giải quyết';
+      case 'FALSE_ALARM':
+        return 'Báo động giả';
+      default:
+        return 'Đang xử lý';
+    }
+  };
+
 
   if (loading) {
     return (
@@ -203,7 +255,36 @@ const SOSHistoryScreen = ({ navigation }) => {
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
         >
-          {alerts.length === 0 ? (
+          {/* Filter Section */}
+          <View style={styles.filterContainer}>
+            <Dropdown
+              style={[styles.dropdown, isFilterFocus && { borderColor: colors.primary }]}
+              placeholderStyle={styles.dropdownPlaceholder}
+              selectedTextStyle={styles.dropdownSelectedText}
+              inputSearchStyle={styles.dropdownInputSearch}
+              iconStyle={styles.dropdownIcon}
+              data={statusOptions}
+              search={false}
+              maxHeight={300}
+              labelField="label"
+              valueField="value"
+              placeholder="Lọc theo trạng thái"
+              value={statusFilter}
+              onFocus={() => setIsFilterFocus(true)}
+              onBlur={() => setIsFilterFocus(false)}
+              onChange={handleFilterChange}
+              renderLeftIcon={() => (
+                <Icon
+                  style={styles.dropdownLeftIcon}
+                  name="filter-list"
+                  size={20}
+                  color={isFilterFocus ? colors.primary : colors.textSecondary}
+                />
+              )}
+            />
+          </View>
+
+          {filteredAlerts.length === 0 ? (
             <Animatable.View animation="fadeInUp" duration={480}>
               <CleanCard style={styles.cardSpacing} contentStyle={styles.emptyCardContent}>
                 <View style={styles.emptyIconContainer}>
@@ -217,7 +298,7 @@ const SOSHistoryScreen = ({ navigation }) => {
             </Animatable.View>
           ) : (
             <>
-              {alerts.map((alert, index) => {
+              {filteredAlerts.map((alert, index) => {
                 const rideSnapshot = parseRideSnapshot(alert.ride_snapshot || alert.rideSnapshot);
                 const alertDate = alert.created_at || alert.createdAt || alert.timestamp;
                 
@@ -249,17 +330,13 @@ const SOSHistoryScreen = ({ navigation }) => {
                                 ? styles.statusResolved
                                 : alert.status === 'ESCALATED' || alert.status === 'escalated'
                                 ? styles.statusEscalated
+                                : alert.status === 'ACKNOWLEDGED' || alert.status === 'acknowledged'
+                                ? styles.statusAcknowledged
                                 : styles.statusActive,
                             ]}
                           >
                             <Text style={styles.statusText}>
-                              {alert.status === 'RESOLVED' || alert.status === 'resolved' || alert.status === 'FALSE_ALARM' || alert.status === 'false_alarm'
-                                ? 'Đã xử lý'
-                                : alert.status === 'ACKNOWLEDGED' || alert.status === 'acknowledged'
-                                ? 'Đã xác nhận'
-                                : alert.status === 'ESCALATED' || alert.status === 'escalated'
-                                ? 'Đã leo thang'
-                                : 'Đang xử lý'}
+                              {getStatusLabel(alert.status)}
                             </Text>
                           </View>
                         )}
@@ -301,7 +378,9 @@ const SOSHistoryScreen = ({ navigation }) => {
               })}
               <View style={styles.footerContainer}>
                 <Text style={styles.footerText}>
-                  Tổng cộng: {alerts.length} {alerts.length === 1 ? 'lần' : 'lần'} kích hoạt SOS
+                  {statusFilter === 'all' 
+                    ? `Tổng cộng: ${alerts.length} ${alerts.length === 1 ? 'lần' : 'lần'} kích hoạt SOS`
+                    : `Hiển thị: ${filteredAlerts.length} / ${alerts.length} ${alerts.length === 1 ? 'lần' : 'lần'} kích hoạt SOS`}
                 </Text>
               </View>
             </>
@@ -364,31 +443,25 @@ const SOSHistoryScreen = ({ navigation }) => {
                     <View
                       style={[
                         styles.modalStatusBadge,
-                        (alertDetail.status === 'RESOLVED' || alertDetail.status === 'resolved' || alertDetail.status === 'FALSE_ALARM' || alertDetail.status === 'false_alarm')
-                          ? styles.statusResolved
-                          : (alertDetail.status === 'ESCALATED' || alertDetail.status === 'escalated')
-                          ? styles.statusEscalated
-                          : styles.statusActive,
+                        (() => {
+                          const statusUpper = (alertDetail.status || '').toUpperCase();
+                          if (statusUpper === 'RESOLVED' || statusUpper === 'FALSE_ALARM') {
+                            return styles.statusResolved;
+                          } else if (statusUpper === 'ESCALATED') {
+                            return styles.statusEscalated;
+                          } else if (statusUpper === 'ACKNOWLEDGED') {
+                            return styles.statusAcknowledged;
+                          }
+                          return styles.statusActive;
+                        })(),
                       ]}
                     >
                       <Text style={styles.modalStatusText}>
-                        {alertDetail.status === 'RESOLVED' || alertDetail.status === 'resolved' || alertDetail.status === 'FALSE_ALARM' || alertDetail.status === 'false_alarm'
-                          ? 'Đã xử lý'
-                          : alertDetail.status === 'ACKNOWLEDGED' || alertDetail.status === 'acknowledged'
-                          ? 'Đã xác nhận'
-                          : alertDetail.status === 'ESCALATED' || alertDetail.status === 'escalated'
-                          ? 'Đã leo thang'
-                          : 'Đang xử lý'}
+                        {getStatusLabel(alertDetail.status)}
                       </Text>
                     </View>
                   </View>
                   
-                  {(alertDetail.status === 'ESCALATED' || alertDetail.status === 'escalated') && alertDetail.escalationCount && (
-                    <View style={styles.modalInfoRow}>
-                      <Text style={styles.modalInfoLabel}>Số lần leo thang:</Text>
-                      <Text style={styles.modalInfoValue}>{alertDetail.escalationCount}</Text>
-                    </View>
-                  )}
 
                   {alertDetail.description && (
                     <View style={styles.modalInfoRow}>
@@ -521,8 +594,9 @@ const SOSHistoryScreen = ({ navigation }) => {
               </ScrollView>
             ) : null}
           </View>
-        </View>
-      </Modal>
+          </View>
+        </Modal>
+
     </AppBackground>
   );
 };
@@ -633,6 +707,44 @@ const styles = StyleSheet.create({
   },
   statusEscalated: {
     backgroundColor: '#FEF3C7',
+  },
+  statusAcknowledged: {
+    backgroundColor: '#DBEAFE',
+  },
+  // Filter Styles
+  filterContainer: {
+    marginBottom: 16,
+  },
+  dropdown: {
+    height: 50,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  dropdownPlaceholder: {
+    fontSize: 15,
+    fontFamily: 'Inter_500Medium',
+    color: colors.textSecondary,
+  },
+  dropdownSelectedText: {
+    fontSize: 15,
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
+  },
+  dropdownInputSearch: {
+    height: 40,
+    fontSize: 15,
+    fontFamily: 'Inter_400Regular',
+    borderRadius: 8,
+  },
+  dropdownIcon: {
+    width: 20,
+    height: 20,
+  },
+  dropdownLeftIcon: {
+    marginRight: 8,
   },
   statusText: {
     fontSize: 11,
