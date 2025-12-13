@@ -35,6 +35,7 @@ import RiderMatchingScreen from './src/screens/ride/RiderMatchingScreen.jsx';
 import BrowseRidesScreen from './src/screens/ride/BrowseRidesScreen.jsx';
 import RideRatingScreen from './src/screens/ride/RideRatingScreen.jsx';
 import NotificationsScreen from './src/screens/main/NotificationsScreen.jsx';
+import SOSHistoryScreen from './src/screens/main/SOSHistoryScreen.jsx';
 
 // Profile Screens
 import EditProfileScreen from './src/screens/profile/EditProfileScreen.jsx';
@@ -86,6 +87,7 @@ function DriverMainStack() {
       <DriverStack.Screen name="DriverProfile" component={DriverProfileScreen} />
 
       <DriverStack.Screen name="SOSAlert" component={SOSAlertScreen} />
+      <DriverStack.Screen name="SOSHistory" component={SOSHistoryScreen} />
       <DriverStack.Screen name="DriverTest" component={DriverTestScreen} />
     </DriverStack.Navigator>
   );
@@ -260,6 +262,7 @@ export default function App() {
             <Stack.Screen name="EditProfile" component={EditProfileScreen} />
             <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
             <Stack.Screen name="Notifications" component={NotificationsScreen} />
+            <Stack.Screen name="SOSHistory" component={SOSHistoryScreen} />
 
             {/* Driver */}
             <Stack.Screen name="DriverMain" component={DriverMainStack} />
