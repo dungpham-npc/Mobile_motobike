@@ -95,6 +95,7 @@ const ProfileScreen = ({ navigation }) => {
         navigation.navigate('AccountVerification');
       },
     },
+    { icon: 'emergency', title: 'Lịch sử SOS của tôi', onPress: () => navigation.navigate('SOSHistory') },
     { icon: 'help', title: 'Trợ giúp & Hỗ trợ', onPress: () => Alert.alert('Thông báo', 'Chức năng đang phát triển') },
     { icon: 'policy', title: 'Điều khoản sử dụng', onPress: () => Alert.alert('Thông báo', 'Chức năng đang phát triển') },
     { icon: 'info', title: 'Về chúng tôi', onPress: () => Alert.alert('Thông báo', 'Chức năng đang phát triển') },

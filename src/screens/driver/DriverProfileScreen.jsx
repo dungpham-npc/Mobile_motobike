@@ -140,6 +140,7 @@ const DriverProfileScreen = ({ navigation }) => {
         { icon: 'edit', title: 'Chỉnh sửa thông tin', onPress: handleEditProfile },
         { icon: 'security', title: 'Đổi mật khẩu', onPress: () => navigation.navigate('ChangePassword') },
         { icon: 'verified', title: 'Xác minh tài khoản', onPress: () => navigation.navigate('AccountVerification') },
+        { icon: 'emergency', title: 'Lịch sử SOS của tôi', onPress: () => navigation.navigate('SOSHistory') },
         { icon: 'account-balance', title: 'Thông tin ngân hàng', onPress: () => Alert.alert('Thông báo', 'Chức năng đang phát triển') }
       ]
     },
