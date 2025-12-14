@@ -198,7 +198,7 @@ const SOSAlertDetailScreen = ({ route, navigation }) => {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <SoftBackHeader title="Chi tiết cảnh báo" onBack={handleBack} />
+      <SoftBackHeader title="Chi tiết cảnh báo"onBackPress={() => navigation.goBack()}  />
 
       <ScrollView
         style={styles.content}

@@ -150,6 +150,12 @@ const DriverProfileScreen = ({ navigation }) => {
           title: 'Liên hệ khẩn cấp',
           onPress: () => navigation.navigate('EmergencyContacts'),
         },
+        {
+          icon: 'emergency',
+          title: 'Cảnh báo khẩn cấp',
+          onPress: () => navigation.navigate('DriverEmergencyAlert'),
+          highlight: true,
+        },
         { icon: 'account-balance', title: 'Thông tin ngân hàng', onPress: () => Alert.alert('Thông báo', 'Chức năng đang phát triển') }
       ]
     },
