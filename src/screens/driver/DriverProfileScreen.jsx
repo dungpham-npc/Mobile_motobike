@@ -140,6 +140,22 @@ const DriverProfileScreen = ({ navigation }) => {
         { icon: 'edit', title: 'Chỉnh sửa thông tin', onPress: handleEditProfile },
         { icon: 'security', title: 'Đổi mật khẩu', onPress: () => navigation.navigate('ChangePassword') },
         { icon: 'verified', title: 'Xác minh tài khoản', onPress: () => navigation.navigate('AccountVerification') },
+        {
+          icon: 'warning-amber',
+          title: 'Cảnh báo SOS của tôi',
+          onPress: () => navigation.navigate('MySOSAlerts'),
+        },
+        {
+          icon: 'contacts',
+          title: 'Liên hệ khẩn cấp',
+          onPress: () => navigation.navigate('EmergencyContacts'),
+        },
+        {
+          icon: 'emergency',
+          title: 'Cảnh báo khẩn cấp',
+          onPress: () => navigation.navigate('DriverEmergencyAlert'),
+          highlight: true,
+        },
         { icon: 'account-balance', title: 'Thông tin ngân hàng', onPress: () => Alert.alert('Thông báo', 'Chức năng đang phát triển') }
       ]
     },
@@ -209,11 +225,13 @@ const DriverProfileScreen = ({ navigation }) => {
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         >
-          <View style={styles.headerSpacing}>
-            <GlassHeader
-              title="Hồ sơ tài xế"
-            />
-          </View>
+        <View style={styles.headerSpacing}>
+          <GlassHeader
+            title="Hồ sơ tài xế"
+            subtitle=""
+            onBellPress={null}
+          />
+        </View>
 
         <View style={styles.content}>
           {/* Profile Card */}

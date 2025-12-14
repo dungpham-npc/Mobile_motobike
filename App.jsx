@@ -40,6 +40,12 @@ import NotificationsScreen from './src/screens/main/NotificationsScreen.jsx';
 import EditProfileScreen from './src/screens/profile/EditProfileScreen.jsx';
 import ChangePasswordScreen from './src/screens/profile/ChangePasswordScreen.jsx';
 
+// SOS Screens
+import MySOSAlertsScreen from './src/screens/main/MySOSAlertsScreen.jsx';
+import SOSAlertDetailScreen from './src/screens/main/SOSAlertDetailScreen.jsx';
+import EmergencyContactsScreen from './src/screens/main/EmergencyContactsScreen.jsx';
+import RiderEmergencyAlertScreen from './src/screens/main/RiderEmergencyAlertScreen.jsx';
+
 // Verification Screens
 import StudentVerificationScreen from './src/screens/verification/StudentVerificationScreen.jsx';
 import DriverVerificationScreen from './src/screens/verification/DriverVerificationScreen.jsx';
@@ -59,6 +65,7 @@ import DriverEarningsScreen from './src/screens/driver/DriverEarningsScreen.jsx'
 import DriverRatingsScreen from './src/screens/driver/DriverRatingsScreen.jsx';
 import DriverProfileScreen from './src/screens/driver/DriverProfileScreen.jsx';
 import SOSAlertScreen from './src/screens/driver/SOSAlertScreen.jsx';
+import DriverEmergencyAlertScreen from './src/screens/driver/DriverEmergencyAlertScreen.jsx';
 
 // Navigation & UI
 import DriverTabNavigator from './src/navigation/DriverTabNavigator.jsx';
@@ -86,6 +93,7 @@ function DriverMainStack() {
       <DriverStack.Screen name="DriverProfile" component={DriverProfileScreen} />
 
       <DriverStack.Screen name="SOSAlert" component={SOSAlertScreen} />
+      <DriverStack.Screen name="DriverEmergencyAlert" component={DriverEmergencyAlertScreen} />
       <DriverStack.Screen name="DriverTest" component={DriverTestScreen} />
     </DriverStack.Navigator>
   );
@@ -260,6 +268,12 @@ export default function App() {
             <Stack.Screen name="EditProfile" component={EditProfileScreen} />
             <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
             <Stack.Screen name="Notifications" component={NotificationsScreen} />
+            
+            {/* SOS Screens */}
+            <Stack.Screen name="MySOSAlerts" component={MySOSAlertsScreen} />
+            <Stack.Screen name="SOSAlertDetail" component={SOSAlertDetailScreen} />
+            <Stack.Screen name="EmergencyContacts" component={EmergencyContactsScreen} />
+            <Stack.Screen name="RiderEmergencyAlert" component={RiderEmergencyAlertScreen} />
 
             {/* Driver */}
             <Stack.Screen name="DriverMain" component={DriverMainStack} />

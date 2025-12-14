@@ -79,6 +79,8 @@ const WalletScreen = ({ navigation }) => {
     }
   };
 
+  console.log(walletData);
+
   const loadTransactions = async (showLoading = false) => {
     if (showLoading) setLoadingTransactions(true);
 

@@ -211,8 +211,18 @@ class ApiService {
   }
 
   // GET request
-  async get(endpoint) {
-    return this.request(endpoint, { method: 'GET' });
+  async get(endpoint, params = null) {
+    let url = endpoint;
+    
+    // Add query parameters if provided
+    if (params && Object.keys(params).length > 0) {
+      const queryString = Object.entries(params)
+        .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+        .join('&');
+      url = `${endpoint}?${queryString}`;
+    }
+    
+    return this.request(url, { method: 'GET' });
   }
 
   // POST request
