@@ -44,6 +44,7 @@ import ChangePasswordScreen from './src/screens/profile/ChangePasswordScreen.jsx
 import MySOSAlertsScreen from './src/screens/main/MySOSAlertsScreen.jsx';
 import SOSAlertDetailScreen from './src/screens/main/SOSAlertDetailScreen.jsx';
 import EmergencyContactsScreen from './src/screens/main/EmergencyContactsScreen.jsx';
+import RiderEmergencyAlertScreen from './src/screens/main/RiderEmergencyAlertScreen.jsx';
 
 // Verification Screens
 import StudentVerificationScreen from './src/screens/verification/StudentVerificationScreen.jsx';
@@ -272,6 +273,7 @@ export default function App() {
             <Stack.Screen name="MySOSAlerts" component={MySOSAlertsScreen} />
             <Stack.Screen name="SOSAlertDetail" component={SOSAlertDetailScreen} />
             <Stack.Screen name="EmergencyContacts" component={EmergencyContactsScreen} />
+            <Stack.Screen name="RiderEmergencyAlert" component={RiderEmergencyAlertScreen} />
 
             {/* Driver */}
             <Stack.Screen name="DriverMain" component={DriverMainStack} />
